@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const sql = require('mssql');
+require('dotenv').config(); // Load environment variables from .env file
 
 const app = express();
 const port = 3000;
@@ -8,15 +9,20 @@ const port = 3000;
 // Middleware
 app.use(bodyParser.json());
 
-// SQL Server configuration
 const dbConfig = {
-    user: 'your_db_username',
-    password: 'your_db_password',
-    server: 'your_db_server',
-    database: 'your_database',
+    server: process.env.DB_SERVER,
+    database: process.env.DB_DATABASE,
     options: {
-        encrypt: true, // for Azure
-        trustServerCertificate: true // change to false for production
+        encrypt: process.env.DB_ENCRYPT === 'true', // Convert string to boolean
+        trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true' // Convert string to boolean
+    },
+    authentication: {
+        type: 'ntlm',
+        options: {
+            domain: process.env.DB_DOMAIN || '', // Load domain if needed, otherwise empty
+            userName: process.env.DB_USERNAME || '', // Load username if needed, otherwise empty
+            password: process.env.DB_PASSWORD || '' // Load password if needed, otherwise empty
+        }
     }
 };
 
