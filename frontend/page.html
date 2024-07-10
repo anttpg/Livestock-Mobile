@@ -10,14 +10,80 @@
     <button id="fetchData">Fetch Data</button>
     <div id="data"></div>
 
+    <h2>Insert New Row</h2>
+    <form id="insertForm">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" name="firstName"><br>
+        <label for="age">Age:</label>
+        <input type="number" id="age" name="age"><br>
+        <label for="money">Money:</label>
+        <input type="number" step="0.01" id="money" name="money"><br>
+        <button type="submit">Insert</button>
+    </form>
+
     <script>
         document.getElementById('fetchData').addEventListener('click', async () => {
             try {
                 const response = await fetch('http://localhost:3000/api/data');
                 const data = await response.json();
-                document.getElementById('data').innerHTML = JSON.stringify(data, null, 2);
+
+                if (!Array.isArray(data)) {
+                    throw new TypeError('Response data is not an array');
+                }
+
+                // Create table
+                const table = document.createElement('table');
+                const headerRow = table.insertRow();
+
+                // Define table headers
+                const headers = ['ID', 'First Name', 'Age', 'Money'];
+                headers.forEach(headerText => {
+                    const header = document.createElement('th');
+                    const textNode = document.createTextNode(headerText);
+                    header.appendChild(textNode);
+                    headerRow.appendChild(header);
+                });
+
+                // Populate table rows
+                data.forEach(item => {
+                    const row = table.insertRow();
+                    Object.values(item).forEach(text => {
+                        const cell = row.insertCell();
+                        const textNode = document.createTextNode(text);
+                        cell.appendChild(textNode);
+                    });
+                });
+
+                // Clear previous data and append new table
+                const dataDiv = document.getElementById('data');
+                dataDiv.innerHTML = '';
+                dataDiv.appendChild(table);
+
             } catch (error) {
                 console.error('Error fetching data:', error);
+            }
+        });
+
+        document.getElementById('insertForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const formObject = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch('http://localhost:3000/api/data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formObject)
+                });
+
+                const result = await response.json();
+                console.log(result);
+                alert(result.message);
+            } catch (error) {
+                console.error('Error inserting data:', error);
+                alert('Error inserting data');
             }
         });
     </script>
