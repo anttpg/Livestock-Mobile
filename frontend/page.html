@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Server Query</title>
+</head>
+<body>
+    <h1>SQL Server Data</h1>
+    <button id="fetchData">Fetch Data</button>
+    <div id="data"></div>
+
+    <script>
+        document.getElementById('fetchData').addEventListener('click', async () => {
+            try {
+                const response = await fetch('http://localhost:3000/api/data');
+                const data = await response.json();
+                document.getElementById('data').innerHTML = JSON.stringify(data, null, 2);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        });
+    </script>
+</body>
+</html>
