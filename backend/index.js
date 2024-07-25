@@ -12,6 +12,9 @@ const port = 3000;
 app.use(bodyParser.json());
 app.use(cors()); // Use the cors middleware
 
+app.set("views", path.resolve(__dirname, "frontend"));
+app.set("view engine", "ejs");
+
 let dbConfig;
 
 if (process.env.USE_SQL_AUTH === 'true') {
@@ -86,6 +89,18 @@ app.post('/api/data', async (req, res) => {
         console.error('Error inserting data:', err); // Log the specific error
         res.status(500).json({ error: 'Error inserting data' }); // Ensure the error response is in JSON format
     }
+});
+const calvesMap = [
+    { getName: () => 'Calf 1', getDOB: () => '2023-01-01' },
+    { getName: () => 'Calf 2', getDOB: () => '2023-02-01' }
+];
+
+app.get('/calves', (req, res) => {
+    let calvesTable = calvesMap.map(calf => 
+        `<tr><td style="border: 2px double black;">${calf.getName()}</td>` +
+        `<td style="border: 2px double black;">${calf.getDOB()}</td></tr>`
+    ).join('');
+    res.render('displayCalves', { calvesTable: `<table>${calvesTable}</table>` });
 });
 
 app.listen(port, () => {

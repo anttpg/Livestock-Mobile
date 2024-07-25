@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="cow-data.css">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General View</title>
+</head>
+<body>
+    <div id="other-pages">
+        <a href="/breeding" class="button">Breeding Records</a>
+        <a href="/medical" class="button">Medical Records</a>
+    </div>
+    <h1>Cow Data</h1>
+    <form id="cowForm">
+        <label for="name">Search by Cow Tag #:</label>
+        <input type="text" id="cowname" name="name" required>
+        <button type="submit">Search</button>
+    </form>
+    <div id="wrapper">
+    <div id="image-container">
+        <img src="example-cow.jpg" width="200" height="200" alt="cow">
+        <img src="cow-headshot.jpg" width="200" height="200" alt="cow">
+    </div>
+    <div id="main-container">
+        <div id="info-container">
+                <h3>DOB:</h3>
+                <span id="dob">2015-01-01</span>
+                <h3>Current Weight:</h3>
+                <span id="weight">700lbs</span>
+                <span id="date-measured">2024-01-01</span>
+                <h3>Other Descriptors:</h3>
+                <span id="cow-description">blah blah blah </span>
+                <div id="medications-container">
+                    <h3>Current Medications:</h3>
+                    <ul> 
+                        <li>
+                            <span class="medication-name">moodma</span>
+                            <span class="medication-dob">2023-01-01</span>
+                        </li>
+                    </ul>
+                </div>
+        </div>
+    </div>
+    </div>
+    <div id="calf-container"> 
+            <div id="calf-data">
+                <h3>Current Calves:</h3>
+                <ul> 
+                    <li>
+                        <span class="calf-name">static calf1</span>
+                        <span class="calf-dob">2020-01-01</span>
+                    </li>
+                </ul>
+            </div>
+            <div id="new-calf-data">
+                <h3>Add New Calf</h3>
+                <form id="new-calf-form">
+                    <label for="new-calf-tag">Calf tag #:</label>
+                    <input type="text" id="new-calf-tag">
+                    <label for="new-calf-dob">Calf DOB:</label>
+                    <input type="date" id="new-calf-dob">
+                    <button type="submit">Add</button>
+                </form>
+            </div>
+        </div>
+
+    
+    <div id="observations-container">
+        <div id="recent-observations">
+            <h3>Recent Observations:</h3>
+            <span id="observations">Very moo</span>
+        </div>
+        
+        <div id="new-observations">
+            <h3>New Observations:</h3>
+            <form id="new-observation-form">
+                <input type="text" id="new-observation">
+                <br>
+                <button type="submit">Add</button>
+            </form>
+        </div>
+    </div>
+   
+</body>
+
+
+</html>
