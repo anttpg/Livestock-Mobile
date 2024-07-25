@@ -90,25 +90,29 @@ app.post('/api/data', async (req, res) => {
         res.status(500).json({ error: 'Error inserting data' }); // Ensure the error response is in JSON format
     }
 });
+
+const medMap = [
+    { getName: () => 'Medication1', getDate: () => '2023-01-01' },
+    { getName: () => 'Medication2', getDate: () => '2023-02-01' }
+];
 const calvesMap = [
-    { getName: () => 'Calf 1', getDOB: () => '2023-01-01' },
-    { getName: () => 'Calf 2', getDOB: () => '2023-02-01' }
+    { getName: () => 'Calf 1', getDOB: () => '2023-01-01', getSex: () => 'female'},
+    { getName: () => 'Calf 2', getDOB: () => '2023-02-01', getSex: () => 'male'}
 ];
 
-app.get('/medications', (req, res) => {
+app.get('/general', (req, res) => {
     let medTable = medMap.map(medication => 
         `<tr><td style="border: 2px double black;">${medication.getName()}</td>` +
         `<td style="border: 2px double black;">${medication.getDate()}</td></tr>`
     ).join('');
-    res.render('displayCalves', { calvesTable: `<table>${medTable}</table>` });
-});
-app.get('/calves', (req, res) => {
+
     let calvesTable = calvesMap.map(calf => 
         `<tr><td style="border: 2px double black;">${calf.getName()}</td>` +
         `<td style="border: 2px double black;">${calf.getDOB()}</td>
         <td style="border: 2px double black;">${calf.getSex()}</td></tr>`
     ).join('');
-    res.render('displayCalves', { calvesTable: `<table>${calvesTable}</table>` });
+    res.render('general', { medTable: `<table>${medTable}</table>`, calvesTable:
+    `<table>${calvesTable}</table>`});
 });
 
 app.listen(port, () => {
