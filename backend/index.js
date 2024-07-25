@@ -1,8 +1,9 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const sql = require('mssql');
-const cors = require('cors'); // Import the cors middleware
-const path = require('path'); // Import the path module
+const cors = require('cors');
+const path = require('path');
+const session = require('express-session');
 const loginRoutes = require('./login'); // Import the login routes
 require('dotenv').config(); // Load environment variables from .env file
 
@@ -10,49 +11,21 @@ const app = express();
 const port = 3000;
 
 app.use(bodyParser.json());
-app.use(cors()); // Use the cors middleware
+app.use(cors({
+    origin: true, // Reflect the request origin
+    credentials: true, // Allow credentials (cookies) to be sent and received
+}));
 
-let dbConfig;
-
-if (process.env.USE_SQL_AUTH === 'true') {
-    dbConfig = {
-        server: process.env.DB_SERVER,
-        port: parseInt(process.env.DB_PORT, 10),
-        database: process.env.DB_DATABASE,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        options: {
-            encrypt: process.env.DB_ENCRYPT === 'true',
-            trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
-        }
-    };
-} else {
-    dbConfig = {
-        server: process.env.DB_SERVER,
-        port: parseInt(process.env.DB_PORT, 10),
-        database: process.env.DB_DATABASE,
-        options: {
-            encrypt: process.env.DB_ENCRYPT === 'true',
-            trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
-        },
-        authentication: {
-            type: 'ntlm',
-            options: {
-                domain: process.env.DB_DOMAIN || '',
-                user: process.env.DB_USERNAME || '', // Change userName to user
-                password: process.env.DB_PASSWORD || ''
-            }
-        }
-    };
-}
-
-sql.connect(dbConfig, err => {
-    if (err) {
-        console.error('SQL Connection Error:', err);
-    } else {
-        console.log('Connected to SQL Server');
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+        secure: false, // Set to true if you are using HTTPS
+        httpOnly: true,
+        //domain: 'your-domain.com', // Uncomment and set to your domain if needed
     }
-});
+}));
 
 // Use the login routes
 app.use('/api', loginRoutes);
@@ -60,15 +33,37 @@ app.use('/api', loginRoutes);
 // Serve static files from the 'frontend' directory
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Define a route to serve the 'page.html' file
+// Define a route to serve the 'login.html' file at the root URL
 app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend', 'login.html'));
+});
+
+// Define a route to serve the 'page.html' file at '/data'
+app.get('/data', (req, res) => {
+    if (!req.session.dbConfig) {
+        return res.redirect('/');
+    }
     res.sendFile(path.join(__dirname, '../frontend', 'page.html'));
+});
+
+// Middleware to set up dbConfig with session-based credentials
+app.use((req, res, next) => {
+    if (req.session.dbConfig) {
+        req.dbConfig = req.session.dbConfig;
+    } else {
+        req.dbConfig = null;
+    }
+    next();
 });
 
 // Sample endpoint to get data
 app.get('/api/data', async (req, res) => {
+    if (!req.dbConfig) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
     try {
-        const result = await sql.query`SELECT * FROM UserTable`; // Update the table name in the query
+        const pool = await sql.connect(req.dbConfig);
+        const result = await pool.request().query('SELECT * FROM UserTable'); // Update the table name in the query
         res.json(result.recordset);
     } catch (err) {
         console.error('Error querying database:', err); // Log the specific error
@@ -78,9 +73,17 @@ app.get('/api/data', async (req, res) => {
 
 // Endpoint to insert data
 app.post('/api/data', async (req, res) => {
+    if (!req.dbConfig) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
     const { firstName, age, money } = req.body;
     try {
-        const result = await sql.query`INSERT INTO UserTable ([First Name], Age, Money) VALUES (${firstName}, ${age}, ${money})`;
+        const pool = await sql.connect(req.dbConfig);
+        const result = await pool.request()
+            .input('firstName', sql.VarChar, firstName)
+            .input('age', sql.Int, age)
+            .input('money', sql.Decimal, money)
+            .query('INSERT INTO UserTable ([First Name], Age, Money) VALUES (@firstName, @age, @money)');
         res.status(200).json({ message: 'Row inserted successfully' });
     } catch (err) {
         console.error('Error inserting data:', err); // Log the specific error
