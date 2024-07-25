@@ -95,10 +95,18 @@ const calvesMap = [
     { getName: () => 'Calf 2', getDOB: () => '2023-02-01' }
 ];
 
+app.get('/medications', (req, res) => {
+    let medTable = medMap.map(medication => 
+        `<tr><td style="border: 2px double black;">${medication.getName()}</td>` +
+        `<td style="border: 2px double black;">${medication.getDate()}</td></tr>`
+    ).join('');
+    res.render('displayCalves', { calvesTable: `<table>${medTable}</table>` });
+});
 app.get('/calves', (req, res) => {
     let calvesTable = calvesMap.map(calf => 
         `<tr><td style="border: 2px double black;">${calf.getName()}</td>` +
-        `<td style="border: 2px double black;">${calf.getDOB()}</td></tr>`
+        `<td style="border: 2px double black;">${calf.getDOB()}</td>
+        <td style="border: 2px double black;">${calf.getSex()}</td></tr>`
     ).join('');
     res.render('displayCalves', { calvesTable: `<table>${calvesTable}</table>` });
 });
