@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="/cow-data.css">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General View</title>
+</head>
+<body>
+    <div id="other-pages">
+        <a href="/breeding" class="button">Breeding Records</a>
+        <a href="/medical" class="button">Medical Records</a>
+    </div>
+    <h1>Cow Data</h1>
+    <form id="cowForm">
+        <label for="name">Search by Cow Tag #:</label>
+        <input type="text" id="cowname" name="name" required>
+        <button type="submit">Search</button>
+    </form>
+    <div id="wrapper">
+        <div id="image-container">
+            <img id="body-image" src="/images/example-cow.jpg" width="200" height="200" alt="cow">
+            <img id="headshot-image" src="/images/cow-headshot.jpg" width="200" height="200" alt="cow">
+        </div>
+        <div id="main-container">
+            <div id="info-container">
+                <h3>DOB:</h3>
+                <span id="dob">2015-01-01</span>
+                <h3>Current Weight:</h3>
+                <span id="weight">700lbs</span>
+                <h3>Other Descriptors:</h3>
+                <span id="cow-description">blah blah blah</span>
+                <div id="medications-container">
+                    <h3>Current Medications:</h3>
+                    <div id="medications-table"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="calf-container"> 
+        <div id="calf-data">
+            <h3>Current Calves:</h3>
+            <div id="calves-table"></div>
+        </div>
+        <div id="new-calf-data">
+            <h3>Add New Calf</h3>
+            <form id="new-calf-form">
+                <label for="new-calf-tag">Calf tag #:</label>
+                <input type="text" id="new-calf-tag">
+                <label for="new-calf-dob">Calf DOB:</label>
+                <input type="date" id="new-calf-dob">
+                <button type="submit">Add</button>
+            </form>
+        </div>
+    </div>
+    <div id="observations-container">
+        <div id="recent-observations">
+            <h3>Recent Observations:</h3>
+            <div id="observations"></div>
+        </div>
+        <div id="new-observations">
+            <h3>New Observations:</h3>
+            <form id="new-observation-form">
+                <input type="text" id="new-observation">
+                <br>
+                <button type="submit">Add</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString(undefined, options);
+        }
+
+        document.getElementById('cowForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const cowTag = document.getElementById('cowname').value;
+            
+            try {
+                const response = await fetch(`/api/cow/${cowTag}`);
+                const data = await response.json();
+
+                if (data.cowData && data.cowData.length > 0) {
+                    const cowData = data.cowData[0];
+                    document.getElementById('dob').textContent = formatDate(cowData.DateOfBirth);
+                    document.getElementById('weight').textContent = cowData.Weight;
+                    document.getElementById('cow-description').textContent = cowData.Description;
+                    document.getElementById('body-image').src = cowData.BodyPath || '/images/example-cow.jpg';
+                    document.getElementById('headshot-image').src = cowData.HeadshotPath || '/images/cow-headshot.jpg';
+
+                    const medTable = data.medicalRecords.map(medication => 
+                        `<tr><td style="border: 2px double black;">${medication.MedicineApplied}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(medication.TreatmentDate)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('medications-table').innerHTML = `<table>${medTable}</table>`;
+
+                    const calvesTable = data.calves.map(calf => 
+                        `<tr><td style="border: 2px double black;">${calf.CalfTag}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(calf.DOB)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('calves-table').innerHTML = `<table>${calvesTable}</table>`;
+
+                    const notesTable = data.notes.map(note => 
+                        `<tr><td style="border: 2px double black;">${note.Note}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(note.DateOfEntry)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('observations').innerHTML = `<table>${notesTable}</table>`;
+                } else {
+                    alert('Cow not found');
+                }
+            } catch (error) {
+                console.error('Error fetching cow data:', error);
+                alert('Error fetching cow data');
+            }
+        });
+    </script>
+</body>
+</html>

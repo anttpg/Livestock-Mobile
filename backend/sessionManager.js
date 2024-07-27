@@ -1,4 +1,3 @@
-// sessionManager.js
 
 const { fork } = require('child_process');
 const express = require('express');
@@ -32,6 +31,10 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
+// Serve static files from the 'frontend' and 'images' directory
+app.use(express.static(path.join(__dirname, '../frontend')));
+app.use('/images', express.static(path.join(__dirname, '../images')));
+
 const dbConfig = {
     server: process.env.DB_SERVER,
     database: process.env.DB_DATABASE,
@@ -41,6 +44,9 @@ const dbConfig = {
         trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
     }
 };
+
+app.set('views', path.join(__dirname, '../frontend'));
+app.set('view engine', 'ejs');
 
 app.post('/login', setupInputValidation(), (req, res) => {
     const { username, password } = req.body;
@@ -66,7 +72,7 @@ app.post('/login', setupInputValidation(), (req, res) => {
             req.session.dbConfig = userDbConfig;
             req.session.user = { username };
             req.session.save(() => {
-                res.json({ success: true, redirect: '/data' });
+                res.json({ success: true, redirect: '/general' });
             });
         } else {
             console.log('Login failed for user:', username);
@@ -95,8 +101,8 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend', 'login.html'));
 });
 
-app.get('/data', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend', 'page.html'));
+app.get('/general', (req, res) => {
+    res.render('general');
 });
 
 app.use('/api', (req, res, next) => {
@@ -106,31 +112,15 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-app.get('/api/data', (req, res) => {
+app.get('/api/cow/:tag', (req, res) => {
     const child = fork(path.join(__dirname, 'sessionInstance.js'));
 
     // Send the session information to the child process
-    child.send({ action: 'fetchData', dbConfig: req.session.dbConfig });
+    child.send({ action: 'fetchCowData', dbConfig: req.session.dbConfig, cowTag: req.params.tag });
 
     child.on('message', (message) => {
         if (message.success) {
             res.json(message.data);
-        } else {
-            res.status(500).json({ error: message.error });
-        }
-    });
-});
-
-app.post('/api/data', (req, res) => {
-    const { firstName, age, money } = req.body;
-    const child = fork(path.join(__dirname, 'sessionInstance.js'));
-
-    // Send the session information and request data to the child process
-    child.send({ action: 'insertData', dbConfig: req.session.dbConfig, data: { firstName, age, money } });
-
-    child.on('message', (message) => {
-        if (message.success) {
-            res.status(200).json({ message: 'Row inserted successfully' });
         } else {
             res.status(500).json({ error: message.error });
         }
