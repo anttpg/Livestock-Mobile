@@ -1,10 +1,11 @@
+// index.js
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const sql = require('mssql');
 const cors = require('cors');
 const path = require('path');
-const session = require('express-session');
-const loginRoutes = require('./login'); // Import the login routes
+const { sessionRouter, sessionMiddleware } = require('./sessions'); // Import sessions middleware
 require('dotenv').config(); // Load environment variables from .env file
 
 const app = express();
@@ -16,19 +17,9 @@ app.use(cors({
     credentials: true, // Allow credentials (cookies) to be sent and received
 }));
 
-app.use(session({
-    secret: 'your-secret-key',
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-        secure: false, // Set to true if you are using HTTPS
-        httpOnly: true,
-        //domain: 'your-domain.com', // Uncomment and set to your domain if needed
-    }
-}));
+app.use(sessionMiddleware); // Use session middleware
 
-// Use the login routes
-app.use('/api', loginRoutes);
+app.use('/api', sessionRouter); // Use the session router
 
 // Serve static files from the 'frontend' directory
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -46,16 +37,6 @@ app.get('/data', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend', 'page.html'));
 });
 
-// Middleware to set up dbConfig with session-based credentials
-app.use((req, res, next) => {
-    if (req.session.dbConfig) {
-        req.dbConfig = req.session.dbConfig;
-    } else {
-        req.dbConfig = null;
-    }
-    next();
-});
-
 // Sample endpoint to get data
 app.get('/api/data', async (req, res) => {
     if (!req.dbConfig) {
@@ -63,7 +44,7 @@ app.get('/api/data', async (req, res) => {
     }
     try {
         const pool = await sql.connect(req.dbConfig);
-        const result = await pool.request().query('SELECT * FROM UserTable'); // Update the table name in the query
+        const result = await pool.request().query('SELECT * FROM CowTable'); // Update the table name in the query
         res.json(result.recordset);
     } catch (err) {
         console.error('Error querying database:', err); // Log the specific error
