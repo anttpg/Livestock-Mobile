@@ -1,4 +1,3 @@
-// accessControl.js
 
 const setupAccessControl = () => (req, res, next) => {
     console.log('Access control check for user:', req.session.user);
