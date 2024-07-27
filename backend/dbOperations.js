@@ -1,4 +1,3 @@
-// dbOperations.js
 
 const sql = require('mssql');
 
