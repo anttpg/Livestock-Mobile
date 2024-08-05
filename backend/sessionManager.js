@@ -160,6 +160,7 @@ app.post('/add-observation', (req, res) => {
             });
         });
     } catch (err) {
+        //STUPID FREAKING DEBUGGING
         console.error('Error inserting observation:', err.message);
         console.error('Error details:', err);
         res.status(500).json({ success: false, message: 'Failed to add observation notes.', error: err.message });
