@@ -1,11 +1,7 @@
 const express = require('express');
+const sql = require('mssql');
+const path = require('path');
 const router = express.Router();
-
-// Simulated user authentication for demonstration purposes
-const users = [
-    { username: 'user1', password: 'password1' },
-    { username: 'user2', password: 'password2' }
-];
 
 // Serve the login page
 router.get('/login', (req, res) => {
@@ -13,15 +9,32 @@ router.get('/login', (req, res) => {
 });
 
 // Handle login POST request
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
-    // Check if the user exists and the password is correct
-    const user = users.find(u => u.username === username && u.password === password);
+    // Create a temporary config for SQL authentication
+    const tempDbConfig = {
+        server: process.env.DB_SERVER,
+        database: process.env.DB_DATABASE,
+        user: username,
+        password: password,
+        options: {
+            encrypt: process.env.DB_ENCRYPT === 'true',
+            trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
+        }
+    };
 
-    if (user) {
-        res.json({ success: true });
-    } else {
+    try {
+        // Try to connect to the database with the provided credentials
+        await sql.connect(tempDbConfig);
+
+        // Store credentials and connection pool in session if connection is successful
+        req.session.dbUser = username;
+        req.session.dbPassword = password;
+        req.session.dbConfig = tempDbConfig;
+        res.json({ success: true, redirect: '/data' });
+    } catch (err) {
+        console.error('Error authenticating user:', err);
         res.json({ success: false, message: 'Invalid username or password' });
     }
 });
