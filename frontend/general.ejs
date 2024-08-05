@@ -7,7 +7,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>General View</title>
 </head>
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin
 <body>
     <div id="other-pages">
         <a href="/breeding" class="button">Breeding Records</a>
@@ -39,7 +42,11 @@
             </div>
         </div>
     </div>
+<<<<<<< HEAD
     <div id="calf-container">
+=======
+    <div id="calf-container"> 
+>>>>>>> origin
         <div id="calf-data">
             <h3>Current Calves:</h3>
             <div id="calves-table"></div>
@@ -62,7 +69,11 @@
         </div>
         <div id="new-observations">
             <h3>New Observations:</h3>
+<<<<<<< HEAD
             <form id="new-observation-form" method="POST" action="/add-observation">
+=======
+            <form id="new-observation-form">
+>>>>>>> origin
                 <input type="text" id="new-observation">
                 <br>
                 <button type="submit">Add</button>
@@ -70,7 +81,10 @@
         </div>
     </div>
     <script>
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin
         function formatDate(dateString) {
             const options = { year: 'numeric', month: 'long', day: 'numeric' };
             return new Date(dateString).toLocaleDateString(undefined, options);
@@ -79,7 +93,11 @@
         document.getElementById('cowForm').addEventListener('submit', async (event) => {
             event.preventDefault();
             const cowTag = document.getElementById('cowname').value;
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> origin
             try {
                 const response = await fetch(`/api/cow/${cowTag}`);
                 const data = await response.json();
@@ -91,6 +109,7 @@
                     document.getElementById('cow-description').textContent = cowData.Description;
                     document.getElementById('body-image').src = cowData.BodyPath || '/images/example-cow.jpg';
                     document.getElementById('headshot-image').src = cowData.HeadshotPath || '/images/cow-headshot.jpg';
+<<<<<<< HEAD
                     const medTable = `<thead><tr><th style="border: 2px double black;">Medication</th>` +
                         `<th style="border: 2px double black;">Start Date</th></tr></thead>` +
                         data.medicalRecords.map(medication =>
@@ -118,6 +137,29 @@
 
                     document.getElementById('observations').innerHTML = `<table>${notesTable}</table>`;
 
+=======
+
+                    const medTable = data.medicalRecords.map(medication => 
+                        `<tr><td style="border: 2px double black;">${medication.MedicineApplied}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(medication.TreatmentDate)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('medications-table').innerHTML = `<table>${medTable}</table>`;
+
+                    const calvesTable = data.calves.map(calf => 
+                        `<tr><td style="border: 2px double black;">${calf.CalfTag}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(calf.DOB)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('calves-table').innerHTML = `<table>${calvesTable}</table>`;
+
+                    const notesTable = data.notes.map(note => 
+                        `<tr><td style="border: 2px double black;">${note.Note}</td>` +
+                        `<td style="border: 2px double black;">${formatDate(note.DateOfEntry)}</td></tr>`
+                    ).join('');
+
+                    document.getElementById('observations').innerHTML = `<table>${notesTable}</table>`;
+>>>>>>> origin
                 } else {
                     alert('Cow not found');
                 }
@@ -126,6 +168,7 @@
                 alert('Error fetching cow data');
             }
         });
+<<<<<<< HEAD
 
         document.getElementById('new-observation-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -171,3 +214,8 @@
 </body>
 
 </html>
+=======
+    </script>
+</body>
+</html>
+>>>>>>> origin
