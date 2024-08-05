@@ -154,8 +154,7 @@
             // Clear textbox
             document.getElementById('new-observation').value = '';
         } else {
-            console.error('Response not OK:', errorResponse.message);
-            console.warn('Response not OK', errorResponse); // Log the full response text
+            console.error('Response not OK:');
         }
 
     } catch (error) {
