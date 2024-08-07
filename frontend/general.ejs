@@ -8,16 +8,14 @@
     <title>General View</title>
 </head>
 <body>
-    <div id="other-pages">
-        <a href="/breeding" class="button">Breeding Records</a>
-        <a href="/medical" class="button">Medical Records</a>
-    </div>
     <h1>Cow Data</h1>
+    <div id="search-container">
     <form id="cowForm">
         <label for="name">Search by Cow Tag #:</label>
         <input type="text" id="cowname" name="name" required>
         <button type="submit">Search</button>
     </form>
+    </div>
     <div id="wrapper">
         <div id="image-container">
             <img id="body-image" src="/images/example-cow.jpg" width="200" height="200" alt="cow">
@@ -26,11 +24,11 @@
         <div id="main-container">
             <div id="info-container">
                 <h3>DOB:</h3>
-                <span id="dob">2015-01-01</span>
+                <span id="dob"><i>YYYY-MM-DD</i></span>
                 <h3>Current Weight:</h3>
-                <span id="weight">700lbs</span>
+                <span id="weight"><i>Weight of Cow.</i></span>
                 <h3>Other Descriptors:</h3>
-                <span id="cow-description">blah blah blah</span>
+                <span id="cow-description"><i>Description of Cow's attributes.</i></span>
                 <div id="medications-container">
                     <h3>Current Medications:</h3>
                     <div id="medications-table"></div>
@@ -38,20 +36,11 @@
             </div>
         </div>
     </div>
+    <div id="containers-wrapper">
     <div id="calf-container">
         <div id="calf-data">
             <h3>Current Calves:</h3>
             <div id="calves-table"></div>
-        </div>
-        <div id="new-calf-data">
-            <h3>Add New Calf</h3>
-            <form id="new-calf-form">
-                <label for="new-calf-tag">Calf tag #:</label>
-                <input type="text" id="new-calf-tag">
-                <label for="new-calf-dob">Calf DOB:</label>
-                <input type="date" id="new-calf-dob">
-                <button type="submit">Add</button>
-            </form>
         </div>
     </div>
     <div id="observations-container">
@@ -62,11 +51,17 @@
         <div id="new-observations">
             <h3>New Observations:</h3>
             <form id="new-observation-form" method="POST" action="/add-observation">
-                <input type="text" id="new-observation">
+                <input type="text" style="width: 400px; height: 200px;" id="new-observation">
                 <br>
                 <button type="submit">Add</button>
             </form>
         </div>
+    </div>
+</div>
+<br>
+    <div id="other-pages">
+        <a href="/breeding" class="button">Breeding Records</a>
+        <a href="/medical" class="button">Medical Records</a>
     </div>
     <script>
         function formatDate(dateString) {
