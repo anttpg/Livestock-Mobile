@@ -6,7 +6,7 @@ async function fetchCowData(cowTag) {
     cowDataRequest.input('cowTag', sql.NVarChar, cowTag);
     const cowDataQuery = `
         SELECT 
-            CowTagMain, DateOfBirth, Weight, Notes AS Description, HeadshotPath, BodyPath
+            CowTagMain, DateOfBirth, Weight, Notes AS Description, HeadshotPath, BodyPath, CurrentHerd
         FROM 
             CowTable 
         WHERE 
@@ -17,7 +17,7 @@ async function fetchCowData(cowTag) {
     medicalRecordsRequest.input('cowTag', sql.NVarChar, cowTag);
     const medicalRecordsQuery = `
         SELECT 
-            MedicineApplied, TreatmentDate 
+            MedicineApplied, TreatmentDate, Observation, Treatment, TreatmentResponse 
         FROM 
             MedicalRecords 
         WHERE 

@@ -186,6 +186,7 @@ app.get('/medical', (req, res) => {
     res.render('medical');
 });
 
+
 // Start the server
 app.listen(3000, () => {
     console.log('Session Manager running on port 3000');

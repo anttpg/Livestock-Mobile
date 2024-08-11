@@ -7,9 +7,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical Information</title>
 </head>
+
 <body>
-    <h1>Medical records</h1>
-    
+    <h1>Medical Records</h1>
+    <div id="containers-wrapper">
+        <div id="main-container">
+            <h3>Cow Tag:</h3>
+            <span id="tag"><i>00</i></span>
+            <h3>Last Location:</h3>
+            <span id="location"><i>Ranch</i></span>
+
+            <div id="issues-container">
+                <h3>Current Issues</h3>
+                <table id="issues-table">
+                    <!-- Issues table will be populated here -->
+                </table>
+                <button onclick="addNewIssue()">Add New Issue</button>
+            </div>
+        </div>
+
+        <div id="allmedical-container">
+            <div id="medications-container">
+                <h3>Current Medications:</h3>
+                <table id="medications-table">
+                    <!-- Medications table will be populated here -->
+                </table>
+            </div>
+
+            <div id="past-history">
+                <h3>Maintenance History</h3>
+                <table id="past-table">
+                    <!-- Maintenance history will be populated here -->
+                </table>
+            </div>
+        </div>
+    </div>
+    <div id="search-container">
+        <form id="cowForm">
+            <label for="name">Medical Record Search:</label>
+            <input type="text" id="cowname" name="name" placeholder="Cow Tag #" required>
+            <button type="submit">Search</button>
+        </form>
+    </div>
+    <a href="/general" class="button">General Page</a>
+
+
+    <script>
+         function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString(undefined, options);
+        }
+        document.getElementById('cowForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const cowTag = document.getElementById('cowname').value;
+            try {
+                const response = await fetch(`/api/cow/${cowTag}`);
+                const data = await response.json();
+
+                if (data.cowData && data.cowData.length > 0) {
+                    const cowData = data.cowData[0];
+                    const medTable = `<thead><tr><th style="border: 2px double black;">Medication</th>` +
+                        `<th style="border: 2px double black;">Start Date</th></tr></thead>` +
+                        data.medicalRecords.map(medication =>
+                            `<tr><td style="border: 2px double black;">${medication.MedicineApplied}</td>` +
+                            `<td style="border: 2px double black;">${formatDate(medication.TreatmentDate)}</td></tr>`
+                        ).join('');
+                    document.getElementById('medications-table').innerHTML = `<table>${medTable}</table>`;
+
+                    document.getElementById('location').textContent = cowData.CurrentHerd;
+                    document.getElementById('tag').textContent = cowData.CowTagMain;
+                    
+                    const issueTable = `<thead><tr><th style="border: 2px double black;">Current Issues</th>` +
+                        `<th style="border: 2px double black;">Date</th></tr></thead>` +
+                        data.medicalRecords.map(medication =>
+                            `<tr><td style="border: 2px double black;">${medication.Observation}</td>` +
+                                //Not sure if this is the right variable. Maybe unneeded
+                            `<td style="border: 2px double black;">${formatDate(medication.TreatmentResponse)}</td></tr>`
+                        ).join('');
+                    document.getElementById('issues-table').innerHTML = `<table>${issueTable}</table>`;
+                    
+
+                }
+
+            } catch (error) {
+                console.error('Error fetching cow data:', error);
+                alert('Error fetching cow data');
+            }
+        });
+    </script>
 </body>
 
 </html>
