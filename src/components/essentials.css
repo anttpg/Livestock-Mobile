@@ -1,0 +1,9 @@
+.essentials {
+    background-color: white;
+    padding: 20px;
+    width: 300px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-left: 20px;
+    margin-bottom: 10px; /* Consistent margin with other containers */
+}
