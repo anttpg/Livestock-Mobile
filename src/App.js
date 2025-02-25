@@ -44,11 +44,12 @@ function App() {
           
         </main>
         <Popup trigger={buttonPopup} setTrigger={setButtonPopup}>
-          <h3>Issues Found</h3>
+          <h3>Edit Notes</h3>
         </Popup>
         <Routes>
           <Route path="/medical" element={<Medical />} />
         </Routes>
+        
       </div>
     </Router>
   );
