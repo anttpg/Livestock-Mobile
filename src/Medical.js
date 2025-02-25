@@ -1,3 +1,12 @@
-export default function Medical() {
-    return <h1>Medical Page</h1>
+function Medical() {
+    return (
+    <div>
+        <table>
+            <tr>
+                <th>Last Modified</th>
+                <th>Note</th>
+            </tr>
+        </table>
+    </div>);
 }
+export default Medical;
