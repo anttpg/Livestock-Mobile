@@ -23,21 +23,22 @@ export default function Calf({cowTag}){
                     setCalves(data.calves);
                 } else {
                     setCalves([]);
-                    alert(`No calves found for Cow ${cowTag}`);
                 }
             } catch (error) {
                 console.error("Error fetching cow data:", error);
                 setError("Error fetching cow data. Please try again.");
             }
         }
-
         fetchCowData();
     }, [cowTag]); // Runs when cowTag changes
     
     return (
         <div id="calf-data">
             <h3>Current Calves:</h3>
-            <div id="calves-table"></div>
+            <div id="calves-table">
+                <table>
+                </table>
+            </div>
         </div>    
     )
 }

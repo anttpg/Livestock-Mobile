@@ -29,6 +29,7 @@ function App() {
   return (
     <div className="app">
       <Search />  
+      {/* Only appears IF there are issues */}
       {cowIssues && 
         (<button onClick={() => setIssuesPopup(true)}>Issues Found</button>)
       }
@@ -39,6 +40,7 @@ function App() {
         </div>
         <Essentials />
 
+        {/* Notes Popup */}
         <button onClick={() => setNotesPopup(true)}>Edit Notes</button>
         <Medical />
         <div id="calf-container">
@@ -46,7 +48,7 @@ function App() {
         </div>
       </main>
 
-      {/* What we see if the button popup is pressed */}
+      {/* What we see if popup buttons are pressed */}
       <Popup trigger={issuesPopup} setTrigger={setIssuesPopup}>
         <h3>Issues Found</h3>
       </Popup>
