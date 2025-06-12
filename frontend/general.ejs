@@ -111,7 +111,7 @@
                     document.getElementById('observations').innerHTML = `<table>${notesTable}</table>`;
 
                 } else {
-                    alert('Cow not found');
+                    alert(`Cow ${data.cowData} not found`);
                 }
             } catch (error) {
                 console.error('Error fetching cow data:', error);
