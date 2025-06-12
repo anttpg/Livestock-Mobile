@@ -69,9 +69,10 @@ button:hover {
 }
 
 #containers-wrapper {
-    display: flex;
-    justify-content: space-between; /* Adjusts the spacing between the two containers */
-    margin-top: 20px; /* Add margin as necessary */
+    display: flex;  /* This turns the container into a flex container */
+    align-items: flex-start; /* Aligns items to the start of the flex line */
+    justify-content: flex-start; /* Aligns items to the left */
+    gap: 20px;/* Add margin as necessary */
 }
 
 #calf-container, #observations-container {
@@ -91,7 +92,17 @@ button:hover {
     border-radius: 5px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     margin-left: 20px;
-    margin-bottom: 10px; /* Consistent margin with other containers */
+    margin-bottom: 10px; 
+}
+
+#allmedical-container{
+    background-color: white;
+    padding: 20px;
+    width: 300px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-left: 20px;
+    margin-bottom: 10px;
 }
 
 table {

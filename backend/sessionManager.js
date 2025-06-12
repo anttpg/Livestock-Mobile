@@ -188,8 +188,27 @@ app.get('/api/cow/:tag',
       console.error('Error fetching cow data:', err);
       res.status(500).json({ error: err.message });
     }
-  }
-);
+
+app.get('/api/cow/:tag', (req, res) => {
+    const child = fork(path.join(__dirname, 'sessionInstance.js'));
+
+    child.send({ action: 'fetchCowData', dbConfig: req.session.dbConfig, cowTag: req.params.tag });
+
+    child.on('message', (message) => {
+        if (message.success) {
+            res.json(message.data);
+        } else {
+            res.status(500).json({ error: message.error });
+        }
+    });
+});
+
+app.get('/medical', (req, res) => {
+    res.render('medical');
+});
+
+
+// Start the server
 
 // OPTIONAL: Prepare for HTTPS enforcement (commented out until you want it)
 // function enforceHTTPS(req, res, next) {
