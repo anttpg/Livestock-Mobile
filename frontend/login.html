@@ -7,7 +7,7 @@
 </head>
 <body>
     <h1>Login</h1>
-    <form id="loginForm">
+    <form id="loginForm" method="POST">
         <label for="username">Username:</label>
         <input type="text" id="username" name="username" required><br>
         <label for="password">Password:</label>
@@ -17,20 +17,18 @@
 
     <script>
         document.getElementById('loginForm').addEventListener('submit', async (event) => {
-            event.preventDefault();
+            event.preventDefault(); // Prevent default form submission
             const formData = new FormData(event.target);
             const formObject = Object.fromEntries(formData.entries());
-
+    
             try {
                 const response = await fetch('/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    credentials: 'include', // Include credentials in the request
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include', // Include cookies for session management
                     body: JSON.stringify(formObject)
                 });
-
+    
                 const result = await response.json();
                 if (result.success) {
                     alert('Login successful');
@@ -44,5 +42,6 @@
             }
         });
     </script>
+    
 </body>
 </html>
