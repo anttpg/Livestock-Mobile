@@ -1,6 +1,6 @@
 
 const sql = require('mssql');
-const { fetchCowData } = require('./dbOperations');
+const { fetchCowData } = require('../db/dbOperations');
 require('dotenv').config();
 
 process.on('message', async (message) => {

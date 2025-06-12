@@ -6,11 +6,11 @@ async function fetchCowData(cowTag) {
     cowDataRequest.input('cowTag', sql.NVarChar, cowTag);
     const cowDataQuery = `
         SELECT 
-            CowTagMain, DateOfBirth, Weight, Notes AS Description, HeadshotPath, BodyPath, CurrentHerd
+            CowTag, DateOfBirth, CurrentWeight, Description, HeadshotPath, BodyPath
         FROM 
             CowTable 
         WHERE 
-            CowTagMain = @cowTag`;
+            CowTag = @cowTag`;
     const cowData = await cowDataRequest.query(cowDataQuery);
 
     const medicalRecordsRequest = new sql.Request();
@@ -19,7 +19,7 @@ async function fetchCowData(cowTag) {
         SELECT 
             MedicineApplied, TreatmentDate, Observation, Treatment, TreatmentResponse 
         FROM 
-            MedicalRecords 
+            MedicalTable 
         WHERE 
             CowTag = @cowTag`;
     const medicalRecords = await medicalRecordsRequest.query(medicalRecordsQuery);
@@ -39,11 +39,11 @@ async function fetchCowData(cowTag) {
     calvesRequest.input('cowTag', sql.NVarChar, cowTag);
     const calvesQuery = `
         SELECT 
-            CowTagMain AS CalfTag, DateOfBirth AS DOB
+            CowTag AS CalfTag, DateOfBirth AS DOB
         FROM 
             CowTable
         WHERE 
-            MotherTag = @cowTag OR FatherTag = @cowTag`;
+            [Dam (Mother)] = @cowTag OR [Sire (Father)] = @cowTag`;
     const calves = await calvesRequest.query(calvesQuery);
 
     return {
