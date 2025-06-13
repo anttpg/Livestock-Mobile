@@ -20,6 +20,13 @@
     "express-session": "^1.18.1",
     "express-validator": "^7.1.0",
     "helmet": "^8.0.0",
-    "mssql": "^11.0.1"
+    "mssql": "^11.0.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.5.2",
+    "vite": "^6.3.5"
   }
 }
