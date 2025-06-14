@@ -11,43 +11,27 @@ function SearchBar({ onSearch, placeholder = "Search by tag", buttonImage = "/im
 
   const imageStyle = {
     position: 'absolute',
-    top: '10%',
-    left: '10%',
-    width: '80%',
-    height: '80%',
+    top: '0%',
+    left: '0%',
+    width: '100%',
+    height: '100%',
     objectFit: 'contain'
   };
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
       <input 
+        id="search-bar"
         type="text"
         value={searchValue}
         onChange={(e) => setSearchValue(e.target.value)}
         placeholder={placeholder}
         required
-        style={{
-          padding: '8px 12px',
-          fontSize: '14px',
-          border: '2px solid #ccc',
-          borderRadius: '4px',
-          width: '250px',
-          height: '20px',
-          margin: 0
-        }}
       />
-      <button type="submit" 
-        style={{
-          position: 'relative',
-          width: '40px',
-          height: '40px',
-          padding: '0',
-          border: 'none',
-          cursor: 'pointer',
-          overflow: 'hidden',
-          backgroundColor: '#7dbdce',
-          margin: 0
-        }}>
+      <button
+        id="search-button"
+        type="submit"
+      >
         <img src={buttonImage} alt="Search" style={imageStyle} />
       </button>
     </form>

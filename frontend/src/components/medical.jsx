@@ -45,41 +45,11 @@ function Medical() {
     alert('Add new issue functionality coming soon!');
   };
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('/api/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        window.location.href = '/login';
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
   const cow = cowData?.cowData?.[0];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Medical Records</h1>
-        <button 
-          onClick={handleLogout}
-          style={{
-            backgroundColor: '#dc3545',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Logout
-        </button>
-      </div>
+      <h1>Medical Records</h1>
 
       <div id="containers-wrapper">
         <div id="main-container">
@@ -176,8 +146,6 @@ function Medical() {
           placeholder="Medical Record Search: Cow Tag #"
         />
       </div>
-
-      <Link to="/general" className="button">General Page</Link>
     </div>
   );
 }

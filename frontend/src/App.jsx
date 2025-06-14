@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import General from './components/General';
-import Medical from './components/Medical';
-import Login from './components/Login';
+import General from './components/general';
+import Medical from './components/medical';
+import Login from './components/login';
+import Layout from './components/layout';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -63,13 +64,20 @@ function App() {
         />
         <Route
           path="/general"
-          element={isAuthenticated ? <General /> : <Navigate to="/login" replace />}
+          element={
+            isAuthenticated 
+              ? <Layout><General /></Layout> 
+              : <Navigate to="/login" replace />
+          }
         />
         <Route
           path="/medical"
-          element={isAuthenticated ? <Medical /> : <Navigate to="/login" replace />}
+          element={
+            isAuthenticated 
+              ? <Layout><Medical /></Layout> 
+              : <Navigate to="/login" replace />
+          }
         />
-        
         {/* Catch all */}
         <Route path="*" element={<Navigate to="/general" replace />} />
       </Routes>

@@ -85,41 +85,11 @@ function General() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch('/api/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        window.location.href = '/login';
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
   const cow = cowData?.cowData?.[0];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Cow Data</h1>
-        <button 
-          onClick={handleLogout}
-          style={{
-            backgroundColor: '#dc3545',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Logout
-        </button>
-      </div>
+      <h1>Cow Data</h1>
 
       <div id="search-container">
         <SearchBar onSearch={handleSearch} />
@@ -261,12 +231,6 @@ function General() {
             </form>
           </div>
         </div>
-      </div>
-
-      <br />
-      <div id="other-pages">
-        <Link to="/medical" className="button">Medical Records</Link>
-        <a href="/breeding" className="button" style={{ marginLeft: '10px' }}>Breeding Records</a>
       </div>
     </div>
   );
