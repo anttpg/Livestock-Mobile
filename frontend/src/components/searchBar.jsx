@@ -1,24 +1,12 @@
 import React, { useState } from 'react';
 
-// This is a reusable component - like a class you can instantiate multiple times
-function SearchBar({ onSearch, placeholder = "Search by cow tag", buttonImage = "/images/search-icon.png" }) {
+
+function SearchBar({ onSearch, placeholder = "Search by tag", buttonImage = "/images/search-icon.png" }) {
   const [searchValue, setSearchValue] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Call the parent's callback function with the search value
     onSearch(searchValue);
-  };
-
-  const buttonStyle = {
-    position: 'relative',
-    width: '40px',
-    height: '40px',
-    padding: '0',
-    border: 'none',
-    cursor: 'pointer',
-    overflow: 'hidden',
-    backgroundColor: '#28a745'
   };
 
   const imageStyle = {
@@ -31,7 +19,7 @@ function SearchBar({ onSearch, placeholder = "Search by cow tag", buttonImage = 
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
       <input 
         type="text"
         value={searchValue}
@@ -43,10 +31,23 @@ function SearchBar({ onSearch, placeholder = "Search by cow tag", buttonImage = 
           fontSize: '14px',
           border: '2px solid #ccc',
           borderRadius: '4px',
-          width: '250px'
+          width: '250px',
+          height: '20px',
+          margin: 0
         }}
       />
-      <button type="submit" style={buttonStyle}>
+      <button type="submit" 
+        style={{
+          position: 'relative',
+          width: '40px',
+          height: '40px',
+          padding: '0',
+          border: 'none',
+          cursor: 'pointer',
+          overflow: 'hidden',
+          backgroundColor: '#7dbdce',
+          margin: 0
+        }}>
         <img src={buttonImage} alt="Search" style={imageStyle} />
       </button>
     </form>
