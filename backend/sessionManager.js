@@ -1,69 +1,89 @@
-// sessionManager.js
+// sessionManager.js - API ONLY VERSION
 const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const bodyParser = require("body-parser");
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const cors = require('cors');
 const { fetchCowData } = require('../db/dbOperations');
 const { body, validationResult } = require('express-validator');
-// or your custom validators, plus csurf, sanitizeHtml, etc.
 
 require('dotenv').config();
 
 const app = express();
 
+// CORS configuration for development
+const allowedOrigins = [
+  'http://localhost',
+  'http://localhost:80',
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'https://localhost',
+  'https://localhost:443'
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true // Allow cookies
+}));
+
 // Helmet for security headers
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable for development
+}));
 
 // Body parser
 app.use(bodyParser.json({ limit: '1mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 
-// Session with 1-hour max age + secure + sameSite
+// Session configuration
 app.use(session({
-  secret: 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,           // or true if behind HTTPS proxy
+    secure: false,           // Set to true in production with HTTPS
     httpOnly: true,
     sameSite: 'lax',
     maxAge: 3600000          // 1 hour
   }
 }));
 
-// Example specialized login rate limiter
+// Rate limiters
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 5,
   message: "Too many login attempts, please try again later."
 });
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../frontend')));
-app.use('/images', express.static(path.join(__dirname, '../images')));
-
-// EJS setup
-app.set('views', path.join(__dirname, '../frontend'));
-app.set('view engine', 'ejs');
-
-// ------------- LOGIN ROUTES ------------- //
-
-// Show login page
-app.get('/login', (req, res) => {
-  if (req.session.user) {
-    return res.redirect('/general');
-  }
-  res.sendFile(path.join(__dirname, '../frontend', 'login.html'));
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100
 });
 
-// Handle login
-app.post('/login',
+// Apply rate limiter to all API routes
+app.use('/api/', apiLimiter);
+
+// Serve static images
+app.use('/images', express.static(path.join(__dirname, '../images')));
+
+// ------------- AUTH ROUTES ------------- //
+
+// Login endpoint
+app.post('/api/login',
   loginLimiter,
-  // Basic validation
   [
-    body('username').isString().notEmpty(),
+    body('username').isString().trim().notEmpty(),
     body('password').isString().notEmpty()
   ],
   (req, res) => {
@@ -74,68 +94,51 @@ app.post('/login',
 
     const { username, password } = req.body;
 
-    // Placeholder: Validate user in an "App" sense:
-    // e.g., check if username/password is correct in a users table, etc.
+    // TODO: Replace with real authentication against database
     if (username === 'testUser' && password === 'testPass') {
-      // Mark user as logged in (store only username in session)
       req.session.user = { username };
       req.session.save(() => {
-        return res.json({ success: true, redirect: '/general' });
+        return res.json({ success: true, user: { username } });
       });
     } else {
-      return res.json({ success: false, message: 'Invalid username or password' });
+      return res.status(401).json({ success: false, message: 'Invalid username or password' });
     }
   }
 );
 
-// Log out route
-app.get('/logout', (req, res) => {
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {
-      return res.status(500).send('Error logging out.');
+      return res.status(500).json({ error: 'Error logging out' });
     }
     res.clearCookie('connect.sid');
-    res.redirect('/');
+    res.json({ success: true });
   });
 });
 
-// ------------- AUTH CHECK MIDDLEWARE -------------
-app.use((req, res, next) => {
-  // Allow free access to root, /login, or any static resources
-  if (
-    req.path === '/' ||
-    req.path === '/login' ||
-    req.path.startsWith('/images') ||
-    req.path.startsWith('/css')
-  ) {
-    return next();
+// Auth check endpoint
+app.get('/api/check-auth', (req, res) => {
+  if (req.session.user) {
+    res.json({ authenticated: true, user: req.session.user });
+  } else {
+    res.status(401).json({ authenticated: false });
   }
+});
 
-  // Check session
+// ------------- API MIDDLEWARE ------------- //
+
+// API authentication middleware
+const apiAuth = (req, res, next) => {
   if (!req.session.user) {
-    return res.redirect('/');
+    return res.status(401).json({ error: 'Not authenticated' });
   }
   next();
-});
+};
 
-// ------------- ROUTES -------------
-app.get('/', (req, res) => {
-  if (req.session.user) {
-    return res.redirect('/general');
-  }
-  res.sendFile(path.join(__dirname, '../frontend', 'login.html'));
-});
+// ------------- DATA ROUTES ------------- //
 
-app.get('/general', (req, res) => {
-  res.render('general'); // EJS view
-});
-
-// e.g. /medical route
-app.get('/medical', (req, res) => {
-  res.render('medical');
-});
-
-// New observation validations
+// Observation validation
 const addObservationValidation = [
   body('cowTag').isString().trim().notEmpty().matches(/^[A-Za-z0-9-]+$/),
   body('note').isString().trim().notEmpty(),
@@ -149,11 +152,11 @@ const addObservationValidation = [
   }
 ];
 
-app.post('/add-observation', addObservationValidation, async (req, res) => {
+// Add observation
+app.post('/api/add-observation', apiAuth, addObservationValidation, async (req, res) => {
   const { note, dateOfEntry, cowTag } = req.body;
   try {
-    // Insert into DB using your single pool approach
-    const { pool, sql } = require('./db');
+    const { pool, sql } = require('../db/db');
     await pool.connect();
     const request = pool.request();
     request.input('note', sql.NVarChar, note);
@@ -171,9 +174,9 @@ app.post('/add-observation', addObservationValidation, async (req, res) => {
   }
 });
 
-// Cow data route
+// Get cow data
 app.get('/api/cow/:tag',
-  // Validate the :tag param
+  apiAuth,
   (req, res, next) => {
     if (!/^[A-Za-z0-9-]+$/.test(req.params.tag)) {
       return res.status(400).json({ error: 'Invalid cow tag format' });
@@ -188,38 +191,28 @@ app.get('/api/cow/:tag',
       console.error('Error fetching cow data:', err);
       res.status(500).json({ error: err.message });
     }
+  }
+);
 
-app.get('/api/cow/:tag', (req, res) => {
-    const child = fork(path.join(__dirname, 'sessionInstance.js'));
-
-    child.send({ action: 'fetchCowData', dbConfig: req.session.dbConfig, cowTag: req.params.tag });
-
-    child.on('message', (message) => {
-        if (message.success) {
-            res.json(message.data);
-        } else {
-            res.status(500).json({ error: message.error });
-        }
-    });
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/medical', (req, res) => {
-    res.render('medical');
+// 404 handler for unmatched API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
 });
-
-
-// Start the server
-
-// OPTIONAL: Prepare for HTTPS enforcement (commented out until you want it)
-// function enforceHTTPS(req, res, next) {
-//   if (!req.secure) {
-//     return res.redirect('https://' + req.headers.host + req.url);
-//   }
-//   next();
-// }
-// app.use(enforceHTTPS); // Uncomment to force HTTPS
 
 // Start server
-app.listen(3000, () => {
-  console.log('Session Manager running on port 3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`API Server running on port ${PORT}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('Frontend can be accessed at one of these URLs:');
+  console.log('  • http://localhost        (if using port 80)');
+  console.log('  • http://localhost:8080   (if using port 8080)');
+  console.log('  • https://localhost       (if using port 443 with SSL)');
+  console.log('  • http://localhost:5173   (default Vite port)');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });

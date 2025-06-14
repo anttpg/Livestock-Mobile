@@ -1,44 +1,49 @@
-// dbOperations.js
-const { pool, sql } = require('./db');
+
+const sql = require('mssql');
 
 async function fetchCowData(cowTag) {
-    await pool.connect(); // ensure pool is connected
-    const request = pool.request();
-    request.input('cowTag', sql.NVarChar, cowTag);
-
+    const cowDataRequest = new sql.Request();
+    cowDataRequest.input('cowTag', sql.NVarChar, cowTag);
     const cowDataQuery = `
-        SELECT CowTagMain, DateOfBirth, Weight, Notes AS Description, HeadshotPath, BodyPath
-        FROM CowTable 
-        WHERE CowTagMain = @cowTag
-    `;
-    const cowData = await request.query(cowDataQuery);
+        SELECT 
+            CowTag, DateOfBirth, CurrentWeight, Description, HeadshotPath, BodyPath
+        FROM 
+            CowTable 
+        WHERE 
+            CowTag = @cowTag`;
+    const cowData = await cowDataRequest.query(cowDataQuery);
 
-    // re-use the same connection/pool for each query
-    const medRequest = pool.request();
-    medRequest.input('cowTag', sql.NVarChar, cowTag);
+    const medicalRecordsRequest = new sql.Request();
+    medicalRecordsRequest.input('cowTag', sql.NVarChar, cowTag);
     const medicalRecordsQuery = `
-        SELECT MedicineApplied, TreatmentDate 
-        FROM MedicalRecords 
-        WHERE CowTag = @cowTag
-    `;
-    const medicalRecords = await medRequest.query(medicalRecordsQuery);
+        SELECT 
+            MedicineApplied, TreatmentDate, Observation, Treatment, TreatmentResponse 
+        FROM 
+            MedicalTable 
+        WHERE 
+            CowTag = @cowTag`;
+    const medicalRecords = await medicalRecordsRequest.query(medicalRecordsQuery);
 
-    const notesRequest = pool.request();
+    const notesRequest = new sql.Request();
     notesRequest.input('cowTag', sql.NVarChar, cowTag);
     const notesQuery = `
-        SELECT Note, DateOfEntry 
-        FROM Notes 
-        WHERE CowTag = @cowTag
-    `;
+        SELECT 
+            Note, DateOfEntry 
+        FROM 
+            Notes 
+        WHERE 
+            CowTag = @cowTag`;
     const notes = await notesRequest.query(notesQuery);
 
-    const calvesRequest = pool.request();
+    const calvesRequest = new sql.Request();
     calvesRequest.input('cowTag', sql.NVarChar, cowTag);
     const calvesQuery = `
-        SELECT CowTagMain AS CalfTag, DateOfBirth AS DOB
-        FROM CowTable
-        WHERE MotherTag = @cowTag OR FatherTag = @cowTag
-    `;
+        SELECT 
+            CowTag AS CalfTag, DateOfBirth AS DOB
+        FROM 
+            CowTable
+        WHERE 
+            [Dam (Mother)] = @cowTag OR [Sire (Father)] = @cowTag`;
     const calves = await calvesRequest.query(calvesQuery);
 
     return {
@@ -49,4 +54,6 @@ async function fetchCowData(cowTag) {
     };
 }
 
-module.exports = { fetchCowData };
+module.exports = {
+    fetchCowData
+};
