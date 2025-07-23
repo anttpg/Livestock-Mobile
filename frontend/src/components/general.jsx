@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import SearchBar from './searchBar';
+import Notes from './notes';
+import Minimap from './minimap'; // Assuming this component exists
 
 function General() {
   const [cowTag, setCowTag] = useState('');
   const [cowData, setCowData] = useState(null);
-  const [newObservation, setNewObservation] = useState('');
 
   const formatDate = (dateString) => {
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
@@ -40,196 +41,198 @@ function General() {
     }
   };
 
-  const handleAddObservation = async (e) => {
-    e.preventDefault();
-    const dateOfNote = new Date().toISOString();
-
-    try {
-      const response = await fetch('/api/add-observation', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ 
-          note: newObservation, 
-          dateOfEntry: dateOfNote, 
-          cowTag: cowTag 
-        })
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.href = '/login';
-          return;
-        }
-        throw new Error('Failed to add observation');
-      }
-
-      const responseData = await response.json();
-      
-      if (responseData.success) {
-        // Update local state to show new observation
-        setCowData(prev => ({
-          ...prev,
-          notes: [...prev.notes, { Note: newObservation, DateOfEntry: dateOfNote }]
-        }));
-        
-        setNewObservation('');
-        alert('Observation added successfully');
-      }
-    } catch (error) {
-      console.error('Error submitting observation:', error);
-      alert('Error adding observation');
-    }
+  const handleCalfView = (calfTag) => {
+    // Store current cow for back navigation
+    sessionStorage.setItem('previousCow', cowTag);
+    handleSearch(calfTag);
   };
+
+  // Check if we should show back navigation
+  const previousCow = sessionStorage.getItem('previousCow');
 
   const cow = cowData?.cowData?.[0];
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <h1>Cow Data</h1>
 
       <div id="search-container">
         <SearchBar onSearch={handleSearch} />
+        {previousCow && (
+          <button 
+            onClick={() => handleSearch(previousCow)}
+            style={{ marginLeft: '10px', padding: '5px 10px' }}
+          >
+            ← Back to {previousCow}
+          </button>
+        )}
       </div>
 
-      <div id="wrapper">
-        <div id="image-container">
-          <img 
-            id="body-image" 
-            src={cow?.BodyPath || '/images/example-cow.jpg'} 
-            width="200" 
-            height="200" 
-            alt="cow body" 
-          />
-          <img 
-            id="headshot-image" 
-            src={cow?.HeadshotPath || '/images/cow-headshot.jpg'} 
-            width="200" 
-            height="200" 
-            alt="cow headshot" 
-          />
+      {/* SECTION 1: Images and Basic Info */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '20px',
+        border: '1px solid #ccc',
+        padding: '15px',
+        borderRadius: '5px',
+        minHeight: '420px'
+      }}>
+        {/* Left side - Images (expand with page growth) */}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '10px',
+          flex: 1,
+          minWidth: '200px',
+          aspectRatio: '2 / 3', // Maintain square per image (2 images stacked = 1:2 ratio)
+          maxWidth: '100%'
+        }}>
+          <div style={{ 
+            flex: 1,
+            overflow: 'hidden',
+            borderRadius: '5px',
+            position: 'relative',
+            width: '100%'
+          }}>
+            <img 
+              src={cow?.HeadshotPath || '/images/cow-headshot.jpg'} 
+              alt="cow headshot"
+              style={{ 
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                minWidth: '100%',
+                minHeight: '100%'
+              }}
+            />
+          </div>
+          <div style={{ 
+            flex: 1,
+            overflow: 'hidden',
+            borderRadius: '5px',
+            position: 'relative',
+            width: '100%'
+          }}>
+            <img 
+              src={cow?.BodyPath || '/images/example-cow.jpg'} 
+              alt="cow body"
+              style={{ 
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                minWidth: '100%',
+                minHeight: '100%'
+              }}
+            />
+          </div>
         </div>
         
-        <div id="main-container">
-          <div id="info-container">
+        {/* Right side - Minimap and Info (fixed width) */}
+        <div style={{ 
+          width: '200px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '15px',
+          flexShrink: 0
+        }}>
+          {/* Minimap Component */}
+          <div style={{ 
+            width: '200px', 
+            height: '200px', 
+            borderRadius: '5px' 
+          }}>
+            <Minimap cowTag={cowTag} />
+          </div>
+          
+          {/* Basic Info */}
+          <div>
             <h3>Date of Birth:</h3>
-            <span id="dob">
-              {cow ? formatDate(cow.DateOfBirth) : <i>YYYY-MM-DD</i>}
+            <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+              {cow ? formatDate(cow.DateOfBirth) : 'YYYY-MM-DD'}
             </span>
             
-            <h3>Current Weight:</h3>
-            <span id="weight">
-              {cow ? cow.CurrentWeight : <i>Weight of Cow.</i>}
+            <h3>Last Weight:</h3>
+            <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+              {cow ? cow.CurrentWeight : 'Weight of Cow.'}
+            </span>
+            
+            <h3>Temperament:</h3>
+            <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+              {cow ? cow.Temperament : 'Temperament of cow'}
             </span>
             
             <h3>Other Descriptors:</h3>
-            <span id="cow-description">
-              {cow ? cow.Description : <i>Description of Cow's attributes.</i>}
+            <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+              {cow ? cow.Description : 'Description of Cow\'s attributes.'}
             </span>
-            
-            <div id="medications-container">
-              <h3>Current Medications:</h3>
-              <div id="medications-table">
-                {cowData?.medicalRecords && cowData.medicalRecords.length > 0 && (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style={{border: '2px double black'}}>Medication</th>
-                        <th style={{border: '2px double black'}}>Start Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cowData.medicalRecords.map((med, index) => (
-                        <tr key={index}>
-                          <td style={{border: '2px double black'}}>{med.MedicineApplied}</td>
-                          <td style={{border: '2px double black'}}>{formatDate(med.TreatmentDate)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      <div id="containers-wrapper">
-        <div id="calf-container">
-          <div id="calf-data">
-            <h3>Current Calves:</h3>
-            <div id="calves-table">
-              {cowData?.calves && cowData.calves.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{border: '2px double black'}}>Calf Tag</th>
-                      <th style={{border: '2px double black'}}>DOB</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cowData.calves.map((calf, index) => (
-                      <tr key={index}>
-                        <td style={{border: '2px double black'}}>{calf.CalfTag}</td>
-                        <td style={{border: '2px double black'}}>{formatDate(calf.DOB)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* SECTION 2: Notes */}
+      <div style={{ 
+        border: '1px solid #ccc',
+        padding: '15px',
+        borderRadius: '5px'
+      }}>
+        <Notes cowTag={cowTag} cowData={cowData} />
+      </div>
 
-        <div id="observations-container">
-          <div id="recent-observations">
-            <h3>Recent Observations:</h3>
-            <div id="observations">
-              {cowData?.notes && cowData.notes.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{border: '2px double black'}}>Note</th>
-                      <th style={{border: '2px double black'}}>Date Of Entry</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cowData.notes.map((note, index) => (
-                      <tr key={index}>
-                        <td style={{border: '2px double black'}}>{note.Note}</td>
-                        <td style={{border: '2px double black'}}>{formatDate(note.DateOfEntry)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+      {/* SECTION 3: Current Calves */}
+      <div style={{ 
+        border: '1px solid #ccc',
+        padding: '15px',
+        borderRadius: '5px'
+      }}>
+        <h3>Current Calves:</h3>
+        <div style={{ marginTop: '10px' }}>
+          {cowData?.calves && cowData.calves.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ border: '2px double black', padding: '8px' }}>Calf Tag</th>
+                  <th style={{ border: '2px double black', padding: '8px' }}>DOB</th>
+                  <th style={{ border: '2px double black', padding: '8px' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cowData.calves.map((calf, index) => (
+                  <tr key={index}>
+                    <td style={{ border: '2px double black', padding: '8px' }}>{calf.CalfTag}</td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>{formatDate(calf.DOB)}</td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>
+                      <button 
+                        onClick={() => handleCalfView(calf.CalfTag)}
+                        style={{ 
+                          padding: '5px 15px',
+                          backgroundColor: '#007bff',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        VIEW
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ 
+              padding: '20px', 
+              textAlign: 'center',
+              fontStyle: 'italic',
+              color: '#666',
+              border: '2px dashed #ccc',
+              borderRadius: '5px'
+            }}>
+              No calves on record or no cow selected
             </div>
-          </div>
-
-          <div id="new-observations">
-            <h3>New Observations:</h3>
-            <form onSubmit={handleAddObservation}>
-              <textarea
-                style={{
-                  width: '400px', 
-                  height: '200px',
-                  padding: '8px',
-                  fontSize: '14px',
-                  border: '2px solid #ccc',
-                  borderRadius: '4px'
-                }} 
-                value={newObservation}
-                onChange={(e) => setNewObservation(e.target.value)}
-                placeholder="Enter observation..."
-                required
-              />
-              <br />
-              <button type="submit" style={{ marginTop: '10px' }}>Add</button>
-            </form>
-          </div>
+          )}
         </div>
       </div>
     </div>

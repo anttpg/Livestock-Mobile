@@ -1,4 +1,4 @@
-// sessionManager.js - API ONLY VERSION
+// sessionManager.js - Updated to use centralized API wrapper
 const express = require('express');
 const path = require('path');
 const session = require('express-session');
@@ -6,8 +6,12 @@ const bodyParser = require("body-parser");
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cors = require('cors');
-const { fetchCowData } = require('../db/dbOperations');
-const { body, validationResult } = require('express-validator');
+
+// Import new centralized modules
+const apiWrapper = require('../db/api');
+const { authenticate } = require('../db/accessControl');
+const { createValidationMiddleware, getValidationRules } = require('../db/inputValidation');
+const localFileOps = require('../db/local');
 
 require('dotenv').config();
 
@@ -25,7 +29,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -34,7 +37,7 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true // Allow cookies
+  credentials: true
 }));
 
 // Helmet for security headers
@@ -52,10 +55,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,           // Set to true in production with HTTPS
+    secure: false,
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 3600000          // 1 hour
+    maxAge: 3600000 // 1 hour
   }
 }));
 
@@ -74,34 +77,54 @@ const apiLimiter = rateLimit({
 // Apply rate limiter to all API routes
 app.use('/api/', apiLimiter);
 
-// Serve static images
-app.use('/images', express.static(path.join(__dirname, '../images')));
+// Serve static images - now using local file operations
+app.use('/images', express.static(path.join(__dirname, '../files/images')));
+app.use('/documents', express.static(path.join(__dirname, '../files/documents')));
 
-// ------------- AUTH ROUTES ------------- //
+// Configure multer for file uploads
+const upload = localFileOps.configureMulter();
 
-// Login endpoint
+// AUTH ROUTES //
+
+// Login endpoint - now uses centralized authentication
 app.post('/api/login',
   loginLimiter,
-  [
-    body('username').isString().trim().notEmpty(),
-    body('password').isString().notEmpty()
-  ],
-  (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { username, password } = req.body;
-
-    // TODO: Replace with real authentication against database
-    if (username === 'testUser' && password === 'testPass') {
-      req.session.user = { username };
-      req.session.save(() => {
-        return res.json({ success: true, user: { username } });
+  createValidationMiddleware('login'),
+  async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      const authResult = await authenticate(username, password);
+      
+      if (authResult.success) {
+        req.session.user = authResult.user;
+        
+        // Store database config if SQL authentication
+        if (authResult.dbConfig) {
+          req.session.dbUser = username;
+          req.session.dbPassword = password;
+          req.session.dbConfig = authResult.dbConfig;
+        }
+        
+        req.session.save(() => {
+          return res.json({ 
+            success: true, 
+            user: authResult.user,
+            authMode: process.env.AUTH_MODE || 'temp'
+          });
+        });
+      } else {
+        return res.status(401).json({ 
+          success: false, 
+          message: authResult.message 
+        });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Authentication service error' 
       });
-    } else {
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
     }
   }
 );
@@ -120,83 +143,208 @@ app.post('/api/logout', (req, res) => {
 // Auth check endpoint
 app.get('/api/check-auth', (req, res) => {
   if (req.session.user) {
-    res.json({ authenticated: true, user: req.session.user });
+    res.json({ 
+      authenticated: true, 
+      user: req.session.user,
+      authMode: process.env.AUTH_MODE || 'temp'
+    });
   } else {
     res.status(401).json({ authenticated: false });
   }
 });
 
-// ------------- API MIDDLEWARE ------------- //
-
-// API authentication middleware
-const apiAuth = (req, res, next) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  next();
-};
-
-// ------------- DATA ROUTES ------------- //
-
-// Observation validation
-const addObservationValidation = [
-  body('cowTag').isString().trim().notEmpty().matches(/^[A-Za-z0-9-]+$/),
-  body('note').isString().trim().notEmpty(),
-  body('dateOfEntry').optional().isISO8601().toDate(),
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-    next();
-  }
-];
-
-// Add observation
-app.post('/api/add-observation', apiAuth, addObservationValidation, async (req, res) => {
-  const { note, dateOfEntry, cowTag } = req.body;
-  try {
-    const { pool, sql } = require('../db/db');
-    await pool.connect();
-    const request = pool.request();
-    request.input('note', sql.NVarChar, note);
-    request.input('dateOfEntry', sql.DateTime, dateOfEntry || new Date());
-    request.input('cowTag', sql.NVarChar, cowTag);
-
-    const query = `INSERT INTO Notes (Note, DateOfEntry, CowTag)
-                   VALUES (@note, @dateOfEntry, @cowTag)`;
-    await request.query(query);
-
-    return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('Error inserting observation:', err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
+// DATA ROUTES - Now using API wrapper with forced validation //
 
 // Get cow data
-app.get('/api/cow/:tag',
-  apiAuth,
-  (req, res, next) => {
-    if (!/^[A-Za-z0-9-]+$/.test(req.params.tag)) {
-      return res.status(400).json({ error: 'Invalid cow tag format' });
-    }
-    next();
-  },
+app.get('/api/cow/:tag', 
+  createValidationMiddleware('getCowData'),
+  async (req, res) => {
+    return apiWrapper.getCowData(req, res, getValidationRules('getCowData'));
+  }
+);
+
+// Add observation
+app.post('/api/add-observation',
+  createValidationMiddleware('addObservation'),
+  async (req, res) => {
+    return apiWrapper.addObservation(req, res, getValidationRules('addObservation'));
+  }
+);
+
+// Add medical record
+app.post('/api/add-medical-record',
+  createValidationMiddleware('addMedicalRecord'),
+  async (req, res) => {
+    return apiWrapper.addMedicalRecord(req, res, getValidationRules('addMedicalRecord'));
+  }
+);
+
+// Update cow weight
+app.post('/api/update-weight',
+  createValidationMiddleware('updateCowWeight'),
+  async (req, res) => {
+    return apiWrapper.updateCowWeight(req, res, getValidationRules('updateCowWeight'));
+  }
+);
+
+// Add new cow
+app.post('/api/add-cow',
+  createValidationMiddleware('addCow'),
+  async (req, res) => {
+    const { cowTag, dateOfBirth, description, dam, sire } = req.body;
+    return apiWrapper.executeOperation(req, res, getValidationRules('addCow'), 'addCow', {
+      cowTag, dateOfBirth, description, dam, sire
+    });
+  }
+);
+
+// Get all cows with pagination
+app.get('/api/cows', async (req, res) => {
+  const { page = 1, limit = 50, search = '' } = req.query;
+  return apiWrapper.executeOperation(req, res, [], 'getAllCows', {
+    page: parseInt(page),
+    limit: parseInt(limit),
+    search
+  });
+});
+
+// Delete cow
+app.delete('/api/cow/:tag',
+  createValidationMiddleware('deleteCow'),
+  async (req, res) => {
+    const cowTag = req.params.tag;
+    return apiWrapper.executeOperation(req, res, getValidationRules('deleteCow'), 'deleteCow', {
+      cowTag
+    });
+  }
+);
+
+// FILE UPLOAD ROUTES //
+
+// Upload cow image (headshot or body)
+app.post('/api/cow/:tag/upload-image',
+  upload.single('image'),
   async (req, res) => {
     try {
-      const data = await fetchCowData(req.params.tag);
-      res.json(data);
-    } catch (err) {
-      console.error('Error fetching cow data:', err);
-      res.status(500).json({ error: err.message });
+      if (!req.file) {
+        return res.status(400).json({ error: 'No image file provided' });
+      }
+
+      const { tag } = req.params;
+      const { imageType } = req.body; // 'headshot' or 'body'
+
+      const result = await localFileOps.saveCowImage({
+        cowTag: tag,
+        imageType: imageType,
+        fileBuffer: req.file.buffer,
+        originalFilename: req.file.originalname
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Image upload error:', error);
+      res.status(500).json({ error: error.message });
     }
   }
 );
 
+// Upload cow document
+app.post('/api/cow/:tag/upload-document',
+  upload.single('document'),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No document file provided' });
+      }
+
+      const { tag } = req.params;
+      const { documentType } = req.body;
+
+      const result = await localFileOps.saveDocument({
+        cowTag: tag,
+        documentType: documentType || 'general',
+        fileBuffer: req.file.buffer,
+        originalFilename: req.file.originalname
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Document upload error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// Get cow files list
+app.get('/api/cow/:tag/files', async (req, res) => {
+  try {
+    const { tag } = req.params;
+    const result = await localFileOps.listCowFiles({ cowTag: tag });
+    res.json(result);
+  } catch (error) {
+    console.error('File list error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Download cow image
+app.get('/api/cow/:tag/image/:imageType', async (req, res) => {
+  try {
+    const { tag, imageType } = req.params;
+    const result = await localFileOps.getCowImage({ cowTag: tag, imageType });
+    
+    if (result.success) {
+      res.set({
+        'Content-Type': result.mimeType,
+        'Content-Length': result.size,
+        'Content-Disposition': `inline; filename="${result.filename}"`
+      });
+      res.send(result.fileBuffer);
+    } else {
+      res.status(404).json({ error: result.message });
+    }
+  } catch (error) {
+    console.error('Image download error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MAINTENANCE ROUTES //
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    authMode: process.env.AUTH_MODE || 'temp',
+    version: '2.0.0'
+  });
+});
+
+// System info (admin only - TODO: implement role-based access)
+app.get('/api/system-info', async (req, res) => {
+  try {
+    res.json({
+      environment: process.env.NODE_ENV || 'development',
+      authMode: process.env.AUTH_MODE || 'temp',
+      localPath: process.env.LOCAL_PATH || './files',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get system info' });
+  }
+});
+
+// Cleanup old files (admin only)
+app.post('/api/cleanup-files', async (req, res) => {
+  try {
+    const { daysOld = 365 } = req.body;
+    const result = await localFileOps.cleanupOldFiles(daysOld);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 404 handler for unmatched API routes
@@ -204,15 +352,25 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
+});
+
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API Server running on port ${PORT}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('Frontend can be accessed at one of these URLs:');
-  console.log('  • http://localhost        (if using port 80)');
-  console.log('  • http://localhost:8080   (if using port 8080)');
-  console.log('  • https://localhost       (if using port 443 with SSL)');
-  console.log('  • http://localhost:5173   (default Vite port)');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`Authentication mode: ${process.env.AUTH_MODE || 'temp'}`);
+  console.log(`Local file path: ${process.env.LOCAL_PATH || './files'}`);
+  console.log('Available endpoints:');
+  console.log('Auth: /api/login, /api/logout, /api/check-auth');
+  console.log('Cows: /api/cows, /api/cow/:tag');
+  console.log('Data: /api/add-observation, /api/add-medical-record');
+  console.log('Files: /api/cow/:tag/upload-image, /api/cow/:tag/files');
+  console.log('Health: /api/health');
 });

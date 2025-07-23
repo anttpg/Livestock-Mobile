@@ -1,0 +1,4 @@
+Implement these API calls for the backend, used by the frontend;
+
+GET /api/cow/{searchTag} - needs to include Temperament field
+POST /api/add-observation - may need to track user inf
