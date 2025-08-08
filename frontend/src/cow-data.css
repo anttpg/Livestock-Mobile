@@ -1,10 +1,73 @@
+:root {
+        /* Large screens */
+    --bubble-padding: 15px;
+    --layout-padding: 20px;
+    --multibubble-gap: 20px;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --bubble-padding: 13px;
+        --layout-padding: 15px;
+        --multibubble-gap: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    :root {
+        --bubble-padding: 10px;
+        --layout-padding: 13px;
+        --multibubble-gap: 13px;
+    }
+}
+
+@media (max-width: 320px) {
+    :root {
+        --bubble-padding: 7px;
+        --layout-padding: 5px;
+        --multibubble-gap: 5px;
+    }
+}
+
+.layout-content {
+    padding: var(--layout-padding);
+}
+
+.bubble-container {
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: var(--bubble-padding);
+    gap: var(--bubble-padding);
+    background-color: white;
+}
+
 body {
+    margin: 0;
+    padding: 0;
     font-family: Arial, sans-serif;
     background-color: #f4f4f4;
-    margin: 0;
-    padding: 20px;
     color: #333;
 }
+
+.multibubble-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--multibubble-gap);
+}
+
+.multibubble-row {
+    display: flex;
+    gap: var(--multibubble-gap);
+}
+
+.multibubble-column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--multibubble-gap);
+}
+
+
+
 
 #other-pages {
     margin-bottom: 20px;
@@ -95,14 +158,14 @@ button:hover {
 }
 
 #containers-wrapper {
-    display: flex;  /* This turns the container into a flex container */
-    align-items: flex-start; /* Aligns items to the start of the flex line */
-    justify-content: flex-start; /* Aligns items to the left */
-    gap: 20px;/* Add margin as necessary */
+    display: flex; 
+    align-items: flex-start; 
+    justify-content: flex-start; 
+    gap: 20px;
 }
 
 #calf-container, #observations-container {
-    flex: 1; /* Makes each container take equal width */
+    flex: 1; 
     background-color: white;
     padding: 20px;
     border-radius: 5px;
@@ -145,4 +208,4 @@ th, td {
 
 th {
     background-color: #f8f9fa;
-}
+} 

@@ -73,7 +73,7 @@ function Medical() {
                   <tbody>
                     {cowData.medicalRecords.map((record, index) => (
                       <tr key={index}>
-                        <td style={{border: '2px double black'}}>{record.Observation || ''}</td>
+                        <td style={{border: '2px double black'}}>{record.IssueDescription || ''}</td>
                         <td style={{border: '2px double black'}}>
                           {record.TreatmentDate ? formatDate(record.TreatmentDate) : ''}
                         </td>
@@ -102,7 +102,7 @@ function Medical() {
                   <tbody>
                     {cowData.medicalRecords.map((med, index) => (
                       <tr key={index}>
-                        <td style={{border: '2px double black'}}>{med.MedicineApplied}</td>
+                        <td style={{border: '2px double black'}}>{med.TreatmentMedicine}</td>
                         <td style={{border: '2px double black'}}>{formatDate(med.TreatmentDate)}</td>
                       </tr>
                     ))}

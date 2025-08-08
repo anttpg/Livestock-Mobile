@@ -1,8 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const devMode = true;
+
+  // Update window width on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const toggleMenu = () => {
     setMenuOpen(!menuOpen);
@@ -149,8 +161,10 @@ function Header() {
           <span style={{...styles.menuLine, ...styles.menuLineBottom}}></span>
         </button>
 
-        {/* Title */}
-        <h1 style={styles.title}>Ranch Management System</h1>
+        {/* Title - switches based on devMode */}
+        <h1 style={styles.title}>
+          {devMode ? `DevMode, Width: ${windowWidth}px` : 'Ranch Management System'}
+        </h1>
 
         {/* Logout Button */}
         <button
@@ -170,6 +184,32 @@ function Header() {
       <nav style={styles.dropdown}>
         <ul style={styles.menuList}>
           <li style={styles.menuItem}>
+          <Link
+              to="/overview"
+              style={{
+                ...styles.menuLink,
+                ...(hoveredItem === 'overview' ? styles.menuLinkHover : {})
+              }}
+              onMouseEnter={() => setHoveredItem('overview')}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={closeMenu}
+            >
+              Overview
+            </Link>
+            <Link
+              to="/herds"
+              style={{
+                ...styles.menuLink,
+                ...(hoveredItem === 'herds' ? styles.menuLinkHover : {})
+              }}
+              onMouseEnter={() => setHoveredItem('herds')}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={closeMenu}
+            >
+              Herds
+            </Link>
+          </li>
+          <li style={styles.menuItem}>
             <Link
               to="/general"
               style={{
@@ -180,7 +220,7 @@ function Header() {
               onMouseLeave={() => setHoveredItem(null)}
               onClick={closeMenu}
             >
-              General Information
+              Find-A-Cow
             </Link>
           </li>
           <li style={styles.menuItem}>
@@ -208,35 +248,21 @@ function Header() {
               onMouseLeave={() => setHoveredItem(null)}
               onClick={closeMenu}
             >
-              Breeding Records
+              Breeding Plan
             </a>
           </li>
           <li style={styles.menuItem}>
             <a
-              href="/reports"
+              href="/fieldsheets"
               style={{
                 ...styles.menuLink,
-                ...(hoveredItem === 'reports' ? styles.menuLinkHover : {})
+                ...(hoveredItem === 'fieldsheets' ? styles.menuLinkHover : {})
               }}
-              onMouseEnter={() => setHoveredItem('reports')}
+              onMouseEnter={() => setHoveredItem('fieldsheets')}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={closeMenu}
             >
-              Reports & Analytics
-            </a>
-          </li>
-          <li style={styles.menuItem}>
-            <a
-              href="/settings"
-              style={{
-                ...styles.menuLink,
-                ...(hoveredItem === 'settings' ? styles.menuLinkHover : {})
-              }}
-              onMouseEnter={() => setHoveredItem('settings')}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={closeMenu}
-            >
-              Settings
+              Print Field Sheets
             </a>
           </li>
         </ul>

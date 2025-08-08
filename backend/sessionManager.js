@@ -1,4 +1,3 @@
-// sessionManager.js - Updated to use centralized API wrapper
 const express = require('express');
 const path = require('path');
 const session = require('express-session');
@@ -7,11 +6,10 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cors = require('cors');
 
-// Import new centralized modules
-const apiWrapper = require('../db/api');
-const { authenticate } = require('../db/accessControl');
-const { createValidationMiddleware, getValidationRules } = require('../db/inputValidation');
-const localFileOps = require('../db/local');
+const apiWrapper = require('../api/api');
+const { createValidationMiddleware } = require('./inputValidation');
+const { authenticate } = require('./accessControl');
+const localFileOps = require('../api/local');
 
 require('dotenv').config();
 
@@ -19,13 +17,17 @@ const app = express();
 
 // CORS configuration for development
 const allowedOrigins = [
-  'http://localhost',
-  'http://localhost:80',
   'http://localhost:8080',
-  'http://localhost:5173',
-  'https://localhost',
-  'https://localhost:443'
+  'http://192.168.1.242:8080'
 ];
+
+// Add host domain to allowed origins
+if (process.env.TUNNEL_HOST) {
+  allowedOrigins.push(`http://${process.env.TUNNEL_HOST}`);
+  allowedOrigins.push(`https://${process.env.TUNNEL_HOST}`);
+}
+
+console.log('Allowed origins:', allowedOrigins);
 
 app.use(cors({
   origin: function(origin, callback) {
@@ -34,6 +36,7 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.warn('Connection attempted from unauthorized origin. CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -62,35 +65,46 @@ app.use(session({
   }
 }));
 
+
+// Trust proxy specifically for Cloudflare
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+
 // Rate limiters
 const loginLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 5,
-  message: "Too many login attempts, please try again later."
+ windowMs: 60 * 1000, // 1 minute
+ max: 5,
+ message: "Too many login attempts, please try again later.",
+ keyGenerator: (req) => {
+   // Use CF-Connecting-IP header from Cloudflare, fallback to remote address
+   return req.get('CF-Connecting-IP') || req.ip || req.connection.remoteAddress;
+ }
 });
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100
-});
+// const apiLimiter = rateLimit({
+//  windowMs: 15 * 60 * 1000, // 15 minutes
+//  max: 1500,
+//  keyGenerator: (req) => {
+//    // Use CF-Connecting-IP header from Cloudflare, fallback to remote address
+//    return req.get('CF-Connecting-IP') || req.ip || req.connection.remoteAddress;
+//  }
+// });
 
-// Apply rate limiter to all API routes
-app.use('/api/', apiLimiter);
+// // Apply rate limiter to all API routes
+// app.use('/api/', apiLimiter);
 
-// Serve static images - now using local file operations
-app.use('/images', express.static(path.join(__dirname, '../files/images')));
-app.use('/documents', express.static(path.join(__dirname, '../files/documents')));
+// Serve static files from existing structure
+app.use('/cow-photos', express.static(path.join(__dirname, '../files/Cow Photos')));
+app.use('/maps', express.static(path.join(__dirname, '../files/MapData')));
 
 // Configure multer for file uploads
 const upload = localFileOps.configureMulter();
 
-// AUTH ROUTES //
-
-// Login endpoint - now uses centralized authentication
+// Login endpoint
 app.post('/api/login',
   loginLimiter,
   createValidationMiddleware('login'),
   async (req, res) => {
+    
     try {
       const { username, password } = req.body;
       
@@ -114,6 +128,7 @@ app.post('/api/login',
           });
         });
       } else {
+        console.warn('Invalid login attempt from origin:', req.get('origin'), ' to user ', username);
         return res.status(401).json({ 
           success: false, 
           message: authResult.message 
@@ -153,13 +168,11 @@ app.get('/api/check-auth', (req, res) => {
   }
 });
 
-// DATA ROUTES - Now using API wrapper with forced validation //
-
 // Get cow data
 app.get('/api/cow/:tag', 
   createValidationMiddleware('getCowData'),
   async (req, res) => {
-    return apiWrapper.getCowData(req, res, getValidationRules('getCowData'));
+    return apiWrapper.getCowData(req, res);
   }
 );
 
@@ -167,7 +180,7 @@ app.get('/api/cow/:tag',
 app.post('/api/add-observation',
   createValidationMiddleware('addObservation'),
   async (req, res) => {
-    return apiWrapper.addObservation(req, res, getValidationRules('addObservation'));
+    return apiWrapper.addObservation(req, res);
   }
 );
 
@@ -175,7 +188,7 @@ app.post('/api/add-observation',
 app.post('/api/add-medical-record',
   createValidationMiddleware('addMedicalRecord'),
   async (req, res) => {
-    return apiWrapper.addMedicalRecord(req, res, getValidationRules('addMedicalRecord'));
+    return apiWrapper.addMedicalRecord(req, res);
   }
 );
 
@@ -183,7 +196,7 @@ app.post('/api/add-medical-record',
 app.post('/api/update-weight',
   createValidationMiddleware('updateCowWeight'),
   async (req, res) => {
-    return apiWrapper.updateCowWeight(req, res, getValidationRules('updateCowWeight'));
+    return apiWrapper.updateCowWeight(req, res);
   }
 );
 
@@ -191,164 +204,207 @@ app.post('/api/update-weight',
 app.post('/api/add-cow',
   createValidationMiddleware('addCow'),
   async (req, res) => {
-    const { cowTag, dateOfBirth, description, dam, sire } = req.body;
-    return apiWrapper.executeOperation(req, res, getValidationRules('addCow'), 'addCow', {
-      cowTag, dateOfBirth, description, dam, sire
-    });
+    return apiWrapper.addCow(req, res);
   }
 );
 
-// Get all cows with pagination
+// Get all cows
 app.get('/api/cows', async (req, res) => {
-  const { page = 1, limit = 50, search = '' } = req.query;
-  return apiWrapper.executeOperation(req, res, [], 'getAllCows', {
-    page: parseInt(page),
-    limit: parseInt(limit),
-    search
-  });
+  return apiWrapper.getAllCows(req, res);
 });
 
-// Delete cow
-app.delete('/api/cow/:tag',
-  createValidationMiddleware('deleteCow'),
+
+app.post('/api/set-herd',
+  createValidationMiddleware('setHerd'), 
   async (req, res) => {
-    const cowTag = req.params.tag;
-    return apiWrapper.executeOperation(req, res, getValidationRules('deleteCow'), 'deleteCow', {
-      cowTag
-    });
+    return apiWrapper.setHerd(req, res);
   }
 );
 
-// FILE UPLOAD ROUTES //
 
-// Upload cow image (headshot or body)
+// Get all herds with details
+app.get('/api/herds', async (req, res) => {
+  return apiWrapper.getHerdsWithDetails(req, res);
+});
+
+// Get feed status for a specific herd
+app.get('/api/herd/:herdName/feed-status', 
+  createValidationMiddleware('getHerdFeedStatus'),
+  async (req, res) => {
+    return apiWrapper.getHerdFeedStatus(req, res);
+  }
+);
+
+// Get all available feed types
+app.get('/api/feed-types', async (req, res) => {
+  return apiWrapper.getAllFeedTypes(req, res);
+});
+
+// Record feed activity
+app.post('/api/record-feed-activity',
+  createValidationMiddleware('recordFeedActivity'),
+  async (req, res) => {
+    return apiWrapper.recordFeedActivity(req, res);
+  }
+);
+
+// Get animals in a specific herd
+app.get('/api/herd/:herdName/animals',
+  createValidationMiddleware('getHerdAnimals'),
+  async (req, res) => {
+    return apiWrapper.getHerdAnimals(req, res);
+  }
+);
+
+// Move herd to new pasture
+app.post('/api/move-herd',
+  createValidationMiddleware('moveHerd'),
+  async (req, res) => {
+    return apiWrapper.moveHerd(req, res);
+  }
+);
+
+// Get all available pastures
+app.get('/api/pastures', async (req, res) => {
+  return apiWrapper.getAllPastures(req, res);
+});
+
+
+
+
+// Get nth cow image (headshot or body) - returns specific image by position
+app.get('/api/cow/:tag/image/:imageType/:n',
+  createValidationMiddleware('getNthCowImage'),
+  async (req, res) => {
+    return apiWrapper.getNthCowImage(req, res);
+  }
+);
+
+// Get cow image count
+app.get('/api/cow/:tag/image-count',
+  createValidationMiddleware('getCowImageCount'),
+  async (req, res) => {
+    return apiWrapper.getCowImageCount(req, res);
+  }
+);
+
+// Upload cow image (headshot or body only)
 app.post('/api/cow/:tag/upload-image',
   upload.single('image'),
+  createValidationMiddleware('uploadCowImage'),
   async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No image file provided' });
-      }
-
-      const { tag } = req.params;
-      const { imageType } = req.body; // 'headshot' or 'body'
-
-      const result = await localFileOps.saveCowImage({
-        cowTag: tag,
-        imageType: imageType,
-        fileBuffer: req.file.buffer,
-        originalFilename: req.file.originalname
-      });
-
-      res.json(result);
-    } catch (error) {
-      console.error('Image upload error:', error);
-      res.status(500).json({ error: error.message });
-    }
+    return apiWrapper.saveCowImage(req, res);
   }
 );
 
-// Upload cow document
-app.post('/api/cow/:tag/upload-document',
-  upload.single('document'),
+// Get cow image (headshot or body) - returns most recent
+app.get('/api/cow/:tag/image/:imageType',
+  createValidationMiddleware('getCowImage'),
   async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No document file provided' });
-      }
-
-      const { tag } = req.params;
-      const { documentType } = req.body;
-
-      const result = await localFileOps.saveDocument({
-        cowTag: tag,
-        documentType: documentType || 'general',
-        fileBuffer: req.file.buffer,
-        originalFilename: req.file.originalname
-      });
-
-      res.json(result);
-    } catch (error) {
-      console.error('Document upload error:', error);
-      res.status(500).json({ error: error.message });
-    }
+    return apiWrapper.getCowImage(req, res);
   }
 );
 
-// Get cow files list
-app.get('/api/cow/:tag/files', async (req, res) => {
-  try {
-    const { tag } = req.params;
-    const result = await localFileOps.listCowFiles({ cowTag: tag });
-    res.json(result);
-  } catch (error) {
-    console.error('File list error:', error);
-    res.status(500).json({ error: error.message });
+// Get all cow images (list all headshots and bodyshots)
+app.get('/api/cow/:tag/images',
+  createValidationMiddleware('getCowImages'),
+  async (req, res) => {
+    return apiWrapper.getAllCowImages(req, res);
   }
-});
+);
 
-// Download cow image
-app.get('/api/cow/:tag/image/:imageType', async (req, res) => {
-  try {
-    const { tag, imageType } = req.params;
-    const result = await localFileOps.getCowImage({ cowTag: tag, imageType });
-    
-    if (result.success) {
-      res.set({
-        'Content-Type': result.mimeType,
-        'Content-Length': result.size,
-        'Content-Disposition': `inline; filename="${result.filename}"`
-      });
-      res.send(result.fileBuffer);
-    } else {
-      res.status(404).json({ error: result.message });
-    }
-  } catch (error) {
-    console.error('Image download error:', error);
-    res.status(500).json({ error: error.message });
+
+// Get main map
+app.get('/api/map', async (req, res) => {
+  // If requesting a specific image file
+  if (req.query.image) {
+    return apiWrapper.getMapImage(req, res);
   }
+  
+  // Otherwise return JSON metadata
+  return apiWrapper.getMap(req, res);
 });
 
-// MAINTENANCE ROUTES //
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    authMode: process.env.AUTH_MODE || 'temp',
-    version: '2.0.0'
-  });
-});
-
-// System info (admin only - TODO: implement role-based access)
-app.get('/api/system-info', async (req, res) => {
-  try {
-    res.json({
-      environment: process.env.NODE_ENV || 'development',
-      authMode: process.env.AUTH_MODE || 'temp',
-      localPath: process.env.LOCAL_PATH || './files',
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to get system info' });
+// Get minimap for specific field
+app.get('/api/minimap/:fieldName',
+  createValidationMiddleware('getMinimap'),
+  async (req, res) => {
+    return apiWrapper.getMinimap(req, res);
   }
+);
+
+// Get list of available minimap fields
+app.get('/api/minimaps', async (req, res) => {
+  return apiWrapper.getAvailableMinimaps(req, res);
 });
 
-// Cleanup old files (admin only)
-app.post('/api/cleanup-files', async (req, res) => {
-  try {
-    const { daysOld = 365 } = req.body;
-    const result = await localFileOps.cleanupOldFiles(daysOld);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// Get all available sheets
+app.get('/api/sheets/all-sheets', async (req, res) => {
+  return apiWrapper.getAllSheets(req, res);
 });
+
+// Get available columns for sheet editor
+app.get('/api/sheets/available-columns', async (req, res) => {
+  return apiWrapper.getAvailableColumns(req, res);
+});
+
+// Load sheet data
+app.post('/api/sheets/load',
+  createValidationMiddleware('loadSheet'),
+  async (req, res) => {
+    return apiWrapper.loadSheet(req, res);
+  }
+);
+
+// Update individual sheet cell
+app.post('/api/sheets/update-cell',
+  createValidationMiddleware('updateSheetCell'),
+  async (req, res) => {
+    return apiWrapper.updateSheetCell(req, res);
+  }
+);
+
+// Get list of herds for dropdown
+app.get('/api/herds/list', async (req, res) => {
+  return apiWrapper.getHerdsList(req, res);
+});
+
+// Sheet structure management (for editor - placeholder)
+app.get('/api/sheets/structure/:sheetId',
+  createValidationMiddleware('getSheetStructure'),
+  async (req, res) => {
+    return apiWrapper.getSheetStructure(req, res);
+  }
+);
+
+// Create new sheet (placeholder)
+app.post('/api/sheets/create',
+  createValidationMiddleware('createSheet'),
+  async (req, res) => {
+    return apiWrapper.createSheet(req, res);
+  }
+);
+
+// Update existing sheet (placeholder)
+app.put('/api/sheets/update/:sheetId',
+  createValidationMiddleware('updateSheet'),
+  async (req, res) => {
+    return apiWrapper.updateSheet(req, res);
+  }
+);
+
+// Delete sheet (placeholder)
+app.delete('/api/sheets/delete/:sheetId',
+  createValidationMiddleware('deleteSheet'),
+  async (req, res) => {
+    return apiWrapper.deleteSheet(req, res);
+  }
+);
 
 // 404 handler for unmatched API routes
 app.use('/api/*', (req, res) => {
+  console.error(`Unmatched API call`)
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
@@ -361,16 +417,17 @@ app.use((error, req, res, next) => {
   });
 });
 
+
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`API Server running on port ${PORT}`);
-  console.log(`Authentication mode: ${process.env.AUTH_MODE || 'temp'}`);
+  console.log(`Cattle Management API Server v3.0 running on port ${PORT}`);
   console.log(`Local file path: ${process.env.LOCAL_PATH || './files'}`);
   console.log('Available endpoints:');
   console.log('Auth: /api/login, /api/logout, /api/check-auth');
   console.log('Cows: /api/cows, /api/cow/:tag');
   console.log('Data: /api/add-observation, /api/add-medical-record');
-  console.log('Files: /api/cow/:tag/upload-image, /api/cow/:tag/files');
-  console.log('Health: /api/health');
+  console.log('Images: /api/cow/:tag/upload-image, /api/cow/:tag/image/:type, /api/cow/:tag/images');
+  console.log('Maps: /api/map, /api/minimap/:fieldName, /api/minimaps');
+
 });

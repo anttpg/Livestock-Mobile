@@ -17,7 +17,7 @@ class AccessControl {
      */
     setupAccessControl() {
         return (req, res, next) => {
-            console.log('Access control check for user:', req.session.user);
+            //console.log('Access control check for user:', req.session.user);
 
             if (!req.session.user || !req.session.user.username) {
                 console.log('Access denied. No user session found.');
@@ -39,7 +39,7 @@ class AccessControl {
     validateTempSession(req, res, next) {
         // For temp mode, just check if user exists in session
         if (req.session.user && req.session.user.username) {
-            console.log('Temp auth validated for user:', req.session.user.username);
+            //console.log('Temp auth validated for user:', req.session.user.username);
             next();
         } else {
             console.log('Temp auth failed - no valid session');

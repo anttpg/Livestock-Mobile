@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import Table from './table'; // Add this import
 
-function Notes({ cowTag, cowData }) {
+function Notes({ cowTag, cowData, onRefresh, currentUser }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [newObservation, setNewObservation] = useState('');
 
@@ -10,7 +11,7 @@ function Notes({ cowTag, cowData }) {
   };
 
   const handleAddObservation = async () => {
-    if (!newObservation.trim()) return;
+    if (!newObservation.trim() || !cowTag) return;
     
     const dateOfNote = new Date().toISOString();
 
@@ -42,8 +43,10 @@ function Notes({ cowTag, cowData }) {
       if (responseData.success) {
         setNewObservation('');
         alert('Observation added successfully');
-        // Note: In a real app, you'd want to refresh the data here
-        window.location.reload(); // Temporary solution
+        // Call parent refresh function instead of page reload
+        if (onRefresh) {
+          onRefresh();
+        }
       }
     } catch (error) {
       console.error('Error submitting observation:', error);
@@ -58,13 +61,138 @@ function Notes({ cowTag, cowData }) {
     }
   };
 
-  // Get notes data - assume API will provide user information
+  // Get notes data and prepare for table
   const notes = cowData?.notes || [];
+  
+  // Create table data - include new observation row when expanded
+  const tableData = [];
+  
+  // Add new observation row when expanded
+  if (isExpanded && cowTag) {
+    tableData.push({
+      DateOfEntry: new Date().toISOString(),
+      User: currentUser || 'Current User',
+      Note: '', // This will be handled specially
+      isNewRow: true // Flag to identify this as the new row
+    });
+  }
+  
+  // Add existing notes
+  tableData.push(...notes.map(note => ({
+    DateOfEntry: note.DateOfEntry,
+    User: note.User || currentUser || 'Unknown',
+    Note: note.Note,
+    isNewRow: false
+  })));
+
+  // Define columns for the notes table
+  const notesColumns = [
+    {
+      key: 'DateOfEntry',
+      header: 'Last Modified',
+      type: 'date',
+      width: '150px',
+      align: 'left'
+    },
+    {
+      key: 'User',
+      header: 'User',
+      type: 'text',
+      width: '120px',
+      align: 'left'
+    },
+    {
+      key: 'Note',
+      header: 'Note',
+      type: 'text',
+      align: 'left',
+      customRender: (value, row) => {
+        if (row.isNewRow) {
+          return (
+            <textarea
+              value={newObservation}
+              onChange={(e) => setNewObservation(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter new observation..."
+              style={{
+                width: 'calc(100% - 12px)',
+                minHeight: '60px',
+                padding: '6px',
+                border: 'none',
+                resize: 'vertical',
+                fontSize: '14px',
+                backgroundColor: '#f8f9fa',
+                boxSizing: 'border-box'
+              }}
+            />
+          );
+        }
+        return value;
+      }
+    }
+  ];
+
+  // Custom Table component that handles the special new row rendering
+  const NotesTable = () => {
+    if (!cowTag) {
+      return (
+        <Table
+          data={[]}
+          columns={notesColumns}
+          emptyMessage="Select a cow to view and edit observations"
+          showActionColumn={false}
+          alternatingRows={true}
+          evenRowColor="#fff"
+          oddRowColor="#f9f9f9"
+          maxHeight="400px"
+          style={{ margin: 0 }}
+        />
+      );
+    }
+
+    if (tableData.length === 0) {
+      return (
+        <Table
+          data={[]}
+          columns={notesColumns}
+          emptyMessage="No observations recorded yet"
+          showActionColumn={false}
+          alternatingRows={true}
+          evenRowColor="#fff"
+          oddRowColor="#f9f9f9"
+          maxHeight="400px"
+          style={{ margin: 0 }}
+        />
+      );
+    }
+
+    return (
+      <div style={{ marginTop: '10px' }}>
+        <Table
+          data={tableData}
+          columns={notesColumns}
+          showActionColumn={false}
+          alternatingRows={true}
+          evenRowColor="#fff"
+          oddRowColor="#f9f9f9"
+          maxHeight="400px"
+          style={{ margin: 0 }}
+          // Custom row styling for new row
+          customRowStyle={(row, index) => ({
+            backgroundColor: row.isNewRow ? '#f8f9fa' : (index % 2 === 0 ? '#fff' : '#f9f9f9'),
+            fontStyle: row.isNewRow ? 'italic' : 'normal',
+            color: row.isNewRow ? '#666' : 'inherit'
+          })}
+        />
+      </div>
+    );
+  };
 
   return (
     <div>
-      <div style={{ marginBottom: '15px' }}>
-        <button 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h3 style={{ margin: 0 }}>Recent Observations:</h3>
+        <button
           onClick={() => setIsExpanded(!isExpanded)}
           style={{
             padding: '8px 16px',
@@ -80,94 +208,7 @@ function Notes({ cowTag, cowData }) {
         </button>
       </div>
 
-      <h3>Recent Observations:</h3>
-      
-      <div style={{ marginTop: '10px' }}>
-        {cowTag ? (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ border: '2px double black', padding: '8px', width: '150px' }}>Last Modified</th>
-                <th style={{ border: '2px double black', padding: '8px', width: '120px' }}>User</th>
-                <th style={{ border: '2px double black', padding: '8px' }}>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Add new observation row - always first, slightly darker */}
-              {isExpanded && (
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
-                  <td style={{ border: '2px double black', padding: '8px', fontStyle: 'italic', color: '#666' }}>
-                    {formatDate(new Date().toISOString())}
-                  </td>
-                  <td style={{ border: '2px double black', padding: '8px', fontStyle: 'italic', color: '#666' }}>
-                    Current User
-                  </td>
-                  <td style={{ border: '2px double black', padding: '2px' }}>
-                    <textarea
-                      value={newObservation}
-                      onChange={(e) => setNewObservation(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Enter new observation..."
-                      style={{
-                        width: '100%',
-                        minHeight: '60px',
-                        padding: '6px',
-                        border: 'none',
-                        resize: 'vertical',
-                        fontSize: '14px',
-                        backgroundColor: '#f8f9fa'
-                      }}
-                    />
-                  </td>
-                </tr>
-              )}
-              
-              {/* Existing notes */}
-              {notes.length > 0 ? (
-                notes.map((note, index) => (
-                  <tr key={index}>
-                    <td style={{ border: '2px double black', padding: '8px' }}>
-                      {formatDate(note.DateOfEntry)}
-                    </td>
-                    <td style={{ border: '2px double black', padding: '8px' }}>
-                      {note.User || 'Unknown'} {/* Assuming API will provide user info */}
-                    </td>
-                    <td style={{ border: '2px double black', padding: '8px' }}>
-                      {note.Note}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td 
-                    colSpan="3" 
-                    style={{ 
-                      border: '2px double black', 
-                      padding: '20px', 
-                      textAlign: 'center',
-                      fontStyle: 'italic',
-                      color: '#666'
-                    }}
-                  >
-                    No observations recorded yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        ) : (
-          <div style={{ 
-            padding: '20px', 
-            textAlign: 'center',
-            fontStyle: 'italic',
-            color: '#666',
-            border: '2px dashed #ccc',
-            borderRadius: '5px'
-          }}>
-            Select a cow to view and edit observations
-          </div>
-        )}
-      </div>
+      <NotesTable />
 
       {/* Hidden submit button - kept for future use */}
       <button 

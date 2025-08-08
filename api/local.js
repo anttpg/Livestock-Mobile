@@ -1,12 +1,11 @@
-// db/local.js - Local file operations for cattle management system
-const fs = require('fs').promises;
+// db/local.js - Local file operations without branding complexity
 const path = require('path');
 const multer = require('multer');
 require('dotenv').config();
 
 /**
  * Local file operations for managing cattle images and maps
- * Works with existing file structure: Cow Photos/{CowTag}/{CowTag} {BODY/HEAD} {date}.jpg
+ * Input is already validated by API wrapper - no need for branded types
  */
 class LocalFileOperations {
     constructor() {
@@ -21,6 +20,7 @@ class LocalFileOperations {
      * Ensure directory exists, create if it doesn't
      */
     async ensureDirectoryExists(dirPath) {
+        const fs = require('fs').promises;
         try {
             await fs.access(dirPath);
         } catch (error) {
@@ -56,34 +56,50 @@ class LocalFileOperations {
     }
 
     /**
-     * Save cow image (headshot or body) - NEVER overwrites existing files
+     * Get MIME type for file
+     */
+    getMimeType(filename) {
+        const ext = path.extname(filename).toLowerCase();
+        const mimeTypes = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp'
+        };
+        return mimeTypes[ext] || 'application/octet-stream';
+    }
+
+    /**
+     * Save cow image - NEVER overwrites existing files
+     * @param {Object} params - { cowTag, imageType, fileBuffer, originalFilename }
      */
     async saveCowImage(params) {
         const { cowTag, imageType, fileBuffer, originalFilename } = params;
-        
-        if (!['headshot', 'body'].includes(imageType.toLowerCase())) {
-            throw new Error('Image type must be "headshot" or "body"');
-        }
-
+        const fs = require('fs').promises;
+    
         if (!this.validateFileType(originalFilename, this.imageFormats)) {
             throw new Error('Invalid image format. Allowed: ' + this.imageFormats.join(', '));
         }
-
+    
         try {
+            // Convert cow tag for filesystem safety
+            const safeTagName = this.remCowtagSlash(cowTag);
+            
             // Create cow-specific directory following existing structure
-            const cowDir = path.join(this.cowPhotosDir, cowTag.toString());
+            const cowDir = path.join(this.cowPhotosDir, safeTagName);
             await this.ensureDirectoryExists(cowDir);
-
+    
             // Convert imageType to match existing naming convention
-            const bodyType = imageType.toLowerCase() === 'headshot' ? 'HEAD' : 'BODY';
+            const bodyType = imageType === 'headshot' ? 'HEAD' : 'BODY';
             const dateStr = this.formatDateForFilename();
             const ext = path.extname(originalFilename);
-
+    
             // Generate base filename following existing convention: {CowTag} {BODY/HEAD} {date}
-            let baseFilename = `${cowTag} ${bodyType} ${dateStr}`;
+            let baseFilename = `${safeTagName} ${bodyType} ${dateStr}`;
             let filename = `${baseFilename}${ext}`;
             let filePath = path.join(cowDir, filename);
-
+    
             // NEVER overwrite - find next available filename with counter
             let counter = 1;
             while (true) {
@@ -102,12 +118,12 @@ class LocalFileOperations {
                     }
                 }
             }
-
+    
             // Save file with unique filename
             await fs.writeFile(filePath, fileBuffer);
-
+    
             // Return relative path for database storage
-            const relativePath = path.join('Cow Photos', cowTag.toString(), filename);
+            const relativePath = path.join('Cow Photos', safeTagName, filename);
             
             return {
                 success: true,
@@ -118,75 +134,135 @@ class LocalFileOperations {
             };
         } catch (error) {
             console.error('Error saving cow image:', error);
-            throw new Error(`Failed to save ${imageType} image: ${error.message}`);
+            throw new Error(`Failed to save image: ${error.message}`);
         }
     }
 
     /**
-     * Get cow image (headshot or body) - returns most recent image of specified type
+     * Get cow image - returns most recent image of specified type
+     * @param {Object} params - { cowTag, imageType }
      */
     async getCowImage(params) {
-        const { cowTag, imageType } = params;
+        const { cowTag } = params;
         
-        if (!['headshot', 'body'].includes(imageType.toLowerCase())) {
-            throw new Error('Image type must be "headshot" or "body"');
-        }
-
         try {
-            const cowDir = path.join(this.cowPhotosDir, cowTag.toString());
+            // Get the most recent images (n=1) for both types
+            const result = await this.getNthCowImage({
+                cowTag: cowTag,
+                type: 'both',
+                n: 1
+            });
             
-            // Check if cow directory exists
+            if (!result.success) {
+                return result;
+            }
+            
+            // Format response to match existing API
+            const response = {
+                success: true,
+                totalImages: 0
+            };
+            
+            if (result.headshot && result.headshot.success) {
+                response.headshot = {
+                    filename: result.headshot.filename,
+                    path: `/api/cow/${cowTag}/image/headshot`
+                };
+                response.totalImages++;
+            } else {
+                response.headshot = null;
+            }
+            
+            if (result.bodyshot && result.bodyshot.success) {
+                response.bodyshot = {
+                    filename: result.bodyshot.filename,
+                    path: `/api/cow/${cowTag}/image/body`
+                };
+                response.totalImages++;
+            } else {
+                response.bodyshot = null;
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('Error getting cow images:', error);
+            return { 
+                success: false, 
+                message: `Failed to get cow images: ${error.message}` 
+            };
+        }
+    }
+
+    /**
+     * Get all images for a specific cow
+     * @param {Object} params - { cowTag }
+     */
+    async getAllCowImages(params) {
+        const { cowTag } = params;
+        const fs = require('fs').promises;
+        
+        try {
+            const safeTagName = this.remCowtagSlash(cowTag);
+            const cowDir = path.join(this.cowPhotosDir, safeTagName);
+            
             try {
                 await fs.access(cowDir);
             } catch (error) {
-                return { 
-                    success: false, 
-                    message: `No photos found for cow ${cowTag}` 
+                return {
+                    success: true,
+                    images: { headshots: [], bodyshots: [] },
+                    message: `No photos found for cow ${cowTag}`
                 };
             }
-
+    
             const files = await fs.readdir(cowDir);
-            
-            // Convert imageType to match existing naming convention
-            const bodyType = imageType.toLowerCase() === 'headshot' ? 'HEAD' : 'BODY';
-            
-            // Find all images of the specified type
-            const matchingFiles = files.filter(file => {
-                const isValidImage = this.validateFileType(file, this.imageFormats);
-                const matchesBodyType = file.toUpperCase().includes(` ${bodyType} `);
-                const startsWithCowTag = file.toUpperCase().startsWith(cowTag.toString().toUpperCase());
-                
-                return isValidImage && matchesBodyType && startsWithCowTag;
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                       file.toUpperCase().startsWith(safeTagName.toUpperCase());
             });
-
-            if (matchingFiles.length === 0) {
-                return { 
-                    success: false, 
-                    message: `No ${imageType} images found for cow ${cowTag}` 
-                };
-            }
-
-            // Sort by filename to get the most recent (filenames include dates)
-            // Most recent will be last when sorted alphabetically due to date format
-            matchingFiles.sort();
-            const mostRecentFile = matchingFiles[matchingFiles.length - 1];
-
-            const filePath = path.join(cowDir, mostRecentFile);
-            const fileBuffer = await fs.readFile(filePath);
-            const stats = await fs.stat(filePath);
-
+    
+            const headshots = validImages
+                .filter(file => file.toUpperCase().includes(' HEAD '))
+                .sort();
+                
+            const bodyshots = validImages
+                .filter(file => file.toUpperCase().includes(' BODY '))
+                .sort();
+    
             return {
                 success: true,
-                fileBuffer,
-                filename: mostRecentFile,
-                size: stats.size,
-                modified: stats.mtime,
-                mimeType: this.getMimeType(mostRecentFile),
-                availableImages: matchingFiles.length,
-                allImages: matchingFiles // Include list of all available images
+                images: {
+                    headshots: headshots,
+                    bodyshots: bodyshots
+                },
+                totalImages: validImages.length
             };
         } catch (error) {
-            console.error('Error getting cow image:', error);
+            console.error('Error getting all cow images:', error);
+            return {
+                success: false,
+                message: `Failed to get cow images: ${error.message}`
+            };
+        }
+    }
+
+    async getActualImageFile(params) {
+        const { cowTag, imageType, n = 1 } = params;
+        
+        try {
+            const result = await this.getNthCowImage({
+                cowTag: cowTag,
+                type: imageType,
+                n: n
+            });
+            
+            if (!result.success) {
+                return result;
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Error getting actual image file:', error);
             return { 
                 success: false, 
                 message: `Failed to get ${imageType} image: ${error.message}` 
@@ -195,38 +271,261 @@ class LocalFileOperations {
     }
 
     /**
-     * Get main map image
+     * Convert forward slashes in cow tags to filesystem-safe characters
+     * @param {string} cowTag - Original cow tag that may contain forward slashes
+     * @returns {string} Filesystem-safe cow tag with slashes converted to '_s_'
      */
-    async getMap() {
+    remCowtagSlash(cowTag) {
+        if (!cowTag || typeof cowTag !== 'string') {
+            return cowTag;
+        }
+        return cowTag.replace(/\//g, '_s_');
+    }
+
+    /**
+     * Convert filesystem-safe cow tag back to original with forward slashes
+     * @param {string} fileSystemCowTag - Filesystem-safe cow tag with '_s_' instead of '/'
+     * @returns {string} Original cow tag with forward slashes restored
+     */
+    repCowtagSlash(fileSystemCowTag) {
+        if (!fileSystemCowTag || typeof fileSystemCowTag !== 'string') {
+            return fileSystemCowTag;
+        }
+        return fileSystemCowTag.replace(/_s_/g, '/');
+    }
+
+    /**
+     * Get the nth most recent cow image of specified type
+     * @param {Object} params - { cowTag, type, n }
+     * type can be 'headshot', 'body', or 'both'
+     * n is 1-indexed, where 1 is the most recent
+     */
+    async getNthCowImage(params) {
+        const { cowTag, type, n } = params;
+        const fs = require('fs').promises;
+        
         try {
-            // Look for map.png first, then MapCombined.png as fallback
+            const safeTagName = this.remCowtagSlash(cowTag);
+            const cowDir = path.join(this.cowPhotosDir, safeTagName);
+            
+            try {
+                await fs.access(cowDir);
+            } catch (error) {
+                return {
+                    success: false,
+                    message: `No photos found for cow ${cowTag}`
+                };
+            }
+
+            const files = await fs.readdir(cowDir);
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                    file.toUpperCase().startsWith(safeTagName.toUpperCase());
+            });
+
+            let targetFiles = [];
+            
+            if (type === 'both') {
+                const headshots = validImages
+                    .filter(file => file.toUpperCase().includes(' HEAD '))
+                    .sort()
+                    .reverse(); // Most recent first
+                    
+                const bodyshots = validImages
+                    .filter(file => file.toUpperCase().includes(' BODY '))
+                    .sort()
+                    .reverse(); // Most recent first
+                
+                // For 'both', return both headshot and bodyshot at position n
+                const result = {};
+                
+                if (headshots.length >= n) {
+                    const headshotFile = headshots[n - 1];
+                    const headshotPath = path.join(cowDir, headshotFile);
+                    const headshotBuffer = await fs.readFile(headshotPath);
+                    const headshotStats = await fs.stat(headshotPath);
+                    
+                    result.headshot = {
+                        success: true,
+                        fileBuffer: headshotBuffer,
+                        filename: headshotFile,
+                        size: headshotStats.size,
+                        modified: headshotStats.mtime,
+                        mimeType: this.getMimeType(headshotFile)
+                    };
+                } else {
+                    result.headshot = {
+                        success: false,
+                        message: `Only ${headshots.length} headshot images available for cow ${cowTag}`
+                    };
+                }
+                
+                if (bodyshots.length >= n) {
+                    const bodyshotFile = bodyshots[n - 1];
+                    const bodyshotPath = path.join(cowDir, bodyshotFile);
+                    const bodyshotBuffer = await fs.readFile(bodyshotPath);
+                    const bodyshotStats = await fs.stat(bodyshotPath);
+                    
+                    result.bodyshot = {
+                        success: true,
+                        fileBuffer: bodyshotBuffer,
+                        filename: bodyshotFile,
+                        size: bodyshotStats.size,
+                        modified: bodyshotStats.mtime,
+                        mimeType: this.getMimeType(bodyshotFile)
+                    };
+                } else {
+                    result.bodyshot = {
+                        success: false,
+                        message: `Only ${bodyshots.length} bodyshot images available for cow ${cowTag}`
+                    };
+                }
+                
+                return {
+                    success: true,
+                    ...result
+                };
+            } else {
+                // Single type request
+                const imageList = type === 'headshot' ? 
+                    validImages.filter(file => file.toUpperCase().includes(' HEAD ')).sort().reverse() :
+                    validImages.filter(file => file.toUpperCase().includes(' BODY ')).sort().reverse();
+                
+                if (imageList.length < n) {
+                    return {
+                        success: false,
+                        message: `Only ${imageList.length} ${type} images available for cow ${cowTag}`
+                    };
+                }
+                
+                const targetFile = imageList[n - 1];
+                const filePath = path.join(cowDir, targetFile);
+                
+                const fileBuffer = await fs.readFile(filePath);
+                const stats = await fs.stat(filePath);
+                
+                return {
+                    success: true,
+                    fileBuffer,
+                    filename: targetFile,
+                    size: stats.size,
+                    modified: stats.mtime,
+                    mimeType: this.getMimeType(targetFile)
+                };
+            }
+        } catch (error) {
+            console.error('Error getting nth cow image:', error);
+            return { 
+                success: false, 
+                message: `Failed to get ${type} image #${n}: ${error.message}` 
+            };
+        }
+    }
+
+    /**
+     * Get count of images for each type
+     * @param {Object} params - { cowTag }
+     */
+    async numCowImages(params) {
+        const { cowTag } = params;
+        const fs = require('fs').promises;
+        
+        try {
+            const safeTagName = this.remCowtagSlash(cowTag);
+            const cowDir = path.join(this.cowPhotosDir, safeTagName);
+            
+            try {
+                await fs.access(cowDir);
+            } catch (error) {
+                return {
+                    success: true,
+                    headshots: 0,
+                    bodyshots: 0,
+                    total: 0
+                };
+            }
+
+            const files = await fs.readdir(cowDir);
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                    file.toUpperCase().startsWith(safeTagName.toUpperCase());
+            });
+
+            const headshots = validImages.filter(file => file.toUpperCase().includes(' HEAD '));
+            const bodyshots = validImages.filter(file => file.toUpperCase().includes(' BODY '));
+
+            return {
+                success: true,
+                headshots: headshots.length,
+                bodyshots: bodyshots.length,
+                total: validImages.length
+            };
+        } catch (error) {
+            console.error('Error counting cow images:', error);
+            return {
+                success: false,
+                message: `Failed to count images: ${error.message}`
+            };
+        }
+    }
+
+
+    /**
+     * Get main map image (no validation needed - public resource)
+        */
+    async getMap(params = {}) {
+        const fs = require('fs').promises;
+        const { pastureName } = params;
+        
+        try {
+            // Check if map files exist (but don't load them)
             const mapFiles = ['map.png', 'MapCombined.png'];
+            const availableMaps = [];
             
             for (const mapFile of mapFiles) {
                 const mapPath = path.join(this.mapDataDir, mapFile);
-                
                 try {
                     await fs.access(mapPath);
-                    const fileBuffer = await fs.readFile(mapPath);
-                    const stats = await fs.stat(mapPath);
-
-                    return {
-                        success: true,
-                        fileBuffer,
-                        filename: mapFile,
-                        size: stats.size,
-                        modified: stats.mtime,
-                        mimeType: this.getMimeType(mapFile)
-                    };
+                    availableMaps.push({
+                        name: mapFile.replace('.png', ''),
+                        url: `/api/map-image/${mapFile.replace('.png', '')}`
+                    });
                 } catch (error) {
-                    // File doesn't exist, try next one
-                    continue;
+                    console.log(`Map file ${mapFile} not found`);
                 }
             }
 
+            // Load MapData.json (same as before)
+            let fieldData = null;
+            let normalizedCoordinates = null;
+            
+            try {
+                const mapDataPath = path.join(this.mapDataDir, 'MapData.json');
+                const mapDataContent = await fs.readFile(mapDataPath, 'utf8');
+                fieldData = JSON.parse(mapDataContent);
+                
+                if (pastureName && fieldData.fields) {
+                    const field = fieldData.fields.find(f => 
+                        f.fieldname.toLowerCase() === pastureName.toLowerCase()
+                    );
+                    
+                    if (field && field.pinpoint && fieldData.map_size) {
+                        normalizedCoordinates = {
+                            x: field.pinpoint[0] / fieldData.map_size.width,
+                            y: field.pinpoint[1] / fieldData.map_size.height
+                        };
+                    }
+                }
+            } catch (error) {
+                console.log('MapData.json not found or invalid');
+            }
+
             return {
-                success: false,
-                message: 'No map file found (looked for map.png and MapCombined.png)'
+                success: true,
+                availableMaps,  // URLs instead of file buffers
+                fieldData,
+                coordinates: normalizedCoordinates,
+                pastureName
             };
         } catch (error) {
             console.error('Error getting map:', error);
@@ -237,15 +536,40 @@ class LocalFileOperations {
         }
     }
 
+    async getMapImage(mapType) {
+        const fs = require('fs').promises;
+        
+        try {
+            const filename = `${mapType}.png`;
+            const mapPath = path.join(this.mapDataDir, filename);
+            
+            await fs.access(mapPath);
+            const fileBuffer = await fs.readFile(mapPath);
+            const stats = await fs.stat(mapPath);
+
+            return {
+                success: true,
+                fileBuffer,
+                filename,
+                size: stats.size,
+                modified: stats.mtime,
+                mimeType: this.getMimeType(filename)
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: `Map image ${mapType} not found`
+            };
+        }
+    }
+
     /**
      * Get minimap for a specific field
+     * @param {Object} params - { fieldName }
      */
     async getMinimap(params) {
         const { fieldName } = params;
-        
-        if (!fieldName) {
-            throw new Error('Field name is required');
-        }
+        const fs = require('fs').promises;
 
         try {
             // Look for exact match first
@@ -298,9 +622,11 @@ class LocalFileOperations {
     }
 
     /**
-     * Get list of available minimap field names
+     * Get list of available minimap field names (no validation needed - public resource)
      */
     async getAvailableMinimaps() {
+        const fs = require('fs').promises;
+        
         try {
             const files = await fs.readdir(this.minimapsDir);
             const minimaps = files
@@ -318,21 +644,6 @@ class LocalFileOperations {
             console.error('Error getting available minimaps:', error);
             return [];
         }
-    }
-
-    /**
-     * Get MIME type for file
-     */
-    getMimeType(filename) {
-        const ext = path.extname(filename).toLowerCase();
-        const mimeTypes = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.gif': 'image/gif',
-            '.webp': 'image/webp'
-        };
-        return mimeTypes[ext] || 'application/octet-stream';
     }
 
     /**
@@ -358,56 +669,6 @@ class LocalFileOperations {
             }
         });
     }
-
-    /**
-     * Get all images for a specific cow (for listing purposes)
-     */
-    async getAllCowImages(params) {
-        const { cowTag } = params;
-        
-        try {
-            const cowDir = path.join(this.cowPhotosDir, cowTag.toString());
-            
-            try {
-                await fs.access(cowDir);
-            } catch (error) {
-                return {
-                    success: true,
-                    images: { headshots: [], bodyshots: [] },
-                    message: `No photos found for cow ${cowTag}`
-                };
-            }
-
-            const files = await fs.readdir(cowDir);
-            const validImages = files.filter(file => 
-                this.validateFileType(file, this.imageFormats) &&
-                file.toUpperCase().startsWith(cowTag.toString().toUpperCase())
-            );
-
-            const headshots = validImages
-                .filter(file => file.toUpperCase().includes(' HEAD '))
-                .sort();
-                
-            const bodyshots = validImages
-                .filter(file => file.toUpperCase().includes(' BODY '))
-                .sort();
-
-            return {
-                success: true,
-                images: {
-                    headshots: headshots,
-                    bodyshots: bodyshots
-                },
-                totalImages: validImages.length
-            };
-        } catch (error) {
-            console.error('Error getting all cow images:', error);
-            return {
-                success: false,
-                message: `Failed to get cow images: ${error.message}`
-            };
-        }
-    }
 }
 
 // Export singleton instance
@@ -416,9 +677,15 @@ const localOps = new LocalFileOperations();
 module.exports = {
     saveCowImage: (params) => localOps.saveCowImage(params),
     getCowImage: (params) => localOps.getCowImage(params),
-    getMap: () => localOps.getMap(),
-    getMinimap: (params) => localOps.getMinimap(params),
+    getNthCowImage: (params) => localOps.getNthCowImage(params),
+    numCowImages: (params) => localOps.numCowImages(params),
+    getActualImageFile: (params) => localOps.getActualImageFile(params),
     getAllCowImages: (params) => localOps.getAllCowImages(params),
+    getMap: (params) => localOps.getMap(params),
+    getMapImage: (mapType) => localOps.getMapImage(mapType),
+    getMinimap: (params) => localOps.getMinimap(params),
     getAvailableMinimaps: () => localOps.getAvailableMinimaps(),
-    configureMulter: () => localOps.configureMulter()
+    configureMulter: () => localOps.configureMulter(),
+    remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
+    repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag)
 };

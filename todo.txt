@@ -1,4 +1,37 @@
-Implement these API calls for the backend, used by the frontend;
+To get IOS camera to work;
+-needs HTTPS connection (iOS Safari blocks camera on HTTP)
+-SSL certificate
+-REMOVE PHOTO OF CAT FROM COW 17 BODY
 
-GET /api/cow/{searchTag} - needs to include Temperament field
-POST /api/add-observation - may need to track user inf
+All pages: 
+
+Input Validation:
+
+Overview.jsx
+-Needs to actually QUERY the data (Make not static...)
+
+Herds.jsx
+-Turn minimap into actual google maps API
+-Make options in Herd records Toggleable (IE; allow choosing of what records to display)
+-Show pasture notes on Herd page (IE fence down, ect)
+-Implement split herd functionality, creating new herds, attaching cows to herds, ect.
+-UI: Minor tweaks needed
+
+General.jsx
+-make search bar use the autoCombobox (Autocomplete feature to make it easier to find cows)
+-Display date of weight record
+-Allow bulk importing of images & assigning to cows
+-(Low priority) Allow bulk exporting of all cow images 
+-UI Formatting for mobile
+
+Fieldsheets.jsx
+-After editing a sheet, requery the data for the sheet (Column order could have changed)
+
+sheetEditor
+-fix button formatting (Not wide enough to show both on a single line)
+
+MedicalRecords
+TODO
+
+BreedingPlan
+TODO

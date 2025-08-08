@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import General from './components/general';
 import Medical from './components/medical';
+import Overview from './components/overview';
+import Herds from './components/herds';
+import Fieldsheets from './components/fieldsheets';
 import Login from './components/login';
 import Layout from './components/layout';
 
@@ -63,6 +66,14 @@ function App() {
           element={isAuthenticated ? <Navigate to="/general" replace /> : <Navigate to="/login" replace />}
         />
         <Route
+          path="/overview"
+          element={
+            isAuthenticated 
+              ? <Layout><Overview /></Layout> 
+              : <Navigate to="/login" replace />
+          }
+        />
+        <Route
           path="/general"
           element={
             isAuthenticated 
@@ -77,7 +88,23 @@ function App() {
               ? <Layout><Medical /></Layout> 
               : <Navigate to="/login" replace />
           }
-        />
+          />
+          <Route
+          path="/herds"
+          element={
+            isAuthenticated 
+              ? <Layout><Herds /></Layout> 
+              : <Navigate to="/login" replace />
+          }
+          />
+          <Route
+          path="/fieldsheets"
+          element={
+            isAuthenticated 
+              ? <Layout><Fieldsheets /></Layout> 
+              : <Navigate to="/login" replace />
+          }
+          />
         {/* Catch all */}
         <Route path="*" element={<Navigate to="/general" replace />} />
       </Routes>

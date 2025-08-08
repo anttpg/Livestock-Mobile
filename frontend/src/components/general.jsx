@@ -1,19 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import SearchBar from './searchBar';
 import Notes from './notes';
-import Minimap from './minimap'; // Assuming this component exists
+import Minimap from './minimap';
+import MultiCowTable from './multiCowTable';
+import PhotoViewer from './photoViewer';
 
 function General() {
   const [cowTag, setCowTag] = useState('');
   const [cowData, setCowData] = useState(null);
+  const [allHerds, setAllHerds] = useState([]);
+  const [currentUser, setCurrentUser] = useState('');
+
+  // TOGGLE: Set this to true to enable default cow navigation, false to disable
+  const enableDefaultCow = true;
+  const defaultCowTag = '46';
 
   const formatDate = (dateString) => {
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
+  // Get current user when component mounts
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await fetch('/api/check-auth', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const authData = await response.json();
+          if (authData.authenticated && authData.user) {
+            setCurrentUser(authData.user.username || authData.user.name || 'Current User');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // MODIFIED: Check for search parameter in URL when component mounts, or use default cow
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchParam = urlParams.get('search');
+    
+    if (searchParam) {
+      // If there's a search parameter, use it
+      handleSearch(searchParam);
+    } else if (enableDefaultCow) {
+      // If no search parameter but default cow is enabled, navigate to default cow
+      handleSearch(defaultCowTag);
+    }
+  }, [enableDefaultCow, defaultCowTag]); // Added dependencies
+
   const handleSearch = async (searchTag) => {
+    // Don't search if searchTag is empty, null, or undefined
+    if (!searchTag || searchTag.trim() === '') {
+      return;
+    }
+    
     setCowTag(searchTag);
     try {
       const response = await fetch(`/api/cow/${searchTag}`, {
@@ -29,104 +76,134 @@ function General() {
       }
       
       const data = await response.json();
+      console.log('Received cow data:', data); // Debug log
       
       if (data.cowData && data.cowData.length > 0) {
         setCowData(data);
+        // Set available herds if included in response
+        if (data.availableHerds) {
+          setAllHerds(data.availableHerds);
+        }
       } else {
         alert(`Cow ${searchTag} not found`);
+        setCowData(null);
       }
     } catch (error) {
       console.error('Error fetching cow data:', error);
       alert('Error fetching cow data');
+      setCowData(null);
     }
   };
 
-  const handleCalfView = (calfTag) => {
-    // Store current cow for back navigation
-    sessionStorage.setItem('previousCow', cowTag);
-    handleSearch(calfTag);
+  // Function to refresh cow data after adding observation
+  const handleRefresh = () => {
+    if (cowTag) {
+      handleSearch(cowTag);
+    }
+  };
+
+  const handleHerdChange = async (newHerd) => {
+    try {
+      const response = await fetch('/api/set-herd', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          cowTag: cowTag,
+          herdName: newHerd
+        })
+      });
+
+      if (response.ok) {
+        // Refresh cow data to show updated herd
+        handleSearch(cowTag);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to update herd: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error updating herd:', error);
+      alert('Error updating herd');
+    }
+  };
+
+  const handleCalfView = (calfData) => {
+    // Use the search bar's navigation function
+    const searchBarElement = document.getElementById('search-bar');
+    if (searchBarElement && searchBarElement.navigate) {
+      searchBarElement.navigate(calfData.CalfTag);
+    } else {
+      // Fallback to direct search
+      handleSearch(calfData.CalfTag);
+    }
   };
 
   // Check if we should show back navigation
   const previousCow = sessionStorage.getItem('previousCow');
 
   const cow = cowData?.cowData?.[0];
+  const images = cowData?.images;
+  const minimap = cowData?.minimap;
+  const currentWeight = cowData?.currentWeight;
+
+  // Define columns for the calf table
+  const calfColumns = [
+    { 
+      key: 'CalfTag', 
+      header: 'Calf Tag', 
+      width: '120px',
+      type: 'text'
+    },
+    { 
+      key: 'DOB', 
+      header: 'DOB', 
+      type: 'date'
+    }
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <h1>Cow Data</h1>
 
       <div id="search-container">
-        <SearchBar onSearch={handleSearch} />
-        {previousCow && (
-          <button 
-            onClick={() => handleSearch(previousCow)}
-            style={{ marginLeft: '10px', padding: '5px 10px' }}
-          >
-            ← Back to {previousCow}
-          </button>
-        )}
+        <SearchBar onSearch={handleSearch} value={cowTag} />
       </div>
 
       {/* SECTION 1: Images and Basic Info */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '20px',
-        border: '1px solid #ccc',
-        padding: '15px',
-        borderRadius: '5px',
-        minHeight: '420px'
-      }}>
-        {/* Left side - Images (expand with page growth) */}
+      <div className="bubble-container" style={{display: 'flex', minHeight: '420px'}}>
+        {/* Left side - Photo Viewers (responsive sizing) */}
         <div style={{ 
           display: 'flex', 
           flexDirection: 'column', 
           gap: '10px',
           flex: 1,
           minWidth: '200px',
-          aspectRatio: '2 / 3', // Maintain square per image (2 images stacked = 1:2 ratio)
-          maxWidth: '100%'
+          maxWidth: '400px', // Prevent images from getting too large
+          aspectRatio: '1 / 1', // Square container when at minimum width
+          width: '100%'
         }}>
-          <div style={{ 
-            flex: 1,
-            overflow: 'hidden',
-            borderRadius: '5px',
-            position: 'relative',
-            width: '100%'
-          }}>
-            <img 
-              src={cow?.HeadshotPath || '/images/cow-headshot.jpg'} 
-              alt="cow headshot"
-              style={{ 
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center',
-                minWidth: '100%',
-                minHeight: '100%'
-              }}
-            />
-          </div>
-          <div style={{ 
-            flex: 1,
-            overflow: 'hidden',
-            borderRadius: '5px',
-            position: 'relative',
-            width: '100%'
-          }}>
-            <img 
-              src={cow?.BodyPath || '/images/example-cow.jpg'} 
-              alt="cow body"
-              style={{ 
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center',
-                minWidth: '100%',
-                minHeight: '100%'
-              }}
-            />
-          </div>
+          <PhotoViewer 
+            cowTag={cowTag}
+            imageType="headshot"
+            style={{ 
+              flex: 1,
+              borderRadius: '5px',
+              minHeight: '0', // Allow flex shrinking
+              width: '100%'
+            }}
+          />
+          <PhotoViewer 
+            cowTag={cowTag}
+            imageType="body"
+            style={{ 
+              flex: 1,
+              borderRadius: '5px',
+              minHeight: '0', // Allow flex shrinking
+              width: '100%'
+            }}
+          />
         </div>
         
         {/* Right side - Minimap and Info (fixed width) */}
@@ -141,99 +218,99 @@ function General() {
           <div style={{ 
             width: '200px', 
             height: '200px', 
-            borderRadius: '5px' 
+            borderRadius: '5px',
+            overflow: 'hidden'
           }}>
-            <Minimap cowTag={cowTag} />
+            <Minimap 
+              cowTag={cowTag} 
+              pastureName={cow?.PastureName}
+              minimapSrc={minimap?.path}
+            />
           </div>
           
           {/* Basic Info */}
           <div>
+            {/* Location Information */}
+            {cow?.PastureName && (
+              <>
+                <h3>Current Location:</h3>
+                <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+                  {cow.PastureName}
+                </span>
+                <br /><br />
+              </>
+            )}
+            
+            {/* Current Herd with dropdown */}
+            <h3>Current Herd:</h3>
+            <select 
+              value={cow?.CurrentHerd || ''}
+              onChange={(e) => handleHerdChange(e.target.value)}
+              style={{ 
+                marginLeft: '10px', 
+                padding: '2px 5px',
+                fontSize: '14px',
+                border: '1px solid #ccc',
+                borderRadius: '3px'
+              }}
+            >
+              <option value="">Select Herd</option>
+              {allHerds.map((herd, index) => (
+                <option key={index} value={herd}>
+                  {herd}
+                </option>
+              ))}
+            </select>
+            <br /><br />
+            
             <h3>Date of Birth:</h3>
             <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
               {cow ? formatDate(cow.DateOfBirth) : 'YYYY-MM-DD'}
             </span>
             
             <h3>Last Weight:</h3>
-            <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-              {cow ? cow.CurrentWeight : 'Weight of Cow.'}
+            <span style={{ marginLeft: '10px', fontStyle: (currentWeight || cow?.CurrentWeight) ? 'normal' : 'italic' }}>
+              {currentWeight ? 
+                `${currentWeight.Weight} lbs (${formatDate(currentWeight.WeightDate)})` :
+                cow?.CurrentWeight ? 
+                  `${cow.CurrentWeight} lbs` :
+                  'No weight recorded'
+              }
             </span>
             
             <h3>Temperament:</h3>
             <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-              {cow ? cow.Temperament : 'Temperament of cow'}
+              {cow?.Temperament || 'Not recorded'}
             </span>
             
             <h3>Other Descriptors:</h3>
             <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-              {cow ? cow.Description : 'Description of Cow\'s attributes.'}
+              {cow?.Description || 'No description available'}
             </span>
           </div>
         </div>
       </div>
 
       {/* SECTION 2: Notes */}
-      <div style={{ 
-        border: '1px solid #ccc',
-        padding: '15px',
-        borderRadius: '5px'
-      }}>
-        <Notes cowTag={cowTag} cowData={cowData} />
+      <div className="bubble-container">
+        <Notes 
+          cowTag={cowTag} 
+          cowData={cowData} 
+          onRefresh={handleRefresh}
+          currentUser={currentUser}
+        />
       </div>
 
-      {/* SECTION 3: Current Calves */}
-      <div style={{ 
-        border: '1px solid #ccc',
-        padding: '15px',
-        borderRadius: '5px'
-      }}>
-        <h3>Current Calves:</h3>
-        <div style={{ marginTop: '10px' }}>
-          {cowData?.calves && cowData.calves.length > 0 ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ border: '2px double black', padding: '8px' }}>Calf Tag</th>
-                  <th style={{ border: '2px double black', padding: '8px' }}>DOB</th>
-                  <th style={{ border: '2px double black', padding: '8px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cowData.calves.map((calf, index) => (
-                  <tr key={index}>
-                    <td style={{ border: '2px double black', padding: '8px' }}>{calf.CalfTag}</td>
-                    <td style={{ border: '2px double black', padding: '8px' }}>{formatDate(calf.DOB)}</td>
-                    <td style={{ border: '2px double black', padding: '8px' }}>
-                      <button 
-                        onClick={() => handleCalfView(calf.CalfTag)}
-                        style={{ 
-                          padding: '5px 15px',
-                          backgroundColor: '#007bff',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '3px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        VIEW
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div style={{ 
-              padding: '20px', 
-              textAlign: 'center',
-              fontStyle: 'italic',
-              color: '#666',
-              border: '2px dashed #ccc',
-              borderRadius: '5px'
-            }}>
-              No calves on record or no cow selected
-            </div>
-          )}
-        </div>
+      {/* SECTION 3: Current Calves - Using MultiCowTable */}
+      <div className="bubble-container">
+        <h3 style = {{ margin: '0px', paddingBottom: '10px'}}>Calves:</h3>
+        <MultiCowTable
+          data={cowData?.calves || []}
+          columns={calfColumns}
+          onViewClick={handleCalfView}
+          title="Current Calves"
+          emptyMessage="No calves on record for selected cow"
+        />
       </div>
     </div>
   );
