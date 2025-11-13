@@ -1,37 +1,142 @@
-To get IOS camera to work;
--needs HTTPS connection (iOS Safari blocks camera on HTTP)
--SSL certificate
+BIG IDEA GOALS
+-Importing / exporting event data & fieldsheets... should be made easy
+-Fix page switching / general tab bug.
+
+
+-Build pages to create / plan / record an event
+-Webhooks to keep changes cached locally
 -REMOVE PHOTO OF CAT FROM COW 17 BODY
+-LOAD IN PAPER DATA & INSERT INTO DB.
 
-All pages: 
+ 
+TODO for breeding plan; Importing & migrating real data 
+-Text exporting to excel
+-Test importing of all three types
+-Copy data into actual excel docs, so its saved per year.
+-Build multi-file importer
+-make importing more versitale..?
 
-Input Validation:
+
+
+
+
+
+
+
+
+
+Forms.jsx
+
+Sheet.jsx edits;
+
+PregCheck
+-Is Pregnant does not display, for some odd reason.
+-Pregnancy Weight date is wrong, needs to use the check date given, not the current date.
+
+Calving Tracker
+
+Weanling Tracker
+
+
+SheetEditor 
+-Fix column editing (Doesn't currently work.)
+-Combobox appears below other rows.
+
+
+**HIGHEST PRIORITY**
+MedicalRecords (medical.jsx)
+-Allow take/save/load photos & connect to issues
+-Remove max table size on Issues & Injuries
+-Hook up medicines to the ms access table
+-Make sure everything else still works.
+-Search & find all different medicines, display combobox of medicines.
+-Update DB option list func to give medicines back
+
+
+BreedingFitness
+-Change the DB to store & display actual accuracy values
+-Design a form to upload EPDs
+
+
+General/Medical/BreedingFitness
+-Swiping back & back arrow does not return to previous cow. Make the URL search actually update the search bar. Should fix lots of other issues too.
+-When loading a large # of calves, cant scroll in the 'All current calves' table.
+
+
+
+**IMPORTANT**
+General.jsx
+-Add final item to herd selection new herd. if 'New Herd' selected in herd selection box, pop up HerdSplitter.jsx option 1
+-Display warning that cow has a history of serious issues
+-Tempermant selector
+-Show STATUS of cow on page, allow editing (Lock selections to combobox of status options)
+-Display date of weight record, not just weight.
+-Allow Editing of other descriptors.
+-Fix calf table, click to open / view. Broke w new search bar.
+-Display a timeline of all cow activity
+-CURRENT HERD selector is no longer working.
+-Add new herd button has the same problems as originally present with 'new issue' popup. Investigate.
+-'Add calf' at bottom of cow table (Opens 'Add Cow' form/page)
+
+IssueSubform.jsx
+-Make shrinkable
+-Mark as serious button / Resolved doesnt work.
+-New issue fails to save
+-Fix UPDATE ISSUE problems
+
+HerdSplitter.jsx
+-Fix selected Herd so that the contents display.
+-Width problems (On small screens, side gets cut off)
+-Lock buttons to bottom
+-Scrollbar lock
+
+Herds.jsx
+-Graphical feed level display. Display how much feed was left as of LAST RECORDING, and the projected current feed 
+-Design feed estimation algorithm
+-Hook up 'click to add a new event'.
 
 Overview.jsx
+-Show a miniviewer of the current status of the herds (Tiny minimap, animal count, herdname.)
 -Needs to actually QUERY the data (Make not static...)
+-Add 'active cows' / pregnant, active calves trackers on the overview
+
+
+
+
+**IF TIME ALLOWS**
+HerdLog.jsx
+-Expand recorded operations to Herd Events as well (Breeding / Vaxx, ect)
+
+PastureLog.jsx
+-Remove dummy event types, plan out & replace with actual events
+-complete 'Add event' functionality & follow ups on pasture logs
+
+Timeline.jsx
+-Make it possible to minimize a timeline after expanding
+-Add bkg color to new event button to make more clear
+
+General.jsx
+-Allow bulk importing of images
 
 Herds.jsx
 -Turn minimap into actual google maps API
--Make options in Herd records Toggleable (IE; allow choosing of what records to display)
--Show pasture notes on Herd page (IE fence down, ect)
--Implement split herd functionality, creating new herds, attaching cows to herds, ect.
--UI: Minor tweaks needed
 
-General.jsx
--make search bar use the autoCombobox (Autocomplete feature to make it easier to find cows)
--Display date of weight record
--Allow bulk importing of images & assigning to cows
--(Low priority) Allow bulk exporting of all cow images 
--UI Formatting for mobile
+
+
+
+**WOULD BE NICE, LOW PRIORITY**
+sheetEditor.jsx
+-return to pretty animation when dragging / swapping rows?
 
 Fieldsheets.jsx
--After editing a sheet, requery the data for the sheet (Column order could have changed)
+-Indent child sheets from parent (Currently show on same line)
 
-sheetEditor
--fix button formatting (Not wide enough to show both on a single line)
+FolderTabs.jsx
+-Pretty animated Tabs
+-Collapse when screen too small, expaning on clicked tab
 
-MedicalRecords
-TODO
 
-BreedingPlan
-TODO
+
+
+
+

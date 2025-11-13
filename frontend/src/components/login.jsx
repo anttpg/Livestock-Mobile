@@ -116,7 +116,7 @@ function Login() {
   return (
     <div style={styles.container}>
       <form style={styles.form} onSubmit={handleSubmit}>
-        <h1 style={styles.title}>Cow Management System</h1>
+        <h1 style={styles.title}>Cattle Management System</h1>
         
         {error && (
           <div style={styles.error}>{error}</div>

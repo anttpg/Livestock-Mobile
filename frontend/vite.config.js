@@ -1,7 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
+import dotenv from 'dotenv';
+import path from 'path';
 
+// Load environment variables from the root directory
+dotenv.config({ path: path.resolve(process.cwd(), '..', '.env') });
 console.log('TUNNEL_HOST:', process.env.TUNNEL_HOST);
 
 export default defineConfig({

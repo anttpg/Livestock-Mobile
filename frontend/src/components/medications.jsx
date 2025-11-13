@@ -6,7 +6,24 @@ function Medications({ cowTag, cowData }) {
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
-  const medicalRecords = cowData?.medicalRecords || [];
+  // Extract current medications from real medical records
+  const getCurrentMedications = () => {
+    if (!cowData?.medicalRecords?.treatments) return [];
+    
+    // Filter for active treatments only
+    return cowData.medicalRecords.treatments
+      .filter(treatment => treatment.TreatmentIsActive)
+      .map(treatment => ({
+        MedicineApplied: treatment.TreatmentMedicine,
+        TreatmentDate: treatment.TreatmentDate,
+        Method: treatment.TreatmentMethod,
+        Response: treatment.TreatmentResponse,
+        IsImmunization: treatment.TreatmentIsImmunization
+      }))
+      .sort((a, b) => new Date(b.TreatmentDate) - new Date(a.TreatmentDate));
+  };
+
+  const currentMedications = getCurrentMedications();
 
   return (
     <div style={{ 
@@ -18,19 +35,40 @@ function Medications({ cowTag, cowData }) {
       
       <div style={{ marginTop: '10px' }}>
         {cowTag ? (
-          medicalRecords.length > 0 ? (
+          currentMedications.length > 0 ? (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
                   <th style={{ border: '2px double black', padding: '8px' }}>Medication</th>
                   <th style={{ border: '2px double black', padding: '8px' }}>Start Date</th>
+                  <th style={{ border: '2px double black', padding: '8px' }}>Method</th>
+                  <th style={{ border: '2px double black', padding: '8px' }}>Type</th>
                 </tr>
               </thead>
               <tbody>
-                {medicalRecords.map((med, index) => (
+                {currentMedications.map((med, index) => (
                   <tr key={index}>
-                    <td style={{ border: '2px double black', padding: '8px' }}>{med.MedicineApplied}</td>
-                    <td style={{ border: '2px double black', padding: '8px' }}>{formatDate(med.TreatmentDate)}</td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>
+                      {med.MedicineApplied}
+                    </td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>
+                      {formatDate(med.TreatmentDate)}
+                    </td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>
+                      {med.Method || 'Not specified'}
+                    </td>
+                    <td style={{ border: '2px double black', padding: '8px' }}>
+                      <span style={{
+                        backgroundColor: med.IsImmunization ? '#d4edda' : '#fff3cd',
+                        color: med.IsImmunization ? '#155724' : '#856404',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                      }}>
+                        {med.IsImmunization ? 'Immunization' : 'Treatment'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

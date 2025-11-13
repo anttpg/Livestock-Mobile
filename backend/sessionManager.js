@@ -18,7 +18,8 @@ const app = express();
 // CORS configuration for development
 const allowedOrigins = [
   'http://localhost:8080',
-  'http://192.168.1.242:8080'
+  'http://192.168.1.242:8080',
+  'http://192.168.1.87:8080'
 ];
 
 // Add host domain to allowed origins
@@ -57,14 +58,28 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
+  rolling: true, // extend the session on each request
   cookie: {
     secure: false,
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 3600000 // 1 hour
+    maxAge: 60 * 60 * 1000 // 1 hour
   }
 }));
 
+// extend session on any API call
+app.use('/api/*', (req, res, next) => {
+  // Skip session extension for time remaining checks
+  if (req.path === '/api/session-time-remaining') {
+    return next();
+  }
+  
+  // Only extend session if user is logged in
+  if (req.session && req.session.user) {
+    req.session.touch();
+  }
+  next();
+});
 
 // Trust proxy specifically for Cloudflare
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
@@ -184,13 +199,83 @@ app.post('/api/add-observation',
   }
 );
 
-// Add medical record
-app.post('/api/add-medical-record',
-  createValidationMiddleware('addMedicalRecord'),
+
+
+// Get all medical data for a cow
+app.get('/api/cow/:tag/medical',
+  createValidationMiddleware('getCowData'),
   async (req, res) => {
-    return apiWrapper.addMedicalRecord(req, res);
+    return apiWrapper.getCowMedicalRecords(req, res);
   }
 );
+
+
+
+// MEDICAL ROUTES
+app.post('/api/medical/add-record',
+  createValidationMiddleware('createMedicalRecord'),
+  async (req, res) => {
+    return apiWrapper.createMedicalRecord(req, res);
+  }
+);
+
+app.get('/api/medical/get-record/:recordId',
+  createValidationMiddleware('getMedicalRecord'),
+  async (req, res) => {
+    return apiWrapper.getMedicalRecordDetails(req, res);
+  }
+);
+
+app.put('/api/medical/update-record/:recordId',
+  createValidationMiddleware('updateMedicalRecord'),
+  async (req, res) => {
+    return apiWrapper.updateMedicalRecord(req, res);
+  }
+);
+
+app.post('/api/medical/resolve-record/:recordId',
+  createValidationMiddleware('resolveIssue'),
+  async (req, res) => {
+    return apiWrapper.resolveIssue(req, res);
+  }
+);
+
+app.get('/api/medical/medicines',
+  createValidationMiddleware('getMedicines'),
+  async (req, res) => {
+    return apiWrapper.getMedicines(req, res);
+  }
+);
+
+app.post('/api/medical/medicines',
+  createValidationMiddleware('addMedicine'),
+  async (req, res) => {
+    return apiWrapper.addMedicine(req, res);
+  }
+);
+
+app.post('/api/medical/:recordId/upload-image',
+    upload.single('image'), // Your existing multer middleware
+    createValidationMiddleware('uploadMedicalImage'),
+    async (req, res) => {
+        return apiWrapper.uploadMedicalImage(req, res);
+    }
+);
+
+app.get('/api/medical/:recordId/image/:imageType/:n?',
+    createValidationMiddleware('getMedicalImage'),
+    async (req, res) => {
+        return apiWrapper.getMedicalImage(req, res);
+    }
+);
+
+app.get('/api/medical/:recordId/image-count',
+    createValidationMiddleware('getMedicalImageCount'),
+    async (req, res) => {
+        return apiWrapper.getMedicalImageCount(req, res);
+    }
+);
+
 
 // Update cow weight
 app.post('/api/update-weight',
@@ -199,6 +284,89 @@ app.post('/api/update-weight',
     return apiWrapper.updateCowWeight(req, res);
   }
 );
+
+// Record batch weights
+app.post('/api/batch-weigh-in',
+  createValidationMiddleware('recordBatchWeights'),
+  async (req, res) => {
+    return apiWrapper.recordBatchWeights(req, res);
+  }
+);
+
+// BREEDING ROUTES
+
+// Get all breeding plans
+app.get('/api/breeding-plans', async (req, res) => {
+  return apiWrapper.getBreedingPlans(req, res);
+});
+
+// Get breeding plan overview
+app.get('/api/breeding-plan/:planId/overview',
+  createValidationMiddleware('getBreedingPlanOverview'),
+  async (req, res) => {
+    return apiWrapper.getBreedingPlanOverview(req, res);
+  }
+);
+
+// Get breeding candidates for pregnancy check
+app.get('/api/breeding-candidates/:herdName',
+  createValidationMiddleware('getHerdBreedingCandidates'),
+  async (req, res) => {
+    return apiWrapper.getHerdBreedingCandidates(req, res);
+  }
+);
+
+// Submit pregnancy check results
+app.post('/api/pregnancy-check',
+  createValidationMiddleware('submitPregancyCheck'),
+  async (req, res) => {
+    return apiWrapper.submitPregancyCheck(req, res);
+  }
+);
+
+// Get calving status for herd
+app.get('/api/calving-status/:herdName',
+  createValidationMiddleware('getCalvingStatus'),
+  async (req, res) => {
+    return apiWrapper.getCalvingStatus(req, res);
+  }
+);
+
+// Add calving record
+app.post('/api/calving-record',
+  createValidationMiddleware('addCalvingRecord'),
+  async (req, res) => {
+    return apiWrapper.addCalvingRecord(req, res);
+  }
+);
+
+// Get weaning candidates
+app.get('/api/weaning-candidates/:herdName',
+  createValidationMiddleware('getWeaningCandidates'),
+  async (req, res) => {
+    return apiWrapper.getWeaningCandidates(req, res);
+  }
+);
+
+// Record weaning
+app.post('/api/weaning-record',
+  createValidationMiddleware('recordWeaning'),
+  async (req, res) => {
+    return apiWrapper.recordWeaning(req, res);
+  }
+);
+
+// Generate tag suggestions
+app.get('/api/tag-suggestions/:tag',
+  createValidationMiddleware('generateTagSuggestions'),
+  async (req, res) => {
+    return apiWrapper.generateTagSuggestions(req, res);
+  }
+);
+
+
+
+
 
 // Add new cow
 app.post('/api/add-cow',
@@ -227,6 +395,12 @@ app.get('/api/herds', async (req, res) => {
   return apiWrapper.getHerdsWithDetails(req, res);
 });
 
+// Get list of herds... is unessicary..? TODO look at.
+app.get('/api/herds/list', async (req, res) => {
+  return apiWrapper.getHerdsList(req, res);
+});
+
+
 // Get feed status for a specific herd
 app.get('/api/herd/:herdName/feed-status', 
   createValidationMiddleware('getHerdFeedStatus'),
@@ -239,6 +413,14 @@ app.get('/api/herd/:herdName/feed-status',
 app.get('/api/feed-types', async (req, res) => {
   return apiWrapper.getAllFeedTypes(req, res);
 });
+
+// Add a new feed type
+app.post('/api/feed-types', 
+  createValidationMiddleware('addFeedType'),
+  async (req, res) => {
+    return apiWrapper.addFeedType(req, res);
+  }
+);
 
 // Record feed activity
 app.post('/api/record-feed-activity',
@@ -269,8 +451,77 @@ app.get('/api/pastures', async (req, res) => {
   return apiWrapper.getAllPastures(req, res);
 });
 
+// Herd event management
+app.get('/api/herds/:herdName/events', 
+  createValidationMiddleware('getHerdEvents'),
+  async (req, res) => {
+    return apiWrapper.getHerdEvents(req, res);
+  }
+);
 
+app.post('/api/herds/:herdName/events',
+  createValidationMiddleware('addHerdEvent'), 
+  async (req, res) => {
+    return apiWrapper.addHerdEvent(req, res);
+  }
+);
 
+// Pasture maintenance
+app.get('/api/pastures/:pastureName/maintenance',
+  createValidationMiddleware('getPastureMaintenanceEvents'),
+  async (req, res) => {
+    return apiWrapper.getPastureMaintenanceEvents(req, res);
+  }
+);
+
+app.post('/api/pastures/maintenance',
+  createValidationMiddleware('addPastureMaintenanceEvent'),
+  async (req, res) => {
+    return apiWrapper.addPastureMaintenanceEvent(req, res);
+  }
+);
+
+// Herd splitting/creation
+app.post('/api/herds/create',
+  createValidationMiddleware('createHerd'),
+  async (req, res) => {
+    return apiWrapper.createHerd(req, res);
+  }
+);
+
+app.post('/api/herds/batch-move',
+  createValidationMiddleware('batchMoveCows'),
+  async (req, res) => {
+    return apiWrapper.batchMoveCows(req, res);
+  }
+);
+
+// Cows organized by herd
+app.get('/api/cows/by-herd', 
+  async (req, res) => {
+    return apiWrapper.getCowsByHerd(req, res);
+  }
+);
+
+// User preferences
+app.get('/api/users/:username/preferences',
+  createValidationMiddleware('getUserPreferences'),
+  async (req, res) => {
+    return apiWrapper.getUserPreferences(req, res);
+  }
+);
+
+app.put('/api/users/:username/preferences',
+  createValidationMiddleware('updateUserPreferences'),
+  async (req, res) => {
+    return apiWrapper.updateUserPreferences(req, res);
+  }
+);
+
+// Get form dropdown data
+app.get('/api/form-dropdown-data', async (req, res) => {
+  return apiWrapper.getFormDropdownData(req, res);
+});
 
 // Get nth cow image (headshot or body) - returns specific image by position
 app.get('/api/cow/:tag/image/:imageType/:n',
@@ -313,6 +564,27 @@ app.get('/api/cow/:tag/images',
   }
 );
 
+// Get all of a cows' epds
+app.get('/api/cow/:tag/epds',
+  createValidationMiddleware('getCowEpds'),
+  async (req, res) => {
+    return apiWrapper.getCowEpds(req, res);
+  }
+);
+
+// Get available bulls for breeding assignment
+app.get('/api/breeding-animal-status', async (req, res) => {
+    return apiWrapper.getBreedingAnimalStatus(req, res);
+});
+
+// Assign breeding records to a plan
+app.post('/api/assign-breeding-records',
+    createValidationMiddleware('assignBreedingRecords'),
+    async (req, res) => {
+        return apiWrapper.assignBreedingRecords(req, res);
+    }
+);
+
 
 // Get main map
 app.get('/api/map', async (req, res) => {
@@ -339,12 +611,16 @@ app.get('/api/minimaps', async (req, res) => {
   return apiWrapper.getAvailableMinimaps(req, res);
 });
 
-// Get all available sheets
+
+
+// SHEET ROUTES
+
+// Get all sheets
 app.get('/api/sheets/all-sheets', async (req, res) => {
   return apiWrapper.getAllSheets(req, res);
 });
 
-// Get available columns for sheet editor
+// Get available columns
 app.get('/api/sheets/available-columns', async (req, res) => {
   return apiWrapper.getAvailableColumns(req, res);
 });
@@ -365,12 +641,17 @@ app.post('/api/sheets/update-cell',
   }
 );
 
-// Get list of herds for dropdown
-app.get('/api/herds/list', async (req, res) => {
-  return apiWrapper.getHerdsList(req, res);
-});
+// Update multiple cells at once
+app.post('/api/sheets/batch-update',
+  createValidationMiddleware('batchUpdateSheet'),
+  async (req, res) => {
+    return apiWrapper.batchUpdateSheetCells(req, res);
+  }
+)
 
-// Sheet structure management (for editor - placeholder)
+
+
+// Sheet structure
 app.get('/api/sheets/structure/:sheetId',
   createValidationMiddleware('getSheetStructure'),
   async (req, res) => {
@@ -378,7 +659,15 @@ app.get('/api/sheets/structure/:sheetId',
   }
 );
 
-// Create new sheet (placeholder)
+// Update existing sheet structure
+app.put('/api/sheets/update-structure/:sheetId',
+  createValidationMiddleware('updateSheet'),
+  async (req, res) => {
+    return apiWrapper.updateSheet(req, res);
+  }
+);
+
+// Create new sheet
 app.post('/api/sheets/create',
   createValidationMiddleware('createSheet'),
   async (req, res) => {
@@ -386,15 +675,7 @@ app.post('/api/sheets/create',
   }
 );
 
-// Update existing sheet (placeholder)
-app.put('/api/sheets/update/:sheetId',
-  createValidationMiddleware('updateSheet'),
-  async (req, res) => {
-    return apiWrapper.updateSheet(req, res);
-  }
-);
-
-// Delete sheet (placeholder)
+// Delete sheet
 app.delete('/api/sheets/delete/:sheetId',
   createValidationMiddleware('deleteSheet'),
   async (req, res) => {
@@ -402,9 +683,40 @@ app.delete('/api/sheets/delete/:sheetId',
   }
 );
 
-// 404 handler for unmatched API routes
+
+app.get('/api/extend-session', (req, res) => {
+  if (req.session && req.session.user) {
+    req.session.touch();
+    res.json({ success: true, extended: true });
+  } else {
+    res.status(401).json({ success: false, message: 'No active session' });
+  }
+});
+
+app.get('/api/session-time-remaining', (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ authenticated: false });
+  }
+  let remaining = 0;
+  
+  if (req.session.cookie._expires) {
+    // Calculate remaining time from expiration date
+    remaining = Math.max(0, req.session.cookie._expires.getTime() - Date.now());
+  } else if (req.session.cookie.maxAge) {
+    // Fallback to maxAge if expires is not set
+    remaining = req.session.cookie.maxAge;
+  }
+  
+  res.json({ 
+    authenticated: true,
+    remainingMs: remaining,
+    remainingMinutes: Math.floor(remaining / 60000)
+  });
+});
+
+// 404 handler for unmatched API routes (keep this at the end)
 app.use('/api/*', (req, res) => {
-  console.error(`Unmatched API call`)
+  console.error(`Unmatched API call: ${req.method} ${req.path}`);
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
@@ -423,11 +735,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Cattle Management API Server v3.0 running on port ${PORT}`);
   console.log(`Local file path: ${process.env.LOCAL_PATH || './files'}`);
-  console.log('Available endpoints:');
-  console.log('Auth: /api/login, /api/logout, /api/check-auth');
-  console.log('Cows: /api/cows, /api/cow/:tag');
-  console.log('Data: /api/add-observation, /api/add-medical-record');
-  console.log('Images: /api/cow/:tag/upload-image, /api/cow/:tag/image/:type, /api/cow/:tag/images');
-  console.log('Maps: /api/map, /api/minimap/:fieldName, /api/minimaps');
-
 });

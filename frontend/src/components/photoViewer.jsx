@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Popup from './popup';
 
-function PhotoViewer({ cowTag, imageType, style = {} }) {
+function PhotoViewer({ 
+  cowTag, 
+  imageType, 
+  style = {}, 
+  alternateDefaultPhoto = false // NEW: Use NoPhoto.png instead of NoHead/NoBody
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageCount, setImageCount] = useState(0);
@@ -10,10 +15,19 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
   const [showCamera, setShowCamera] = useState(false);
   const [initialImage, setInitialImage] = useState('/images/loading.png');
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [isLoadingInitial, setIsLoadingInitial] = useState(true); // New loading state
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Get the appropriate default image
+  const getDefaultImage = () => {
+    if (alternateDefaultPhoto) {
+      return '/images/NoPhoto.png';
+    }
+    return imageType === 'headshot' ? '/images/NoHead.png' : '/images/NoBody.png';
+  };
 
   // Load initial image and count on component mount
   useEffect(() => {
@@ -23,12 +37,15 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
       setInitialImage('/images/loading.png');
       loadInitialData();
     } else {
-      // No cow tag yet, show loading
-      setInitialImage('/images/loading.png');
-      setIsLoadingInitial(true);
-      setDataLoaded(false);
+      // No cow tag (unknown animal), show default immediately
+      const defaultUrl = getDefaultImage();
+      setInitialImage(defaultUrl);
+      setImageCount(0);
+      setLoadedImages(new Map());
+      setDataLoaded(true);
+      setIsLoadingInitial(false);
     }
-  }, [cowTag, imageType]);
+  }, [cowTag, imageType, alternateDefaultPhoto]);
 
   const loadInitialData = async () => {
     if (!cowTag) return;
@@ -37,24 +54,34 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
       setIsLoadingInitial(true);
       setDataLoaded(false);
       
+      // Check if this is a medical image request
+      const isMedical = cowTag.startsWith('medical_');
+      const apiPath = isMedical 
+        ? `/api/medical/${cowTag.replace('medical_', '')}/image-count`
+        : `/api/cow/${cowTag}/image-count`;
+      
       // Get image count first
-      const countResponse = await fetch(`/api/cow/${cowTag}/image-count`, {
+      const countResponse = await fetch(apiPath, {
         credentials: 'include'
       });
       
       if (countResponse.ok) {
         const countData = await countResponse.json();
-        const count = imageType === 'headshot' ? countData.headshots : countData.bodyshots;
+        const count = isMedical 
+          ? countData.issues || 0
+          : (imageType === 'headshot' ? countData.headshots : countData.bodyshots);
         setImageCount(count);
         
         if (count > 0) {
           // Load first image
-          const imageUrl = `/api/cow/${cowTag}/image/${imageType}/1`;
+          const imageUrl = isMedical
+            ? `/api/medical/${cowTag.replace('medical_', '')}/image/${imageType}/1`
+            : `/api/cow/${cowTag}/image/${imageType}/1`;
           setInitialImage(imageUrl);
           setLoadedImages(new Map([[1, imageUrl]]));
         } else {
           // No images, use default
-          const defaultUrl = imageType === 'headshot' ? '/images/NoHead.png' : '/images/NoBody.png';
+          const defaultUrl = getDefaultImage();
           setInitialImage(defaultUrl);
           setLoadedImages(new Map());
         }
@@ -64,7 +91,7 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
       } else {
         // Error response - still show defaults but after loading is done
         console.error('Failed to get image count:', countResponse.status);
-        const defaultUrl = imageType === 'headshot' ? '/images/NoHead.png' : '/images/NoBody.png';
+        const defaultUrl = getDefaultImage();
         setInitialImage(defaultUrl);
         setImageCount(0);
         setLoadedImages(new Map());
@@ -74,7 +101,7 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
     } catch (error) {
       console.error('Error loading initial data:', error);
       // Network error or other issue - show defaults after loading
-      const defaultUrl = imageType === 'headshot' ? '/images/NoHead.png' : '/images/NoBody.png';
+      const defaultUrl = getDefaultImage();
       setInitialImage(defaultUrl);
       setImageCount(0);
       setLoadedImages(new Map());
@@ -87,7 +114,10 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
     if (loadedImages.has(n) || n > imageCount) return;
     
     try {
-      const imageUrl = `/api/cow/${cowTag}/image/${imageType}/${n}`;
+      const isMedical = cowTag.startsWith('medical_');
+      const imageUrl = isMedical
+        ? `/api/medical/${cowTag.replace('medical_', '')}/image/${imageType}/${n}`
+        : `/api/cow/${cowTag}/image/${imageType}/${n}`;
       setLoadedImages(prev => new Map(prev.set(n, imageUrl)));
     } catch (error) {
       console.error(`Error loading image ${n}:`, error);
@@ -121,9 +151,14 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
   };
 
   const handleImageClick = () => {
+    // Don't allow clicks if no cowTag (unknown animal) or still loading
+    if (!cowTag || isLoadingInitial) {
+      return;
+    }
+
     // If showing default image, try to open camera
     if (imageCount === 0) {
-      openCamera();
+      triggerFileUpload();
     } else {
       handleExpand();
     }
@@ -203,15 +238,58 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
     }, 'image/jpeg', 0.8);
   };
 
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select a valid image file');
+        return;
+      }
+      
+      // Validate file size (e.g., 10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+      if (file.size > maxSize) {
+        alert('File size too large. Please select an image smaller than 10MB');
+        return;
+      }
+      
+      uploadPhoto(file);
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerFileUpload = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   const uploadPhoto = async (blob) => {
     try {
       setIsLoading(true);
       
+      const isMedical = cowTag.startsWith('medical_');
+      const recordId = isMedical ? cowTag.replace('medical_', '') : null;
+      
       const formData = new FormData();
-      formData.append('image', blob, `${cowTag}_${imageType}_${Date.now()}.jpg`);
-      formData.append('imageType', imageType);
+      if (isMedical) {
+        formData.append('image', blob, `medical_${recordId}_${Date.now()}.jpg`);
+        formData.append('imageType', imageType);
+      } else {
+        formData.append('image', blob, `${cowTag}_${imageType}_${Date.now()}.jpg`);
+        formData.append('imageType', imageType);
+      }
 
-      const response = await fetch(`/api/cow/${cowTag}/upload-image`, {
+      const uploadUrl = isMedical 
+        ? `/api/medical/${recordId}/upload-image`
+        : `/api/cow/${cowTag}/upload-image`;
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         credentials: 'include',
         body: formData
@@ -254,8 +332,11 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
   };
 
   const isDefaultImage = (url) => {
-    return url === '/images/NoHead.png' || url === '/images/NoBody.png';
+    return url === '/images/NoHead.png' || url === '/images/NoBody.png' || url === '/images/NoPhoto.png';
   };
+
+  // Determine if this is a clickable/interactive photo viewer
+  const isInteractive = cowTag && !isLoadingInitial;
 
   return (
     <>
@@ -265,16 +346,16 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
           position: 'relative',
           borderRadius: '5px',
           overflow: 'hidden',
-          cursor: isLoadingInitial ? 'default' : 'pointer',
+          cursor: isInteractive ? 'pointer' : 'default',
           transition: 'filter 0.2s ease',
           opacity: isLoadingInitial ? 0.8 : 1
         }}
         onClick={handleImageClick}
         onMouseEnter={(e) => {
-          if (!isLoadingInitial) e.target.style.filter = 'brightness(0.9)';
+          if (isInteractive) e.target.style.filter = 'brightness(0.9)';
         }}
         onMouseLeave={(e) => {
-          if (!isLoadingInitial) e.target.style.filter = 'brightness(1)';
+          if (isInteractive) e.target.style.filter = 'brightness(1)';
         }}
       >
         <img 
@@ -288,156 +369,196 @@ function PhotoViewer({ cowTag, imageType, style = {} }) {
           onError={(e) => {
             // Only set default on error if we're not still loading initial data
             if (!isLoadingInitial) {
-              e.target.src = imageType === 'headshot' ? '/images/NoHead.png' : '/images/NoBody.png';
+              e.target.src = getDefaultImage();
             }
           }}
         />
 
-        {/* Expand icon - always visible in bottom right */}
-        <div style={{
-          position: 'absolute',
-          bottom: '8px',
-          right: '8px',
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          borderRadius: '50%',
-          padding: '6px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
-        }}>
-          <span 
-            className="material-symbols-outlined" 
-            style={{ 
-              color: 'white', 
-              fontSize: '18px' 
-            }}
-          >
-            {isLoadingInitial ? 'hourglass_empty' : 
-             (!dataLoaded || imageCount === 0) ? 'photo_camera' : 
-             'expand_content'}
-          </span>
-        </div>
-      </div>
-
-      {/* Gallery Popup */}
-      <Popup
-        isOpen={isExpanded}
-        onClose={() => setIsExpanded(false)}
-        title="Photos"
-        width="90vw"
-        height="90vh"
-        maxWidth="1200px"
-        maxHeight="800px"
-      >
-        {dataLoaded && (
-          <PhotoGallery 
-            cowTag={cowTag}
-            imageType={imageType}
-            imageCount={imageCount}
-            loadedImages={loadedImages}
-            currentIndex={currentIndex}
-            onIndexChange={setCurrentIndex}
-            onAddPhoto={openCamera}
-            onPrevious={handlePrevious}
-            onNext={handleNext}
-            getCurrentImageUrl={getCurrentImageUrl}
-          />
-        )}
-        {!dataLoaded && (
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            height: '100%' 
-          }}>
-            <img src="/images/loading.png" alt="Loading..." style={{ width: '64px', height: '64px' }} />
-          </div>
-        )}
-      </Popup>
-
-      {/* Camera Popup */}
-      <Popup
-        isOpen={showCamera}
-        onClose={closeCamera}
-        title="Take Photo"
-        width="80vw"
-        height="80vh"
-        maxWidth="600px"
-        maxHeight="600px"
-      >
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          <video 
-            ref={videoRef}
-            autoPlay
-            playsInline
-            style={{ 
-              width: '100%', 
-              height: '100%', 
-              objectFit: 'cover',
-              borderRadius: '5px'
-            }}
-          />
-          
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-          
-          {/* Capture button */}
+        {/* Expand icon - only show for interactive viewers */}
+        {isInteractive && (
           <div style={{
             position: 'absolute',
-            bottom: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
+            bottom: '8px',
+            right: '8px',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderRadius: '50%',
+            padding: '6px',
             display: 'flex',
-            gap: '10px'
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
           }}>
-            <button
-              onClick={capturePhoto}
-              disabled={isLoading}
-              style={{
-                backgroundColor: '#4CAF50',
-                color: 'white',
-                border: 'none',
-                borderRadius: '50%',
-                width: '60px',
-                height: '60px',
-                fontSize: '24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
+            <span 
+              className="material-symbols-outlined" 
+              style={{ 
+                color: 'white', 
+                fontSize: '18px' 
               }}
             >
-              <span className="material-symbols-outlined">
-                {isLoading ? 'hourglass_empty' : 'photo_camera'}
-              </span>
-            </button>
-            
-            <button
-              onClick={closeCamera}
-              style={{
-                backgroundColor: '#f44336',
-                color: 'white',
-                border: 'none',
-                borderRadius: '50%',
-                width: '60px',
-                height: '60px',
-                fontSize: '24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
+              {(!dataLoaded || imageCount === 0) ? 'photo_camera' : 'expand_content'}
+            </span>
           </div>
-        </div>
-      </Popup>
+        )}
+      </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileUpload}
+      />
+
+      {/* Gallery Popup - only show for valid cowTag */}
+      {cowTag && (
+        <Popup
+          isOpen={isExpanded}
+          onClose={() => setIsExpanded(false)}
+          title="Photos"
+          width="90vw"
+          height="90vh"
+          maxWidth="1200px"
+          maxHeight="800px"
+        >
+          {dataLoaded && (
+            <PhotoGallery 
+              cowTag={cowTag}
+              imageType={imageType}
+              imageCount={imageCount}
+              loadedImages={loadedImages}
+              currentIndex={currentIndex}
+              onIndexChange={setCurrentIndex}
+              onAddPhoto={openCamera}
+              onUploadPhoto={triggerFileUpload}
+              onPrevious={handlePrevious}
+              onNext={handleNext}
+              getCurrentImageUrl={getCurrentImageUrl}
+            />
+          )}
+          {!dataLoaded && (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              height: '100%' 
+            }}>
+              <img src="/images/loading.png" alt="Loading..." style={{ width: '64px', height: '64px' }} />
+            </div>
+          )}
+        </Popup>
+      )}
+
+      {/* Camera Popup - only show for valid cowTag */}
+      {cowTag && (
+        <Popup
+          isOpen={showCamera}
+          onClose={closeCamera}
+          title="Take Photo"
+          width="80vw"
+          height="80vh"
+          maxWidth="600px"
+          maxHeight="600px"
+        >
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <video 
+              ref={videoRef}
+              autoPlay
+              playsInline
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'cover',
+                borderRadius: '5px'
+              }}
+            />
+            
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+            
+            {/* Buttons container */}
+            <div style={{
+              position: 'absolute',
+              bottom: '20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              gap: '15px',
+              alignItems: 'center'
+            }}>
+              {/* Take photo button */}
+              <button
+                onClick={capturePhoto}
+                disabled={isLoading}
+                style={{
+                  backgroundColor: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '60px',
+                  height: '60px',
+                  fontSize: '24px',
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: isLoading ? 0.6 : 1
+                }}
+              >
+                <span className="material-symbols-outlined">
+                  {isLoading ? 'hourglass_empty' : 'photo_camera'}
+                </span>
+              </button>
+
+              {/* Upload photo button */}
+              <button
+                onClick={triggerFileUpload}
+                disabled={isLoading}
+                style={{
+                  backgroundColor: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '60px',
+                  height: '60px',
+                  fontSize: '24px',
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: isLoading ? 0.6 : 1
+                }}
+              >
+                <span className="material-symbols-outlined">upload</span>
+              </button>
+              
+              {/* Close button */}
+              <button
+                onClick={closeCamera}
+                style={{
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '60px',
+                  height: '60px',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+          </div>
+        </Popup>
+      )}
     </>
   );
 }
 
-// Gallery component for the popup content
+// Gallery component for the popup content (unchanged)
 function PhotoGallery({ 
   cowTag, 
   imageType, 
@@ -446,6 +567,7 @@ function PhotoGallery({
   currentIndex, 
   onIndexChange, 
   onAddPhoto,
+  onUploadPhoto,
   onPrevious,
   onNext,
   getCurrentImageUrl
@@ -464,24 +586,44 @@ function PhotoGallery({
           photo_camera
         </span>
         <p style={{ color: '#666', fontSize: '18px' }}>No photos found</p>
-        <button
-          onClick={onAddPhoto}
-          style={{
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            padding: '12px 24px',
-            fontSize: '16px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
-          <span className="material-symbols-outlined">add_a_photo</span>
-          Take First Photo
-        </button>
+        <div style={{ display: 'flex', gap: '15px' }}>
+          <button
+            onClick={onAddPhoto}
+            style={{
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              padding: '12px 24px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span className="material-symbols-outlined">add_a_photo</span>
+            Take Photo
+          </button>
+          <button
+            onClick={onUploadPhoto}
+            style={{
+              backgroundColor: '#2196F3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              padding: '12px 24px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span className="material-symbols-outlined">upload</span>
+            Upload Photo
+          </button>
+        </div>
       </div>
     );
   }
@@ -504,12 +646,14 @@ function PhotoGallery({
         {currentIndex + 1}/{imageCount}
       </div>
 
-      {/* Add photo button - top right */}
+      {/* Add photo buttons - top right */}
       <div style={{
         position: 'absolute',
         top: '15px',
         right: '15px',
-        zIndex: 10
+        zIndex: 10,
+        display: 'flex',
+        gap: '10px'
       }}>
         <button
           onClick={onAddPhoto}
@@ -529,7 +673,27 @@ function PhotoGallery({
           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
             add_a_photo
           </span>
-          Add Photo
+          Take Photo
+        </button>
+        <button
+          onClick={onUploadPhoto}
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '20px',
+            padding: '8px 12px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px'
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+            upload
+          </span>
+          Upload Photo
         </button>
       </div>
 

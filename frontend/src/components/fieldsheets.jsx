@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Sheet from './sheet';
+import SheetImporter from './sheetImporter';
 import Popup from './popup';
+import '../cow-data.css';
 
-function Fieldsheets() {
+function Fieldsheets({ sheets: filterSheets = null }) {
   const [sheets, setSheets] = useState([]);
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
   const [editingSheet, setEditingSheet] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Fetch all sheets when component mounts
@@ -16,7 +19,6 @@ function Fieldsheets() {
   }, []);
 
   const fetchAllSheets = async () => {
-    console.log(`Attempting to fetch sheets`);
     try {
       const response = await fetch('/api/sheets/all-sheets', {
         credentials: 'include'
@@ -24,19 +26,50 @@ function Fieldsheets() {
 
       if (response.ok) {
         const data = await response.json();
-        // Fix: Map database structure to frontend expectations
-        const mappedSheets = (data.sheets || []).map(sheet => ({
-          id: sheet.ID,           // Map ID to id
-          name: sheet.SheetName   // Map SheetName to name
+        let allSheets = (data.sheets || []).map(sheet => ({
+          id: sheet.ID,
+          name: sheet.SheetName,
+          locked: sheet.Locked || false,
+          parentSheet: sheet.ParentSheet || null
         }));
 
-        console.log(`Successfully fetched ${data.sheets.length} sheets`);
-        setSheets(mappedSheets);
+        // Apply filtering if filterSheets is provided
+        if (filterSheets) {
+          const filteredIds = new Set();
+          
+          // Add all sheets in filterSheets
+          filterSheets.forEach(sheetName => {
+            const sheet = allSheets.find(s => s.name === sheetName);
+            if (sheet) {
+              filteredIds.add(sheet.id);
+              
+              // If it's a child, add parent and siblings
+              if (sheet.parentSheet) {
+                const parent = allSheets.find(s => s.id === sheet.parentSheet);
+                if (parent) {
+                  filteredIds.add(parent.id);
+                  // Add siblings
+                  allSheets.filter(s => s.parentSheet === sheet.parentSheet)
+                    .forEach(sibling => filteredIds.add(sibling.id));
+                }
+              }
+              
+              // Add children
+              allSheets.filter(s => s.parentSheet === sheet.id)
+                .forEach(child => filteredIds.add(child.id));
+            }
+          });
+          
+          allSheets = allSheets.filter(sheet => filteredIds.has(sheet.id));
+        }
+
+        // Sort and organize sheets: locked first, then unlocked, with children indented
+        const organizedSheets = organizeSheets(allSheets);
+        setSheets(organizedSheets);
         
         // Select first sheet by default
-        if (mappedSheets.length > 0) {
-          setSelectedSheet(mappedSheets[0]);
-          
+        if (organizedSheets.length > 0) {
+          setSelectedSheet(organizedSheets[0]);
         }
       } else {
         console.error('Failed to fetch sheets');
@@ -48,6 +81,34 @@ function Fieldsheets() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const organizeSheets = (sheets) => {
+    const parentSheets = sheets.filter(s => !s.parentSheet);
+    const childSheets = sheets.filter(s => s.parentSheet);
+    
+    // Sort parents: locked first, then unlocked
+    parentSheets.sort((a, b) => {
+      if (a.locked !== b.locked) return b.locked - a.locked; // locked first
+      return a.name.localeCompare(b.name);
+    });
+    
+    const organized = [];
+    
+    parentSheets.forEach(parent => {
+      organized.push({ ...parent, indent: 0 });
+      
+      // Add children immediately after parent
+      const children = childSheets
+        .filter(child => child.parentSheet === parent.id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      
+      children.forEach(child => {
+        organized.push({ ...child, indent: 1 });
+      });
+    });
+    
+    return organized;
   };
 
   const handleSheetSelect = (sheet) => {
@@ -67,7 +128,7 @@ function Fieldsheets() {
   };
 
   const handleDelete = () => {
-    if (selectedSheet) {
+    if (selectedSheet && !selectedSheet.locked) {
       setShowDeleteConfirm(true);
     }
   };
@@ -97,13 +158,15 @@ function Fieldsheets() {
   const handleEditorClose = () => {
     setShowEditor(false);
     setEditingSheet(null);
-    // Refresh sheets and current selection
     fetchAllSheets();
   };
 
   const handleImport = () => {
-    // TODO: Implement import functionality
-    alert('Import functionality not yet implemented');
+    setShowImporter(true);
+  };
+
+  const handleImporterClose = () => {
+    setShowImporter(false);
   };
 
   if (loading) {
@@ -122,11 +185,11 @@ function Fieldsheets() {
   }
 
   return (
-  <div className="multibubble-page" style={{ height: '100vh' }}>
-    <h1>Field Sheets</h1>
+    <div className="multibubble-page" style={{ /*height: '150vh' Uncomment to limit scroll amount*/ }}>
+      <h1>Field Sheets</h1>
 
-    {/* Split div 50/50 */}
-    <div className="multibubble-row" style={{ minHeight: '200px' }}>
+      {/* Split div 50/50 */}
+      <div className="multibubble-row" style={{ minHeight: '200px' }}>
         {/* Left side - Sheet list */}
         <div className="bubble-container" style={{flex: 1}}>
           <h3 style={{ margin: '0 0 15px 0' }}>Available Sheets</h3>
@@ -137,14 +200,23 @@ function Fieldsheets() {
                 onClick={() => handleSheetSelect(sheet)}
                 style={{
                   padding: '10px',
+                  paddingLeft: `${10 + (sheet.indent * 20)}px`,
                   border: '1px solid #ddd',
                   borderRadius: '3px',
                   cursor: 'pointer',
                   backgroundColor: selectedSheet?.id === sheet.id ? '#e3f2fd' : '#f9f9f9',
                   borderColor: selectedSheet?.id === sheet.id ? '#2196f3' : '#ddd',
-                  transition: 'all 0.2s ease'
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
                 }}
               >
+                {sheet.locked && (
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#666' }}>
+                    lock
+                  </span>
+                )}
                 {sheet.name}
               </div>
             ))}
@@ -173,13 +245,9 @@ function Fieldsheets() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
               onClick={handleImport}
+              className="button"
               style={{
                 padding: '12px 20px',
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
                 fontSize: '16px',
                 fontWeight: 'bold'
               }}
@@ -190,16 +258,15 @@ function Fieldsheets() {
             <button
               onClick={handleEdit}
               disabled={!selectedSheet}
+              className="button"
               style={{
                 padding: '12px 20px',
                 backgroundColor: selectedSheet ? '#ffc107' : '#6c757d',
                 color: selectedSheet ? 'black' : 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: selectedSheet ? 'pointer' : 'not-allowed',
                 fontSize: '16px',
                 fontWeight: 'bold',
-                opacity: selectedSheet ? 1 : 0.6
+                opacity: selectedSheet ? 1 : 0.6,
+                cursor: selectedSheet ? 'pointer' : 'not-allowed'
               }}
             >
               Edit
@@ -207,17 +274,16 @@ function Fieldsheets() {
             
             <button
               onClick={handleDelete}
-              disabled={!selectedSheet}
+              disabled={!selectedSheet || selectedSheet?.locked}
+              className="button"
               style={{
                 padding: '12px 20px',
-                backgroundColor: selectedSheet ? '#dc3545' : '#6c757d',
+                backgroundColor: (selectedSheet && !selectedSheet.locked) ? '#dc3545' : '#6c757d',
                 color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: selectedSheet ? 'pointer' : 'not-allowed',
                 fontSize: '16px',
                 fontWeight: 'bold',
-                opacity: selectedSheet ? 1 : 0.6
+                opacity: (selectedSheet && !selectedSheet.locked) ? 1 : 0.6,
+                cursor: (selectedSheet && !selectedSheet.locked) ? 'pointer' : 'not-allowed'
               }}
             >
               Delete
@@ -232,7 +298,8 @@ function Fieldsheets() {
           <Sheet 
             key={selectedSheet.id} 
             sheetId={selectedSheet.id} 
-            sheetName={selectedSheet.name} 
+            sheetName={selectedSheet.name}
+            locked={selectedSheet.locked}
           />
         ) : (
           <div style={{
@@ -266,26 +333,22 @@ function Fieldsheets() {
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
             <button
               onClick={() => setShowDeleteConfirm(false)}
+              className="button"
               style={{
                 padding: '10px 20px',
                 backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer'
+                color: 'white'
               }}
             >
               Cancel
             </button>
             <button
               onClick={confirmDelete}
+              className="button"
               style={{
                 padding: '10px 20px',
                 backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer'
+                color: 'white'
               }}
             >
               Delete
@@ -294,11 +357,27 @@ function Fieldsheets() {
         </div>
       </Popup>
 
+      {/* Sheet Importer Popup */}
+      <Popup
+        isOpen={showImporter}
+        onClose={handleImporterClose}
+        title="Import Sheet Data"
+      >
+        <SheetImporter 
+          onClose={handleImporterClose}
+          onImportComplete={() => {
+            handleImporterClose();
+            fetchAllSheets();
+          }}
+        />
+      </Popup>
+
       {/* Sheet Editor Popup */}
       {showEditor && (
         <Sheet 
           sheetId={editingSheet?.id || null}
           sheetName={editingSheet?.name || ''}
+          locked={editingSheet?.locked || false}
           isEditor={true}
           onEditorClose={handleEditorClose}
         />

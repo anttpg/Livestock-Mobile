@@ -211,45 +211,25 @@ function Header() {
           </li>
           <li style={styles.menuItem}>
             <Link
-              to="/general"
-              style={{
-                ...styles.menuLink,
-                ...(hoveredItem === 'general' ? styles.menuLinkHover : {})
-              }}
-              onMouseEnter={() => setHoveredItem('general')}
+              to="/animal"
+              style={{ ...styles.menuLink, ...(hoveredItem === 'animal' ? styles.menuLinkHover : {}) }}
+              onMouseEnter={() => setHoveredItem('animal')}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={closeMenu}
             >
-              Find-A-Cow
+              Animal Records
             </Link>
           </li>
           <li style={styles.menuItem}>
             <Link
-              to="/medical"
-              style={{
-                ...styles.menuLink,
-                ...(hoveredItem === 'medical' ? styles.menuLinkHover : {})
-              }}
-              onMouseEnter={() => setHoveredItem('medical')}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={closeMenu}
-            >
-              Medical Records
-            </Link>
-          </li>
-          <li style={styles.menuItem}>
-            <a
-              href="/breeding"
-              style={{
-                ...styles.menuLink,
-                ...(hoveredItem === 'breeding' ? styles.menuLinkHover : {})
-              }}
+              to="/breeding"
+              style={{ ...styles.menuLink, ...(hoveredItem === 'breeding' ? styles.menuLinkHover : {}) }}
               onMouseEnter={() => setHoveredItem('breeding')}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={closeMenu}
             >
               Breeding Plan
-            </a>
+            </Link>
           </li>
           <li style={styles.menuItem}>
             <a

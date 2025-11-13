@@ -92,7 +92,6 @@ function Table({
 
   const cellStyle = {
     border: '1px solid #eee',
-    padding: '8px'
   };
 
   const PopupTable = () => (
@@ -137,10 +136,11 @@ function Table({
               onMouseLeave={() => setHoveredRow(null)}
             >
               {columns.map((column, colIndex) => (
-                <td 
+                <td
                   key={colIndex}
-                  style={{ 
+                  style={{
                     ...cellStyle,
+                    padding: column.type === 'select' ? '0' : '8px',
                     width: column.width || 'auto',
                     textAlign: column.align || 'left',
                     cursor: column.clickable ? 'pointer' : 'default',
@@ -154,8 +154,8 @@ function Table({
                     }
                   }}
                 >
-                  {column.customRender ? 
-                    column.customRender(row[column.key], row, rowIndex) : 
+                  {column.customRender ?
+                    column.customRender(row[column.key], row, rowIndex) :
                     formatValue(row[column.key], column.type)
                   }
                 </td>
@@ -256,10 +256,11 @@ function Table({
               onMouseLeave={() => setHoveredRow(null)}
             >
               {columns.map((column, colIndex) => (
-                <td 
+                <td
                   key={colIndex}
-                  style={{ 
+                  style={{
                     ...cellStyle,
+                    padding: column.type === 'select' ? '0' : '8px', 
                     width: column.width || 'auto',
                     textAlign: column.align || 'left',
                     cursor: column.clickable ? 'pointer' : 'default',
@@ -273,34 +274,53 @@ function Table({
                     }
                   }}
                 >
-                  {column.customRender ? 
-                    column.customRender(row[column.key], row, rowIndex) : 
+                  {column.customRender ?
+                    column.customRender(row[column.key], row, rowIndex) :
                     formatValue(row[column.key], column.type)
                   }
                 </td>
               ))}
               {showActionColumn && (
-                <td style={{ 
+                <td style={{
                   ...cellStyle,
                   width: '80px',
                   textAlign: 'center'
                 }}>
-                  <button 
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onActionClick && onActionClick(row, rowIndex);
                     }}
-                    style={{ 
+                    style={{
                       padding: '5px 15px',
-                      backgroundColor: actionButtonColor,
+                      backgroundColor: typeof actionButtonColor === 'function'
+                        ? actionButtonColor(row, rowIndex)
+                        : actionButtonColor,
                       color: 'white',
                       border: 'none',
                       borderRadius: '3px',
                       cursor: 'pointer',
-                      fontSize: '12px'
+                      fontSize: '12px',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      const currentBg = typeof actionButtonColor === 'function'
+                        ? actionButtonColor(row, rowIndex)
+                        : actionButtonColor;
+                      if (currentBg === '#3bb558') {
+                        e.target.style.backgroundColor = '#28a745';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      const originalBg = typeof actionButtonColor === 'function'
+                        ? actionButtonColor(row, rowIndex)
+                        : actionButtonColor;
+                      e.target.style.backgroundColor = originalBg;
                     }}
                   >
-                    {actionButtonText}
+                    {typeof actionButtonText === 'function'
+                      ? actionButtonText(row, rowIndex)
+                      : actionButtonText}
                   </button>
                 </td>
               )}
@@ -351,3 +371,4 @@ function Table({
 }
 
 export default Table;
+

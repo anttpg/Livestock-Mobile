@@ -1,11 +1,10 @@
-// db/local.js - Local file operations without branding complexity
 const path = require('path');
 const multer = require('multer');
 require('dotenv').config();
 
 /**
  * Local file operations for managing cattle images and maps
- * Input is already validated by API wrapper - no need for branded types
+ * Input is validated by API wrapper
  */
 class LocalFileOperations {
     constructor() {
@@ -71,7 +70,7 @@ class LocalFileOperations {
     }
 
     /**
-     * Save cow image - NEVER overwrites existing files
+     * Save cow image, NEVER overwrites existing files
      * @param {Object} params - { cowTag, imageType, fileBuffer, originalFilename }
      */
     async saveCowImage(params) {
@@ -100,7 +99,7 @@ class LocalFileOperations {
             let filename = `${baseFilename}${ext}`;
             let filePath = path.join(cowDir, filename);
     
-            // NEVER overwrite - find next available filename with counter
+            // NEVER overwrite, find next available filename with counter
             let counter = 1;
             while (true) {
                 try {
@@ -242,6 +241,180 @@ class LocalFileOperations {
             return {
                 success: false,
                 message: `Failed to get cow images: ${error.message}`
+            };
+        }
+    }
+
+    
+/**
+     * Save medical image for a specific record
+     * @param {Object} params - { recordId, fileBuffer, originalFilename }
+     */
+    async saveMedicalImage(params) {
+        const { recordId, fileBuffer, originalFilename } = params;
+        const fs = require('fs').promises;
+    
+        if (!this.validateFileType(originalFilename, this.imageFormats)) {
+            throw new Error('Invalid image format. Allowed: ' + this.imageFormats.join(', '));
+        }
+    
+        try {
+            // Create medical images directory structure: Cow Photos/Medical/RecordID_XXXX/
+            const medicalDir = path.join(this.cowPhotosDir, 'Medical');
+            await this.ensureDirectoryExists(medicalDir);
+            
+            const recordDir = path.join(medicalDir, `Record_${recordId}`);
+            await this.ensureDirectoryExists(recordDir);
+    
+            const dateStr = this.formatDateForFilename();
+            const ext = path.extname(originalFilename);
+    
+            // Generate filename: Record_XXXX_ISSUE_date
+            let baseFilename = `Record_${recordId}_ISSUE_${dateStr}`;
+            let filename = `${baseFilename}${ext}`;
+            let filePath = path.join(recordDir, filename);
+    
+            // NEVER overwrite - find next available filename with counter
+            let counter = 1;
+            while (true) {
+                try {
+                    await fs.access(filePath);
+                    // File exists, try next number
+                    filename = `${baseFilename}_${counter}${ext}`;
+                    filePath = path.join(recordDir, filename);
+                    counter++;
+                } catch (error) {
+                    if (error.code === 'ENOENT') {
+                        // File doesn't exist, we can use this filename
+                        break;
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+    
+            // Save file with unique filename
+            await fs.writeFile(filePath, fileBuffer);
+    
+            // Return relative path for reference
+            const relativePath = path.join('Cow Photos', 'Medical', `Record_${recordId}`, filename);
+            
+            return {
+                success: true,
+                relativePath: relativePath.replace(/\\/g, '/'),
+                absolutePath: filePath,
+                filename: filename,
+                message: `Medical image saved as ${filename}`
+            };
+        } catch (error) {
+            console.error('Error saving medical image:', error);
+            throw new Error(`Failed to save medical image: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get medical image for a specific record
+     * @param {Object} params - { recordId, imageType, n }
+     */
+    async getMedicalImage(params) {
+        const { recordId, imageType, n = 1 } = params;
+        const fs = require('fs').promises;
+        
+        try {
+            const recordDir = path.join(this.cowPhotosDir, 'Medical', `Record_${recordId}`);
+            
+            try {
+                await fs.access(recordDir);
+            } catch (error) {
+                return {
+                    success: false,
+                    message: `No medical images found for record ${recordId}`
+                };
+            }
+
+            const files = await fs.readdir(recordDir);
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                       file.toUpperCase().includes('ISSUE');
+            });
+
+            if (validImages.length === 0) {
+                return {
+                    success: false,
+                    message: `No issue images found for record ${recordId}`
+                };
+            }
+
+            // Sort by filename (which includes date) and get nth image
+            const sortedImages = validImages.sort().reverse(); // Most recent first
+
+            if (sortedImages.length < n) {
+                return {
+                    success: false,
+                    message: `Only ${sortedImages.length} images available for record ${recordId}`
+                };
+            }
+
+            const targetFile = sortedImages[n - 1];
+            const filePath = path.join(recordDir, targetFile);
+            
+            const fileBuffer = await fs.readFile(filePath);
+            const stats = await fs.stat(filePath);
+            
+            return {
+                success: true,
+                fileBuffer,
+                filename: targetFile,
+                size: stats.size,
+                modified: stats.mtime,
+                mimeType: this.getMimeType(targetFile)
+            };
+        } catch (error) {
+            console.error('Error getting medical image:', error);
+            return { 
+                success: false, 
+                message: `Failed to get medical image: ${error.message}` 
+            };
+        }
+    }
+
+    /**
+     * Get count of medical images for a record
+     * @param {Object} params - { recordId }
+     */
+    async getMedicalImageCount(params) {
+        const { recordId } = params;
+        const fs = require('fs').promises;
+        
+        try {
+            const recordDir = path.join(this.cowPhotosDir, 'Medical', `Record_${recordId}`);
+            
+            try {
+                await fs.access(recordDir);
+            } catch (error) {
+                return {
+                    success: true,
+                    issues: 0,
+                    total: 0
+                };
+            }
+
+            const files = await fs.readdir(recordDir);
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                       file.toUpperCase().includes('ISSUE');
+            });
+
+            return {
+                success: true,
+                issues: validImages.length,
+                total: validImages.length
+            };
+        } catch (error) {
+            console.error('Error counting medical images:', error);
+            return {
+                success: false,
+                message: `Failed to count medical images: ${error.message}`
             };
         }
     }
@@ -687,5 +860,8 @@ module.exports = {
     getAvailableMinimaps: () => localOps.getAvailableMinimaps(),
     configureMulter: () => localOps.configureMulter(),
     remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
-    repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag)
+    repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag),
+    saveMedicalImage: (params) => localOps.saveMedicalImage(params),
+    getMedicalImage: (params) => localOps.getMedicalImage(params),
+    getMedicalImageCount: (params) => localOps.getMedicalImageCount(params),
 };

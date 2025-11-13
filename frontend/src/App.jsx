@@ -6,14 +6,33 @@ import Overview from './components/overview';
 import Herds from './components/herds';
 import Fieldsheets from './components/fieldsheets';
 import Login from './components/login';
+import BreedingPlan from './components/breedingPlan'; 
 import Layout from './components/layout';
+import TimeoutPopup from './components/timeoutPopup';
+import { userSessionManager } from './userSessionManager';
+import { setSessionExpiredCallback } from './apiInterceptor';
+import AnimalFolder from './components/animalFolder';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showSessionExpired, setShowSessionExpired] = useState(false);
+
+  const {
+    showTimeoutWarning,
+    remainingTime,
+    handleExtendSession,
+    handleTimeoutClose
+  } = userSessionManager(isAuthenticated);
 
   useEffect(() => {
     checkAuth();
+
+    // Set up the session expired callback for API interceptor
+    setSessionExpiredCallback(() => {
+      setIsAuthenticated(false);
+      setShowSessionExpired(true);
+    });
   }, []);
 
   const checkAuth = async () => {
@@ -21,7 +40,7 @@ function App() {
       const response = await fetch('/api/check-auth', {
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setIsAuthenticated(data.authenticated);
@@ -34,6 +53,10 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSessionExpiredClose = () => {
+    setShowSessionExpired(false);
   };
 
   if (loading) {
@@ -52,63 +75,79 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        {/* Public route */}
-        <Route 
-          path="/login" 
-          element={isAuthenticated ? <Navigate to="/general" replace /> : <Login />} 
-        />
-        
-        {/* Protected routes */}
-        <Route
-          path="/"
-          element={isAuthenticated ? <Navigate to="/general" replace /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/overview"
-          element={
-            isAuthenticated 
-              ? <Layout><Overview /></Layout> 
-              : <Navigate to="/login" replace />
-          }
-        />
-        <Route
-          path="/general"
-          element={
-            isAuthenticated 
-              ? <Layout><General /></Layout> 
-              : <Navigate to="/login" replace />
-          }
-        />
-        <Route
-          path="/medical"
-          element={
-            isAuthenticated 
-              ? <Layout><Medical /></Layout> 
-              : <Navigate to="/login" replace />
-          }
+    <>
+      <Router>
+        <Routes>
+          <Route
+            path="/login"
+            element={isAuthenticated ? <Navigate to="/general" replace /> : <Login />}
           />
           <Route
-          path="/herds"
-          element={
-            isAuthenticated 
-              ? <Layout><Herds /></Layout> 
-              : <Navigate to="/login" replace />
-          }
+            path="/overview"
+            element={
+              isAuthenticated
+                ? <Layout><Overview /></Layout>
+                : <Navigate to="/login" replace />
+            }
           />
           <Route
-          path="/fieldsheets"
-          element={
-            isAuthenticated 
-              ? <Layout><Fieldsheets /></Layout> 
-              : <Navigate to="/login" replace />
-          }
+            path="/animal"
+            element={
+              isAuthenticated
+                ? <Layout><AnimalFolder /></Layout>
+                : <Navigate to="/login" replace />
+            }
           />
-        {/* Catch all */}
-        <Route path="*" element={<Navigate to="/general" replace />} />
-      </Routes>
-    </Router>
+          <Route
+            path="/general"
+            element={<Navigate to="/animal?tab=general" replace />}
+          />
+          <Route
+            path="/medical"
+            element={<Navigate to="/animal?tab=medical" replace />}
+          />
+          <Route
+            path="/breeding"
+            element={
+              isAuthenticated
+                ? <Layout><BreedingPlan /></Layout>
+                : <Navigate to="/login" replace />
+            }
+          />
+          <Route
+            path="/herds"
+            element={
+              isAuthenticated
+                ? <Layout><Herds /></Layout>
+                : <Navigate to="/login" replace />
+            }
+          />
+          <Route
+            path="/fieldsheets"
+            element={
+              isAuthenticated
+                ? <Layout><Fieldsheets /></Layout>
+                : <Navigate to="/login" replace />
+            }
+          />
+          <Route
+            path="/"
+            element={isAuthenticated ? <Navigate to="/animal" replace /> : <Navigate to="/login" replace />}
+          />
+
+          {/* Update the catch-all redirect */}
+          <Route path="*" element={<Navigate to="/animal" replace />} />
+        </Routes>
+      </Router>
+
+      {/* Combined Session Management Popup */}
+      <TimeoutPopup
+        isOpen={showTimeoutWarning || showSessionExpired}
+        onClose={showSessionExpired ? handleSessionExpiredClose : handleTimeoutClose}
+        onExtend={handleExtendSession}
+        initialCountdown={remainingTime ? Math.ceil(remainingTime / 1000) : 60}
+      />
+    </>
   );
 }
 

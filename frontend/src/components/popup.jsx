@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import PopupErrorBoundary from './popupErrorBoundary';
+import ReactDOM from 'react-dom';
 
 function Popup({ 
   isOpen, 
@@ -7,11 +9,101 @@ function Popup({
   title,
   width = '600px', 
   height = 'auto',
-  maxWidth = '95vw',
-  maxHeight = '95vh'
+  maxWidth = '100vw',
+  maxHeight = '105vh',
+  fullscreen = false
 }) {
   const popupRef = useRef(null);
+  const headerRef = useRef(null);
   const isNestedRef = useRef(false);
+  const cleanupRef = useRef(null);
+  const [viewportHeight, setViewportHeight] = React.useState(window.innerHeight);
+
+  // Static counter to track open popups
+  if (typeof Popup.openCount === 'undefined') {
+    Popup.openCount = 0;
+  }
+
+  // Defensive cleanup function
+  const performCleanup = () => {
+    if (cleanupRef.current) {
+      try {
+        // Remove all event listeners
+        document.removeEventListener('keydown', cleanupRef.current.escapeHandler);
+        if (cleanupRef.current.touchStartHandler) {
+          document.removeEventListener('touchstart', cleanupRef.current.touchStartHandler, { passive: false });
+        }
+        if (cleanupRef.current.touchMoveHandler) {
+          document.removeEventListener('touchmove', cleanupRef.current.touchMoveHandler, { passive: false });
+        }
+        
+        // Decrement counter and restore scroll if needed
+        Popup.openCount = Math.max(0, Popup.openCount - 1);
+        
+        if (Popup.openCount <= 0) {
+          document.body.style.overflow = '';
+          document.body.style.paddingRight = '';
+          document.body.style.position = '';
+          document.body.style.touchAction = '';
+          Popup.openCount = 0;
+        }
+
+        // Dispatch state change
+        window.dispatchEvent(new CustomEvent('popupStateChange', { 
+          detail: { isOpen: false } 
+        }));
+      } catch (error) {
+        console.error('Error during popup cleanup:', error);
+        // Force cleanup even if there are errors
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.style.position = '';
+        document.body.style.touchAction = '';
+        Popup.openCount = 0;
+      }
+      cleanupRef.current = null;
+    }
+  };
+
+  // Track viewport height changes for iOS Safari
+  useEffect(() => {
+    const handleResize = () => {
+      // Use a small delay to get the final viewport size after browser chrome animation
+      setTimeout(() => {
+        setViewportHeight(window.innerHeight);
+      }, 100);
+    };
+
+    const handleVisualViewportResize = () => {
+      if (window.visualViewport) {
+        setTimeout(() => {
+          setViewportHeight(window.visualViewport.height);
+        }, 100);
+      }
+    };
+
+    // Initial setup
+    setViewportHeight(window.innerHeight);
+
+    // Listen for viewport changes
+    window.addEventListener('resize', handleResize);
+    
+    // Visual Viewport API (better for mobile browsers)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+    }
+
+    // Also listen for orientation changes
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+      }
+    };
+  }, []);
 
   // Handle escape key to close popup
   useEffect(() => {
@@ -21,64 +113,187 @@ function Popup({
       }
     };
 
+    // Prevent body scrolling on mobile
+    const handleTouchStart = (e) => {
+      if (isOpen && !popupRef.current?.contains(e.target)) {
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (isOpen && !popupRef.current?.contains(e.target)) {
+        e.preventDefault();
+      }
+    };
+
     if (isOpen) {
-      // Check how many popups are currently open by counting backdrop elements
-      const existingBackdrops = document.querySelectorAll('[data-popup-backdrop]').length;
-      isNestedRef.current = existingBackdrops > 0;
-      
-      document.addEventListener('keydown', handleEscape);
-      
-      // Only prevent background scrolling if this is the first popup
-      if (!isNestedRef.current) {
-        document.body.style.overflow = 'hidden';
+      try {
+        const existingBackdrops = document.querySelectorAll('div[style*="position: fixed"][style*="rgba(0, 0, 0, 0.5)"]').length;
+        isNestedRef.current = existingBackdrops > 0;
+        
+        // Increment popup counter
+        Popup.openCount++;
+        
+        document.addEventListener('keydown', handleEscape);
+        document.addEventListener('touchstart', handleTouchStart, { passive: false });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        
+        if (!isNestedRef.current) {
+          const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+          document.body.style.overflow = 'hidden';
+          document.body.style.paddingRight = `${scrollbarWidth}px`;
+          document.body.style.position = 'fixed';
+          document.body.style.touchAction = 'none';
+          document.body.style.width = '100%';
+        }
+
+        // Store cleanup handlers
+        cleanupRef.current = { 
+          escapeHandler: handleEscape,
+          touchStartHandler: handleTouchStart,
+          touchMoveHandler: handleTouchMove
+        };
+
+        // Dispatch state change
+        window.dispatchEvent(new CustomEvent('popupStateChange', { 
+          detail: { isOpen: true } 
+        }));
+
+      } catch (error) {
+        console.error('Error during popup setup:', error);
       }
     }
 
+    // Return cleanup function
     return () => {
-      document.removeEventListener('keydown', handleEscape);
-      
-      // Use setTimeout to ensure cleanup happens after all popups have updated
-      setTimeout(() => {
-        const remainingBackdrops = document.querySelectorAll('[data-popup-backdrop]').length;
-        if (remainingBackdrops === 0) {
-          document.body.style.overflow = 'unset';
-        }
-      }, 10); // Small delay to ensure DOM updates are processed
+      if (isOpen) {
+        performCleanup();
+      }
     };
   }, [isOpen, onClose]);
 
-  // Notify parent layout about popup state
+  // Global error handler for this popup
   useEffect(() => {
-    // Dispatch custom event to tell Layout about popup state
-    window.dispatchEvent(new CustomEvent('popupStateChange', { 
-      detail: { isOpen } 
-    }));
+    const handleGlobalError = (event) => {
+      if (isOpen) {
+        console.error('Global error while popup open:', event.error);
+        // Ensure cleanup happens
+        setTimeout(performCleanup, 0);
+      }
+    };
+
+    const handleUnhandledRejection = (event) => {
+      if (isOpen) {
+        console.error('Unhandled promise rejection while popup open:', event.reason);
+        // Ensure cleanup happens
+        setTimeout(performCleanup, 0);
+      }
+    };
+
+    window.addEventListener('error', handleGlobalError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleGlobalError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleBackdropClick = (e) => {
-    // Only close if clicking on the backdrop, not the popup content
     if (e.target === e.currentTarget) {
       onClose();
     }
   };
 
-  // Calculate actual available height accounting for header and padding
-  const headerHeight = title ? 50 : 35; // Reduced header height
-  const contentPadding = 30; // 15px top + 15px bottom (reduced)
-  const backdropPadding = 40; // 20px top + 20px bottom  
-  const bufferSpace = 120; // Increased buffer space
-  
-  // CHANGE: Always use auto-sizing - ignore height parameter
-  const maxContentHeight = `calc(${maxHeight} - ${headerHeight + contentPadding + backdropPadding + bufferSpace}px)`;
+  // Prevent scroll events on header from propagating
+  const handleHeaderWheel = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
-  // Dynamic z-index based on nesting level
+  const handleHeaderTouchStart = (e) => {
+    e.stopPropagation();
+  };
+
+  const handleHeaderTouchMove = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  // Helper function to convert CSS values to pixels
+  const convertToPixels = (value, referenceSize) => {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string') return referenceSize;
+    
+    if (value.endsWith('vh')) {
+      const percentage = parseFloat(value);
+      return (percentage / 100) * viewportHeight;
+    } else if (value.endsWith('vw')) {
+      const percentage = parseFloat(value);
+      return (percentage / 100) * window.innerWidth;
+    } else if (value.endsWith('%')) {
+      const percentage = parseFloat(value);
+      return (percentage / 100) * referenceSize;
+    } else if (value.endsWith('px')) {
+      return parseFloat(value);
+    } else {
+      // Try to parse as number (assume pixels)
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? referenceSize : parsed;
+    }
+  };
+
+  // Rest of popup styling logic
+  const headerHeight = title ? 50 : 35;
+  const contentPadding = 30;
+  const backdropPadding = 40;
+  const bufferSpace = 120;
+  
+  const maxContentHeight = `calc(${maxHeight} - ${headerHeight + contentPadding + backdropPadding + bufferSpace}px)`;
   const backdropCount = document.querySelectorAll('[data-popup-backdrop]').length;
   const zIndex = 1000 + (backdropCount * 10);
 
-  return (
+  // Convert maxHeight and maxWidth to pixels for proper calculations
+  const maxHeightPx = convertToPixels(maxHeight, viewportHeight * 0.95);
+  const maxWidthPx = convertToPixels(maxWidth, window.innerWidth * 0.95);
+
+  const popupStyles = fullscreen ? {
+    backgroundColor: '#f4f4f4',
+    borderRadius: '0px',
+    boxShadow: 'none',
+    width: '100vw',
+    height: `${viewportHeight}px`, // Use dynamic height instead of 100vh
+    maxWidth: '100vw',
+    maxHeight: `${viewportHeight}px`, // Use dynamic height instead of 100vh
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    touchAction: 'none' // Prevent mobile browser behaviors
+  } : {
+    backgroundColor: '#f4f4f4',
+    borderRadius: '10px',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+    width: width,
+    height: 'auto',
+    maxWidth: `${maxWidthPx}px`,
+    maxHeight: `${maxHeightPx}px`, // Use converted pixel value
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    touchAction: 'none'
+  };
+
+  const contentMaxHeight = fullscreen ? 
+    `${viewportHeight - headerHeight - contentPadding}px` : // Use dynamic height
+    `${maxHeightPx - headerHeight - contentPadding - backdropPadding - bufferSpace}px`;
+
+  const popupElement = (
     <div
+      data-popup-backdrop="true"
       style={{
         position: 'fixed',
         top: 0,
@@ -86,48 +301,52 @@ function Popup({
         right: 0,
         bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        zIndex: 1000,
+        zIndex: zIndex,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px'
+        padding: fullscreen ? '0px' : '20px',
+        overflow: 'hidden',
+        touchAction: 'none'
       }}
       onClick={handleBackdropClick}
     >
-      {/* Popup Content */}
       <div
         ref={popupRef}
         style={{
-          backgroundColor: '#f4f4f4', // Same as Layout background
-          borderRadius: '10px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-          width: width,
-          height: 'auto', // CHANGE: Always use auto instead of height prop
-          maxWidth: maxWidth,
-          maxHeight: maxHeight,
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden' // Changed from 'auto' to 'hidden' on outer container
+          ...popupStyles,
+          // Force reflow when viewport changes on mobile
+          minHeight: fullscreen ? `${viewportHeight}px` : 'auto'
         }}
-        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar with Title and Close Button */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '10px 15px', // Reduced padding
-          borderBottom: title ? '1px solid #ddd' : 'none',
-          minHeight: '35px', // Reduced min height
-          flexShrink: 0 // Prevent header from shrinking
-        }}>
+        <div 
+          ref={headerRef}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '10px 15px',
+            borderBottom: title ? '1px solid #ddd' : 'none',
+            minHeight: '35px',
+            flexShrink: 0,
+            touchAction: 'none', // Prevent mobile browser behaviors
+            userSelect: 'none', // Prevent text selection
+            WebkitUserSelect: 'none',
+            position: 'relative',
+            zIndex: 1
+          }}
+          onWheel={handleHeaderWheel}
+          onTouchStart={handleHeaderTouchStart}
+          onTouchMove={handleHeaderTouchMove}
+        >
           {title && (
             <h3 style={{
               margin: 0,
-              fontSize: '16px', // Reduced font size
+              fontSize: '16px',
               fontWeight: 'bold',
-              color: '#333'
+              color: '#333',
+              pointerEvents: 'none' // Prevent any interaction
             }}>
               {title}
             </h3>
@@ -135,50 +354,42 @@ function Popup({
           
           <button
             onClick={onClose}
+            className="close-button"
             style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '3px', // Reduced padding
-              borderRadius: '50%',
-              width: '26px', // Reduced size
-              height: '26px', // Reduced size
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background-color 0.2s',
-              marginLeft: 'auto'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = 'transparent';
+              touchAction: 'manipulation', // Allow button tap
+              position: 'relative',
+              zIndex: 2
             }}
           >
-            <img 
-              src="/images/close.png" 
-              alt="Close" 
-              style={{ 
-                width: '16px',  // Reduced size
-                height: '16px'  // Reduced size
-              }} 
-            />
+            <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        {/* Popup Content - Now with proper overflow handling */}
         <div style={{ 
-          padding: '15px', // Reduced padding to match header
-          overflow: 'auto', // Moved overflow handling here
-          flex: 1, // Take up remaining space
-          maxHeight: maxContentHeight // Apply calculated max height
+          padding: '15px',
+          overflow: 'auto',
+          flex: 1,
+          maxHeight: contentMaxHeight,
+          touchAction: 'pan-y', // Allow only vertical scrolling
+          WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
+          // Ensure content area adjusts to available space
+          height: fullscreen ? `${viewportHeight - headerHeight - 30}px` : 'auto'
         }}>
-          {children}
+          <PopupErrorBoundary onClose={onClose}>
+            {children}
+          </PopupErrorBoundary>
         </div>
       </div>
     </div>
   );
+
+  const popupRoot = document.getElementById('popup-root');
+  if (!popupRoot) {
+    console.error('Popup root element not found. Make sure to add <div id="popup-root"></div> to your HTML.');
+    return null;
+  }
+
+  return ReactDOM.createPortal(popupElement, popupRoot);
 }
 
 export default Popup;

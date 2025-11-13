@@ -3,6 +3,12 @@
     --bubble-padding: 15px;
     --layout-padding: 20px;
     --multibubble-gap: 20px;
+    --timeline-color: rgb(170, 170, 170);
+    --minimap-size: 200px;
+    --folder-gap: 15px;
+    --folder-offset: 30px; /* margin-left */
+    --tree-gap: 120px;
+    --image-size: 250px;
 }
 
 @media (max-width: 768px) {
@@ -10,6 +16,11 @@
         --bubble-padding: 13px;
         --layout-padding: 15px;
         --multibubble-gap: 15px;
+        --minimap-size: 180px;
+        --folder-gap: 10px;
+        --folder-offset: 20px;
+        --tree-gap: 60px;
+        --image-size: 180px;
     }
 }
 
@@ -18,14 +29,37 @@
         --bubble-padding: 10px;
         --layout-padding: 13px;
         --multibubble-gap: 13px;
+        --minimap-size: 150px;
+        --folder-gap: 7px;
+        --folder-offset: 10px;
+        --tree-gap: 50px;
+        --image-size: 160px;
     }
 }
 
-@media (max-width: 320px) {
+@media (max-width: 440px) {
+    :root {
+        --bubble-padding: 8px;
+        --layout-padding: 7px;
+        --multibubble-gap: 7px;
+        --minimap-size: 140px;
+        --folder-gap: 5px;
+        --folder-offset: 5px;
+        --tree-gap: 40px;
+        --image-size: 140px;
+    }
+}
+
+@media (max-width: 370px) {
     :root {
         --bubble-padding: 7px;
         --layout-padding: 5px;
         --multibubble-gap: 5px;
+        --minimap-size: 130px;
+        --folder-gap: 5px;
+        --folder-offset: 5px;
+        --tree-gap: 20px;
+        --image-size: 130px;
     }
 }
 
@@ -66,26 +100,72 @@ body {
     gap: var(--multibubble-gap);
 }
 
+.timeline-wrapper .vertical-timeline-element-icon {
+    box-shadow: 0 0 0 4px var(--timeline-color), inset 0 2px 0 rgba(0,0,0,.15), 0 6px 0 4px rgba(0,0,0,.12) !important;
+  }
+
+@media only screen and (min-width: 481px) {
+    .timeline-label {
+        margin-left: 49px
+    }
+
+    .timeline-wrapper .vertical-timeline--one-column-left {
+      padding-left: 0px
+    }
+
+    .timeline-wrapper .vertical-timeline--one-column-left::before {
+        left: 98px
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-icon {
+      left: 80px !important;
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-content {
+      margin-left: 140px !important;
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-content .vertical-timeline-element-date {
+      position: absolute;
+      right: calc(100% + 73px) !important;
+      top: 1px;
+      text-align: right;
+      float: none !important;
+      font-size: 14px !important;
+      white-space: nowrap !important;
+      font-weight: 600 !important;
+      color: #272727 !important;
+    }
+  }
+  
+  /* Ensure timeline wrapper doesn't clip content */
+  .timeline-wrapper {
+    overflow-x: visible !important;
+    width: 100%;
+  }
 
 
 
-#other-pages {
-    margin-bottom: 20px;
-}
-
-.button {
-    background-color: #28a745;
-    color: white;
-    padding: 10px 15px;
-    text-decoration: none;
-    border-radius: 5px;
+.close-button {
+    background: none;
     border: none;
     cursor: pointer;
-}
+    padding: 4px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    color: #000;
+  }
+  
+  .close-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
 
-.button:hover {
-    background-color: #28a745;
-}
+
+
+
 
 h1, h3 {
     color: #444;
@@ -106,6 +186,7 @@ button {
     border-radius: 4px;
     cursor: pointer;
 }
+
 
 button:hover {
     background-color: #218838;
