@@ -20,8 +20,11 @@ export default defineConfig({
     allowedHosts: process.env.TUNNEL_HOST ? [process.env.TUNNEL_HOST] : undefined,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.HOST_KEY && process.env.HOST_PEM 
+          ? 'https://localhost:3000' 
+          : 'http://localhost:3000',
         changeOrigin: true,
+        secure: false // cloudflare certs are selfsigned..?
       }
     }
   }
