@@ -14,6 +14,8 @@ const localFileOps = require('../api/local');
 require('dotenv').config();
 
 const app = express();
+const fs = require('fs');
+const https = require('https');
 
 // CORS configuration for development
 const allowedOrigins = [
@@ -60,7 +62,7 @@ app.use(session({
   saveUninitialized: false,
   rolling: true, // extend the session on each request
   cookie: {
-    secure: false,
+    secure: !!(process.env.HOST_KEY && process.env.HOST_PEM),  // true if using HTTPS
     httpOnly: true,
     sameSite: 'lax',
     maxAge: 60 * 60 * 1000 // 1 hour
@@ -732,7 +734,23 @@ app.use((error, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Cattle Management API Server v3.0 running on port ${PORT}`);
-  console.log(`Local file path: ${process.env.LOCAL_PATH || './files'}`);
-});
+
+// Check if SSL certificates are provided
+if (process.env.HOST_KEY && process.env.HOST_PEM) {
+  // HTTPS Server
+  const httpsOptions = {
+    key: fs.readFileSync(process.env.HOST_KEY),
+    cert: fs.readFileSync(process.env.HOST_PEM)
+  };
+  
+  https.createServer(httpsOptions, app).listen(PORT, () => {
+    console.log(`SessionManager API running on HTTPS port ${PORT}`);
+    console.log(`Local file path: ${process.env.LOCAL_PATH || './files'}`);
+  });
+} else {
+  // HTTP Server (fallback)
+  app.listen(PORT, () => {
+    console.log(`SessionManager API running on HTTP port ${PORT}`);
+    console.log(`WARNING: Running without SSL. Set HOST_KEY and HOST_PEM in .env for HTTPS.`);
+  });
+}

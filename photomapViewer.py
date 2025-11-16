@@ -396,6 +396,9 @@ class MinimapZoomViewer:
         pin_x, pin_y = field['pinpoint']
         radius = field['radius']
         
+        # Get field color early to avoid reference errors later
+        color = field.get('color', '#FF0000')
+        
         # Calculate square bounds
         left = int(pin_x - radius)
         top = int(pin_y - radius)
@@ -414,6 +417,11 @@ class MinimapZoomViewer:
         height = bottom - top
         square_size = min(width, height)
         
+        # Ensure we have a valid square size
+        if square_size <= 0:
+            print(f"Invalid square size for {field.get('fieldname', 'Unknown')}: {square_size}")
+            return None
+        
         # Recalculate bounds to make it perfectly square and centered
         center_x = (left + right) // 2
         center_y = (top + bottom) // 2
@@ -423,6 +431,26 @@ class MinimapZoomViewer:
         top = max(0, center_y - half_size)
         right = min(img_width, left + square_size)
         bottom = min(img_height, top + square_size)
+        
+        # Final validation to ensure valid crop coordinates
+        if right <= left or bottom <= top:
+            # Adjust to ensure valid coordinates
+            if right <= left:
+                if left + 1 <= img_width:
+                    right = left + 1
+                else:
+                    left = right - 1
+                    
+            if bottom <= top:
+                if top + 1 <= img_height:
+                    bottom = top + 1
+                else:
+                    top = bottom - 1
+                    
+            # Recalculate square_size based on corrected bounds
+            width = right - left
+            height = bottom - top
+            square_size = min(width, height)
         
         # Crop the image
         try:
@@ -438,13 +466,11 @@ class MinimapZoomViewer:
                 for point in field['points']:
                     adj_x = point[0] - left
                     adj_y = point[1] - top
-                    if 0 <= adj_x <= square_size and 0 <= adj_y <= square_size:
-                        adjusted_points.append((adj_x, adj_y))
+                    # Don't filter out points - include all for proper polygon drawing
+                    adjusted_points.append((adj_x, adj_y))
                 
-                # Draw field boundary and fill
+                # Draw field boundary and fill if we have enough points
                 if len(adjusted_points) > 2:
-                    color = field.get('color', '#FF0000')
-                    
                     # Fill polygon with transparency
                     fill_color = tuple(list(self.hex_to_rgb(color)) + [64])  # 25% opacity
                     draw.polygon(adjusted_points, fill=fill_color, outline=color, width=2)
