@@ -26,9 +26,9 @@
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.0",
     "express-session": "^1.18.1",
-    "express-validator": "^7.3.0",
+    "express-validator": "^7.1.0",
     "helmet": "^8.0.0",
-    "mssql": "^11.0.1",
+    "mssql": "^12.1.0",
     "multer": "^2.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -40,6 +40,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.5.2",
-    "vite": "^6.4.1"
+    "vite": "^6.3.5"
   }
 }
