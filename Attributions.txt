@@ -1,0 +1,2 @@
+ATTRIBUTIONS:
+react-native-awesome-gallery https://github.com/pavelbabenko/react-native-awesome-gallery?tab=License-1-ov-file by pavelbabenko, included under the MIT license (https://opensource.org/license/mit/)

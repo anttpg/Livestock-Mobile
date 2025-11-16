@@ -1,0 +1,292 @@
+:root {
+        /* Large screens */
+    --bubble-padding: 15px;
+    --layout-padding: 20px;
+    --multibubble-gap: 20px;
+    --timeline-color: rgb(170, 170, 170);
+    --minimap-size: 200px;
+    --folder-gap: 15px;
+    --folder-offset: 30px; /* margin-left */
+    --tree-gap: 120px;
+    --image-size: 250px;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --bubble-padding: 13px;
+        --layout-padding: 15px;
+        --multibubble-gap: 15px;
+        --minimap-size: 180px;
+        --folder-gap: 10px;
+        --folder-offset: 20px;
+        --tree-gap: 60px;
+        --image-size: 180px;
+    }
+}
+
+@media (max-width: 480px) {
+    :root {
+        --bubble-padding: 10px;
+        --layout-padding: 13px;
+        --multibubble-gap: 13px;
+        --minimap-size: 150px;
+        --folder-gap: 7px;
+        --folder-offset: 10px;
+        --tree-gap: 50px;
+        --image-size: 160px;
+    }
+}
+
+@media (max-width: 440px) {
+    :root {
+        --bubble-padding: 8px;
+        --layout-padding: 7px;
+        --multibubble-gap: 7px;
+        --minimap-size: 140px;
+        --folder-gap: 5px;
+        --folder-offset: 5px;
+        --tree-gap: 40px;
+        --image-size: 140px;
+    }
+}
+
+@media (max-width: 370px) {
+    :root {
+        --bubble-padding: 7px;
+        --layout-padding: 5px;
+        --multibubble-gap: 5px;
+        --minimap-size: 130px;
+        --folder-gap: 5px;
+        --folder-offset: 5px;
+        --tree-gap: 20px;
+        --image-size: 130px;
+    }
+}
+
+.layout-content {
+    padding: var(--layout-padding);
+}
+
+.bubble-container {
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: var(--bubble-padding);
+    gap: var(--bubble-padding);
+    background-color: white;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+.multibubble-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--multibubble-gap);
+}
+
+.multibubble-row {
+    display: flex;
+    gap: var(--multibubble-gap);
+}
+
+.multibubble-column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--multibubble-gap);
+}
+
+.timeline-wrapper .vertical-timeline-element-icon {
+    box-shadow: 0 0 0 4px var(--timeline-color), inset 0 2px 0 rgba(0,0,0,.15), 0 6px 0 4px rgba(0,0,0,.12) !important;
+  }
+
+@media only screen and (min-width: 481px) {
+    .timeline-label {
+        margin-left: 49px
+    }
+
+    .timeline-wrapper .vertical-timeline--one-column-left {
+      padding-left: 0px
+    }
+
+    .timeline-wrapper .vertical-timeline--one-column-left::before {
+        left: 98px
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-icon {
+      left: 80px !important;
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-content {
+      margin-left: 140px !important;
+    }
+    
+    .timeline-wrapper .vertical-timeline--one-column-left .vertical-timeline-element-content .vertical-timeline-element-date {
+      position: absolute;
+      right: calc(100% + 73px) !important;
+      top: 1px;
+      text-align: right;
+      float: none !important;
+      font-size: 14px !important;
+      white-space: nowrap !important;
+      font-weight: 600 !important;
+      color: #272727 !important;
+    }
+  }
+  
+  /* Ensure timeline wrapper doesn't clip content */
+  .timeline-wrapper {
+    overflow-x: visible !important;
+    width: 100%;
+  }
+
+
+
+.close-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    color: #000;
+  }
+  
+  .close-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+
+
+
+
+h1, h3 {
+    color: #444;
+}
+
+input[type="text"] {
+    padding: 8px;
+    margin-right: 10px;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+
+button:hover {
+    background-color: #218838;
+}
+
+#wrapper {
+    display: flex;
+    margin-top: 20px;
+}
+
+#search-container {
+    background-color: white;
+    padding: 10px;
+    width: 280px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+#search-bar {
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+    width: 250px;
+    height: 40px;
+    margin: 0;
+    box-sizing: border-box;
+  }
+  
+  #search-button {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+    overflow: hidden;
+    background-color: #7dbdce;
+    margin: 0;
+    box-sizing: border-box;
+  }
+  
+
+
+#image-container img {
+    margin-right: 20px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+#containers-wrapper {
+    display: flex; 
+    align-items: flex-start; 
+    justify-content: flex-start; 
+    gap: 20px;
+}
+
+#calf-container, #observations-container {
+    flex: 1; 
+    background-color: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-left: 20px;
+}
+
+
+#main-container{
+    background-color: white;
+    padding: 20px;
+    width: 300px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-left: 20px;
+    margin-bottom: 10px; 
+}
+
+#allmedical-container{
+    background-color: white;
+    padding: 20px;
+    width: 300px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-left: 20px;
+    margin-bottom: 10px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 50px;
+}
+
+th, td {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #f8f9fa;
+} 
