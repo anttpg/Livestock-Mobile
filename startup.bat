@@ -6,4 +6,4 @@ taskkill /F /IM node.exe 2>nul
 timeout /t 3
 
 echo Starting applications...
-start "Livestock" /MIN npm start
+start "Livestock" npm start
