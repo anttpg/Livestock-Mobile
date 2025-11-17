@@ -6,8 +6,9 @@ git pull origin main
 call npm install
 call npm run build
 
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000') do taskkill /F /PID %%a 2>nul
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8080') do taskkill /F /PID %%a 2>nul
-timeout /t 2
+echo Killing old processes...
+taskkill /F /IM node.exe 2>nul
+timeout /t 3
 
+echo Starting applications...
 start "Livestock" /MIN npm start
