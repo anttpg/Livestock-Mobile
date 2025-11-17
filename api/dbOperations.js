@@ -88,7 +88,7 @@ class DatabaseOperations {
                     c.DateOfBirth AS DOB,
                     c.Sex,
                     c.[Sire (Father)] AS SireTag,
-                    c.Genotype,
+                    c.Breed,
                     c.Birthweight,
                     c.WeaningWeight,
                     CASE 
@@ -1173,17 +1173,17 @@ class DatabaseOperations {
 
             const suggestedTag = `${nextNumber}${yearLetter}`;
             
-            // Calculate genotype if parents provided
-            let calculatedGenotype = null;
+            // Calculate breed if parents provided
+            let calculatedBreed = null;
             if (damTag && sireTag) {
-                calculatedGenotype = await this.calculateGenotypeFromParents(damTag, sireTag);
+                calculatedBreed = await this.calculateBreedFromParents(damTag, sireTag);
             }
 
             return {
                 suggestedTag,
                 nextNumber,
                 yearLetter,
-                calculatedGenotype,
+                calculatedBreed,
                 twinTag: `${nextNumber + 1}${yearLetter}` // Pre-calculate twin tag
             };
         } catch (error) {
@@ -1193,11 +1193,11 @@ class DatabaseOperations {
     }
 
     /**
-     * Calculate genotype from parent genotypes
+     * Calculate breed from parent breeds
      * @param {string} damTag - Mother's tag
      * @param {string} sireTag - Father's tag
      */
-    async calculateGenotypeFromParents(damTag, sireTag) {
+    async calculateBreedFromParents(damTag, sireTag) {
         await this.ensureConnection();
 
         try {
@@ -1207,8 +1207,8 @@ class DatabaseOperations {
 
             const query = `
                 SELECT 
-                    (SELECT Genotype FROM CowTable WHERE CowTag = @damTag) AS DamGenotype,
-                    (SELECT Genotype FROM CowTable WHERE CowTag = @sireTag) AS SireGenotype`;
+                    (SELECT Breed FROM CowTable WHERE CowTag = @damTag) AS DamBreed,
+                    (SELECT Breed FROM CowTable WHERE CowTag = @sireTag) AS SireBreed`;
             
             const result = await request.query(query);
             
@@ -1216,42 +1216,42 @@ class DatabaseOperations {
                 return null;
             }
 
-            const { DamGenotype, SireGenotype } = result.recordset[0];
+            const { DamBreed, SireBreed } = result.recordset[0];
             
-            if (!DamGenotype || !SireGenotype) {
+            if (!DamBreed || !SireBreed) {
                 return null;
             }
 
-            // Genotype inheritance rules
-            const isPurebred = (genotype) => {
-                return genotype && (
-                    genotype.toLowerCase().includes('purebred') ||
-                    !genotype.toLowerCase().includes('cross') && !genotype.toLowerCase().includes('f1')
+            // Breed inheritance rules
+            const isPurebred = (breed) => {
+                return breed && (
+                    breed.toLowerCase().includes('purebred') ||
+                    !breed.toLowerCase().includes('cross') && !breed.toLowerCase().includes('f1')
                 );
             };
 
-            const damPurebred = isPurebred(DamGenotype);
-            const sirePurebred = isPurebred(SireGenotype);
+            const damPurebred = isPurebred(DamBreed);
+            const sirePurebred = isPurebred(SireBreed);
 
             // Both purebred same breed
-            if (damPurebred && sirePurebred && DamGenotype === SireGenotype) {
-                return DamGenotype;
+            if (damPurebred && sirePurebred && DamBreed === SireBreed) {
+                return DamBreed;
             }
 
             // Both purebred different breeds -> F1 cross
-            if (damPurebred && sirePurebred && DamGenotype !== SireGenotype) {
-                return `F1 ${DamGenotype}-${SireGenotype} Cross`;
+            if (damPurebred && sirePurebred && DamBreed !== SireBreed) {
+                return `F1 ${DamBreed}-${SireBreed} Cross`;
             }
 
             // One F1, one purebred -> F2/F3 cross
-            if (DamGenotype.includes('F1') || SireGenotype.includes('F1')) {
-                return `${DamGenotype} x ${SireGenotype} Cross`;
+            if (DamBreed.includes('F1') || SireBreed.includes('F1')) {
+                return `${DamBreed} x ${SireBreed} Cross`;
             }
 
             // Default fallback
-            return `${DamGenotype} x ${SireGenotype}`;
+            return `${DamBreed} x ${SireBreed}`;
         } catch (error) {
-            console.error('Error calculating genotype:', error);
+            console.error('Error calculating breed:', error);
             return null;
         }
     }
@@ -1264,7 +1264,7 @@ class DatabaseOperations {
         const {
             // Basic cow data
             cowTag, dateOfBirth, description, dam, sire, sex, status,
-            currentHerd, genotype, temperament, regCert, regCertNumber,
+            currentHerd, breed, temperament, regCert, regCertNumber,
             birthweight, birthweightClass, targetPrice, origin,
             // Calf-specific
             isNewCalf, breedingYear, createCalvingRecord, calvingNotes,
@@ -1289,7 +1289,7 @@ class DatabaseOperations {
                 request.input('sex', sql.NVarChar, sex || null);
                 request.input('status', sql.NVarChar, status || 'Current');
                 request.input('currentHerd', sql.NVarChar, currentHerd || null);
-                request.input('genotype', sql.NVarChar, genotype || null);
+                request.input('breed', sql.NVarChar, breed || null);
                 request.input('temperament', sql.NVarChar, temperament || null);
                 request.input('regCert', sql.NVarChar, regCert || null);
                 request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
@@ -1301,11 +1301,11 @@ class DatabaseOperations {
                 const insertQuery = `
                     INSERT INTO CowTable (
                         CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
-                        Sex, Status, CurrentHerd, Genotype, Temperament, RegCert, RegCertNumber,
+                        Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
                         Birthweight, BirthweightClass, TargetPrice, Origin
                     ) VALUES (
                         @cowTag, @dateOfBirth, @description, @dam, @sire,
-                        @sex, @status, @currentHerd, @genotype, @temperament, @regCert, @regCertNumber,
+                        @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
                         @birthweight, @birthweightClass, @targetPrice, @origin
                     )`;
                 await request.query(insertQuery);
@@ -1353,7 +1353,7 @@ class DatabaseOperations {
                             twinCowRequest.input('sex', sql.NVarChar, twinData.sex || sex);
                             twinCowRequest.input('status', sql.NVarChar, status || 'Current');
                             twinCowRequest.input('currentHerd', sql.NVarChar, currentHerd || null);
-                            twinCowRequest.input('genotype', sql.NVarChar, genotype || null);
+                            twinCowRequest.input('breed', sql.NVarChar, breed || null);
                             twinCowRequest.input('temperament', sql.NVarChar, temperament || null);
                             twinCowRequest.input('regCert', sql.NVarChar, regCert || null);
 
@@ -1452,7 +1452,7 @@ class DatabaseOperations {
 
         try {
             const queries = {
-                genotypes: `SELECT Genotype FROM Genotype ORDER BY Genotype`,
+                breeds: `SELECT Breed FROM Breed ORDER BY Breed`,
                 temperaments: `SELECT Temperament FROM Temperament ORDER BY Temperament`,
                 statuses: `SELECT Status FROM Status ORDER BY Status`,
                 sexes: `SELECT Sex FROM Sex ORDER BY Sex`,
@@ -1479,7 +1479,7 @@ class DatabaseOperations {
     async addCow(params) {
         const {
             cowTag, dateOfBirth, description, dam, sire, sex, status,
-            currentHerd, genotype, temperament, regCert, regCertNumber,
+            currentHerd, breed, temperament, regCert, regCertNumber,
             birthweight, birthweightClass, targetPrice, origin
         } = params;
 
@@ -1495,7 +1495,7 @@ class DatabaseOperations {
             request.input('sex', sql.NVarChar, sex || null);
             request.input('status', sql.NVarChar, status || 'Current');
             request.input('currentHerd', sql.NVarChar, currentHerd || null);
-            request.input('genotype', sql.NVarChar, genotype || null);
+            request.input('breed', sql.NVarChar, breed || null);
             request.input('temperament', sql.NVarChar, temperament || null);
             request.input('regCert', sql.NVarChar, regCert || null);
             request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
@@ -1507,11 +1507,11 @@ class DatabaseOperations {
             const query = `
                 INSERT INTO CowTable (
                     CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
-                    Sex, Status, CurrentHerd, Genotype, Temperament, RegCert, RegCertNumber,
+                    Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
                     Birthweight, BirthweightClass, TargetPrice, SaleRecordID, Origin
                 ) VALUES (
                     @cowTag, @dateOfBirth, @description, @dam, @sire,
-                    @sex, @status, @currentHerd, @genotype, @temperament, @regCert, @regCertNumber,
+                    @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
                     @birthweight, @birthweightClass, @targetPrice, NULL, @origin
                 )`;
 
@@ -3051,7 +3051,7 @@ class DatabaseOperations {
                 'CurrentHerd': 'CurrentHerd',
                 'LastWeightRecord': 'LastWeightRecord',
                 'Description': 'Description',
-                'Genotype': 'Genotype',
+                'Breed': 'Breed',
                 'Temperament': 'Temperament',
                 'Status': 'Status',
                 'RegCert': 'RegCert'
@@ -4430,7 +4430,7 @@ class DatabaseOperations {
                 if (dataPath.includes('Date')) return 'date';
                 if (dataPath.includes('Weight') || dataPath.includes('Months')) return 'number';
                 if (dataPath.includes('IsPregnant') || dataPath.includes('Sex') || 
-                    dataPath.includes('Status') || dataPath.includes('Genotype') || 
+                    dataPath.includes('Status') || dataPath.includes('Breed') || 
                     dataPath.includes('Temperament')) return 'select';
                 if (dataPath.includes('Notes') || dataPath.includes('Description')) return 'text';
                 return 'text';
@@ -4495,7 +4495,7 @@ class DatabaseOperations {
                 { name: 'Date of Birth', path: 'CowTable/DateOfBirth' },
                 { name: 'Current Herd', path: 'CowTable/CurrentHerd' },
                 { name: 'Description', path: 'CowTable/Description' },
-                { name: 'Genotype', path: 'CowTable/Genotype' },
+                { name: 'Breed', path: 'CowTable/Breed' },
                 { name: 'Temperament', path: 'CowTable/Temperament' },
                 { name: 'Status', path: 'CowTable/Status' },
                 { name: 'RegCert', path: 'CowTable/RegCert' },
@@ -4668,7 +4668,7 @@ module.exports = {
     getCalvingStatus: (params) => dbOps.getCalvingStatus(params),
     addCalvingRecord: (params) => dbOps.addCalvingRecord(params),
     generateCalfTag: (params) => dbOps.generateCalfTag(params),
-    calculateGenotypeFromParents: (damTag, sireTag) => dbOps.calculateGenotypeFromParents(damTag, sireTag),
+    calculateBreedFromParents: (damTag, sireTag) => dbOps.calculateBreedFromParents(damTag, sireTag),
     addCowWithCalfHandling: (params) => dbOps.addCowWithCalfHandling(params),
 
     // Weaning Tracker & updaters

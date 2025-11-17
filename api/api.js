@@ -477,7 +477,7 @@ class APIWrapper {
                 sex: req.body.sex,
                 status: req.body.status,
                 currentHerd: req.body.currentHerd,
-                genotype: req.body.genotype,
+                breed: req.body.breed,
                 temperament: req.body.temperament,
                 regCert: req.body.regCert,
                 regCertNumber: req.body.regCertNumber,

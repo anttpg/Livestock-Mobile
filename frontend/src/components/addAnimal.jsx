@@ -23,7 +23,7 @@ function AddAnimal({
     sex: '',
     status: 'Current',
     currentHerd: '',
-    genotype: '',
+    breed: '',
     temperament: '',
     regCert: '',
     regCertNumber: '',
