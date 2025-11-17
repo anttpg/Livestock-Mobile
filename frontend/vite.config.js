@@ -17,7 +17,9 @@ export default defineConfig({
       key: fs.readFileSync(process.env.HOST_KEY),
       cert: fs.readFileSync(process.env.HOST_PEM),
     } : false,
-    allowedHosts: process.env.TUNNEL_HOST ? [process.env.TUNNEL_HOST] : undefined,
+    allowedHosts: process.env.TUNNEL_HOST 
+    ? process.env.TUNNEL_HOST.split(',').map(host => host.trim())
+    : undefined,
     proxy: {
       '/api': {
         target: process.env.HOST_KEY && process.env.HOST_PEM 
