@@ -6,7 +6,8 @@
     "backend": "node backend/sessionManager.js",
     "frontend": "cd frontend && vite",
     "build": "cd frontend && vite build",
-    "preview": "cd frontend && vite preview --port 8080 --host"
+    "preview": "cd frontend && vite preview --port 8080 --host",
+    "start": "concurrently \"npm run backend\" \"npm run preview\""
   },
   "keywords": [],
   "author": "",
