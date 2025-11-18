@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function Login() {
+function SetPassword() {
   const [email, setEmail] = useState('');
   const [userName, setUserName] = useState('');
-  const [isBlocked, setIsBlocked] = useState(false);
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Get authenticated email from Cloudflare
     const fetchInfo = async () => {
       try {
         const response = await fetch('/api/auth/check', {
@@ -20,16 +21,11 @@ function Login() {
 
         if (response.ok) {
           const data = await response.json();
-          if (data.needsLogin) {
+          if (data.needsPasswordSetup) {
             setEmail(data.email);
             setUserName(data.userName);
-            setIsBlocked(data.blocked || false);
-          } else if (data.blocked) {
-            // User is blocked
-            setIsBlocked(true);
-            setEmail(data.email);
-            setUserName(data.userName || 'User');
           } else {
+            // User doesn't need password setup, redirect appropriately
             window.location.href = '/';
           }
         }
@@ -46,17 +42,22 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (isBlocked) {
-      setError('Your account is blocked. Please contact an administrator.');
+    setError('');
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
-    
-    setError('');
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch('/api/auth/set-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -68,12 +69,13 @@ function Login() {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // Password set successfully, redirect to main app
         window.location.href = '/';
       } else {
-        setError(data.message || 'Login failed');
+        setError(data.message || 'Failed to set password');
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Set password error:', error);
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -119,10 +121,6 @@ function Login() {
       transition: 'border-color 0.3s',
       boxSizing: 'border-box'
     },
-    inputDisabled: {
-      backgroundColor: '#f0f0f0',
-      cursor: 'not-allowed'
-    },
     button: {
       width: '100%',
       padding: '12px',
@@ -151,22 +149,11 @@ function Login() {
       marginTop: '0',
       marginBottom: '20px',
       padding: '15px',
-      backgroundColor: '#d1ecf1',
-      color: '#0c5460',
+      backgroundColor: '#fff3cd',
+      color: '#856404',
       borderRadius: '4px',
       fontSize: '14px',
       lineHeight: '1.5'
-    },
-    blockedInfo: {
-      marginTop: '0',
-      marginBottom: '20px',
-      padding: '15px',
-      backgroundColor: '#f8d7da',
-      color: '#721c24',
-      borderRadius: '4px',
-      fontSize: '14px',
-      lineHeight: '1.5',
-      fontWeight: 'bold'
     }
   };
 
@@ -184,36 +171,19 @@ function Login() {
   return (
     <div style={styles.container}>
       <form style={styles.form} onSubmit={handleSubmit}>
-        <h1 style={styles.title}>Cattle Management System</h1>
+        <h1 style={styles.title}>Set Your Password</h1>
         
-        {isBlocked ? (
-          <div style={styles.blockedInfo}>
-            BLOCKED_BY_ADMIN
-          </div>
-        ) : (
-          <div style={styles.info}>
-            Welcome back, <strong>{userName}</strong>!
-          </div>
-        )}
+        <div style={styles.info}>
+          <strong>Welcome, {userName}!</strong><br />
+          Your password has been reset. Please create a new password to continue.
+        </div>
 
         {error && (
           <div style={styles.error}>{error}</div>
         )}
 
         <div style={styles.inputGroup}>
-          <label style={styles.label} htmlFor="email">Email:</label>
-          <input
-            style={{...styles.input, ...styles.inputDisabled}}
-            type="email"
-            id="email"
-            value={email}
-            disabled
-            autoComplete="email"
-          />
-        </div>
-
-        <div style={styles.inputGroup}>
-          <label style={styles.label} htmlFor="password">Password:</label>
+          <label style={styles.label} htmlFor="password">New Password:</label>
           <input
             style={styles.input}
             type="password"
@@ -221,25 +191,42 @@ function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            disabled={loading || isBlocked}
-            autoComplete="current-password"
-            autoFocus={!isBlocked}
+            disabled={loading}
+            autoComplete="new-password"
+            minLength={6}
+            maxLength={100}
+          />
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label} htmlFor="confirmPassword">Confirm Password:</label>
+          <input
+            style={styles.input}
+            type="password"
+            id="confirmPassword"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            disabled={loading}
+            autoComplete="new-password"
+            minLength={6}
+            maxLength={100}
           />
         </div>
 
         <button
           style={{
             ...styles.button,
-            ...((loading || isBlocked) ? styles.buttonDisabled : {})
+            ...(loading ? styles.buttonDisabled : {})
           }}
           type="submit"
-          disabled={loading || isBlocked}
+          disabled={loading}
         >
-          {loading ? 'Logging in...' : isBlocked ? 'Account Blocked' : 'Login'}
+          {loading ? 'Setting Password...' : 'Set Password'}
         </button>
       </form>
     </div>
   );
 }
 
-export default Login;
+export default SetPassword;

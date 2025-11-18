@@ -8,7 +8,16 @@ const cors = require('cors');
 
 const apiWrapper = require('../api/api');
 const { createValidationMiddleware } = require('./inputValidation');
-const { authenticate } = require('./accessControl');
+const { 
+    initialize, 
+    authenticate, 
+    login, 
+    register, 
+    setPassword,
+    requireAuth,
+    requireAdmin,
+    requireDev
+} = require('../backend/accessControl');
 const localFileOps = require('../api/local');
 
 require('dotenv').config();
@@ -28,6 +37,8 @@ const allowedOrigins = [
 if (process.env.TUNNEL_HOST) {
   allowedOrigins.push(`http://${process.env.TUNNEL_HOST}`);
   allowedOrigins.push(`https://${process.env.TUNNEL_HOST}`);
+  // allowedOrigins.push(`http://${process.env.TUNNEL_HOST_ALT}`); // If these exist, use them
+  // allowedOrigins.push(`https://${process.env.TUNNEL_HOST_ALT}`);
 }
 
 console.log('Allowed origins:', allowedOrigins);
@@ -109,6 +120,19 @@ const loginLimiter = rateLimit({
 // // Apply rate limiter to all API routes
 // app.use('/api/', apiLimiter);
 
+
+
+
+// Initialize user system on server start
+(async () => {
+    try {
+        await initialize();
+    } catch (error) {
+        console.error('Failed to initialize user system:', error);
+        process.exit(1);
+    }
+})();
+
 // Serve static files from existing structure
 app.use('/cow-photos', express.static(path.join(__dirname, '../files/Cow Photos')));
 app.use('/maps', express.static(path.join(__dirname, '../files/MapData')));
@@ -116,89 +140,201 @@ app.use('/maps', express.static(path.join(__dirname, '../files/MapData')));
 // Configure multer for file uploads
 const upload = localFileOps.configureMulter();
 
-// Login endpoint
-app.post('/api/login',
-  loginLimiter,
-  createValidationMiddleware('login'),
-  async (req, res) => {
-    
-    try {
-      const { username, password } = req.body;
-      
-      const authResult = await authenticate(username, password);
-      
-      if (authResult.success) {
-        req.session.user = authResult.user;
-        
-        // Store database config if SQL authentication
-        if (authResult.dbConfig) {
-          req.session.dbUser = username;
-          req.session.dbPassword = password;
-          req.session.dbConfig = authResult.dbConfig;
-        }
-        
-        req.session.save(() => {
-          return res.json({ 
-            success: true, 
-            user: authResult.user,
-            authMode: process.env.AUTH_MODE || 'temp'
-          });
-        });
-      } else {
-        console.warn('Invalid login attempt from origin:', req.get('origin'), ' to user ', username);
-        return res.status(401).json({ 
-          success: false, 
-          message: authResult.message 
-        });
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Authentication service error' 
-      });
+// Get authenticated user's email and determine auth state (registration/password setup/login needed)
+app.get('/api/auth/check', async (req, res) => {
+    return authenticate(req, res);
+});
+
+// Get the user's email from Cloudflare Access header (for auto-filling forms)
+app.get('/api/auth/email', async (req, res) => {
+    return apiWrapper.getUserEmail(req, res);
+});
+
+// Register new user account
+app.post('/api/auth/register',
+    createValidationMiddleware('register'),
+    async (req, res) => {
+        return register(req, res);
     }
-  }
 );
 
-// Logout endpoint
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(err => {
-    if (err) {
-      return res.status(500).json({ error: 'Error logging out' });
+// Set or reset password for existing user
+app.post('/api/auth/set-password',
+    createValidationMiddleware('setPassword'),
+    async (req, res) => {
+        return setPassword(req, res);
     }
-    res.clearCookie('connect.sid');
-    res.json({ success: true });
-  });
+);
+
+// Login with email and password
+app.post('/api/login',
+    loginLimiter,
+    createValidationMiddleware('login'),
+    async (req, res) => {
+        return login(req, res);
+    }
+);
+
+// Logout and destroy session
+app.post('/api/logout', (req, res) => {
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).json({ 
+                success: false,
+                error: 'Error logging out' 
+            });
+        }
+        res.clearCookie('connect.sid');
+        res.json({ success: true });
+    });
 });
 
-// Auth check endpoint
+// Check if user has active session
 app.get('/api/check-auth', (req, res) => {
-  if (req.session.user) {
-    res.json({ 
-      authenticated: true, 
-      user: req.session.user,
-      authMode: process.env.AUTH_MODE || 'temp'
-    });
-  } else {
-    res.status(401).json({ authenticated: false });
-  }
+    if (req.session.user) {
+        res.json({ 
+            authenticated: true, 
+            user: {
+                id: req.session.user.id,
+                username: req.session.user.username,
+                email: req.session.user.email,
+                permissions: req.session.user.permissions
+            }
+        });
+    } else {
+        res.status(401).json({ authenticated: false });
+    }
 });
+
+
+// ADMIN ONLY
+// Get all users
+app.get('/api/users',
+    requireAuth(),
+    requireAdmin(),
+    async (req, res) => {
+        return apiWrapper.getAllUsers(req, res);
+    }
+);
+
+// Reset user password
+app.post('/api/users/reset-password',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('resetPassword'),
+    async (req, res) => {
+        return apiWrapper.resetUserPassword(req, res);
+    }
+);
+
+// Update user permissions
+app.post('/api/users/update-permissions',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('updatePermissions'),
+    async (req, res) => {
+        return apiWrapper.updateUserPermissions(req, res);
+    }
+);
+
+// Block user account
+app.post('/api/users/block',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('blockUser'),
+    async (req, res) => {
+        return apiWrapper.blockUser(req, res);
+    }
+);
+
+// Unblock user account
+app.post('/api/users/unblock',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('unblockUser'),
+    async (req, res) => {
+        return apiWrapper.unblockUser(req, res);
+    }
+);
+
+// Pre-register user
+app.post('/api/users/pre-register',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('preRegisterUser'),
+    async (req, res) => {
+        return apiWrapper.preRegisterUser(req, res);
+    }
+);
+
+
+// DEV ONLY
+/**
+ * Get backend log file
+ */
+app.get('/api/dev/logs/backend',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.getBackendLog(req, res);
+    }
+);
+
+/**
+ * Get frontend log file
+ */
+app.get('/api/dev/logs/frontend',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.getFrontendLog(req, res);
+    }
+);
+
+/**
+ * Clear backend log file
+ */
+app.post('/api/dev/logs/backend/clear',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.clearBackendLog(req, res);
+    }
+);
+
+/**
+ * Clear frontend log file
+ */
+app.post('/api/dev/logs/frontend/clear',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.clearFrontendLog(req, res);
+    }
+);
+
+
+
+
+
+
 
 // Get cow data
 app.get('/api/cow/:tag', 
-  createValidationMiddleware('getCowData'),
-  async (req, res) => {
-    return apiWrapper.getCowData(req, res);
-  }
+    requireAuth(),
+    createValidationMiddleware('getCowData'),
+    async (req, res) => {
+        return apiWrapper.getCowData(req, res);
+    }
 );
 
 // Add observation
 app.post('/api/add-observation',
-  createValidationMiddleware('addObservation'),
-  async (req, res) => {
-    return apiWrapper.addObservation(req, res);
-  }
+    requireAuth(),
+    createValidationMiddleware('addObservation'),
+    async (req, res) => {
+        return apiWrapper.addObservation(req, res);
+    }
 );
 
 

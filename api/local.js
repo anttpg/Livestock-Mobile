@@ -1,3 +1,5 @@
+const bcrypt = require('bcrypt');
+const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
 require('dotenv').config();
@@ -13,7 +15,8 @@ class LocalFileOperations {
         this.cowPhotosDir = path.join(this.basePath, 'Cow Photos');
         this.mapDataDir = path.join(this.basePath, 'MapData');
         this.minimapsDir = path.join(this.mapDataDir, 'minimaps');
-        this.users = path.join(this.basePath, 'users.csv')
+        this.usersFile = path.join(this.basePath, 'users.csv');
+        this.SALT_ROUNDS = 10;
     }
 
     /**
@@ -845,59 +848,755 @@ class LocalFileOperations {
     }
 
     /**
-     * Checks the users file is valid, creates it if file does not exist.
+     * Parse CSV content into array of user objects
      */
-    checkUsers() {
+    parseUsersCSV(csvContent) {
+        const lines = csvContent.trim().split('\n');
+        if (lines.length < 2) return [];
         
+        const headers = lines[0].split(',');
+        const users = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',');
+            if (values.length !== headers.length) continue;
+            
+            const user = {
+                id: parseInt(values[0]),
+                username: values[1],
+                email: values[2],
+                passwordHash: values[3],
+                permissions: values[4] ? values[4].split('|').filter(p => p) : [],
+                blocked: values[5] === 'true'
+            };
+            users.push(user);
+        }
+        
+        return users;
     }
 
     /**
-     * Gets a list of all the users
+     * Convert users array to CSV content
      */
-    async getAllUsers(params) {
-        // input credentials
-
-        // returns listof userinfo, 
+    usersToCSV(users) {
+        const headers = 'id,username,email,passwordHash,permissions,blocked';
+        const rows = users.map(user => {
+            const permissions = user.permissions.join('|');
+            return `${user.id},${user.username},${user.email},${user.passwordHash},${permissions},${user.blocked}`;
+        });
+        
+        return [headers, ...rows].join('\n');
     }
 
     /**
-     * Given an email, return the user ID (if it exists), name, and if the user has set a password
+     * Checks the users file is valid, creates it if file does not exist.
+     * If creating new file, marks first user as admin with all permissions.
+     */
+    async checkUsers() {
+        try {
+            await fs.access(this.usersFile);
+            
+            // File exists, validate structure
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Ensure at least one admin exists
+            const hasAdmin = users.some(user => !user.blocked && user.permissions.includes('admin'));
+            if (!hasAdmin && users.length > 0) {
+                console.warn('WARNING: No active admin users found in users.csv');
+            }
+            
+            return {
+                success: true,
+                exists: true,
+                userCount: users.length,
+                hasAdmin
+            };
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                // File doesn't exist, create with headers only
+                const headers = 'id,username,email,passwordHash,permissions,blocked\n';
+                await fs.writeFile(this.usersFile, headers);
+                
+                console.log('Created new users.csv file');
+                return {
+                    success: true,
+                    exists: false,
+                    created: true,
+                    firstUserWillBeAdmin: true
+                };
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * Gets a list of all users (excluding password hashes)
+     */
+    async getAllUsers() {
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Return users without password hashes
+            return {
+                success: true,
+                users: users.map(user => ({
+                    id: user.id,
+                    username: user.username,
+                    email: user.email,
+                    permissions: user.permissions,
+                    blocked: user.blocked,
+                    hasPassword: !!user.passwordHash && user.passwordHash !== ''
+                }))
+            };
+        } catch (error) {
+            console.error('Error getting all users:', error);
+            return {
+                success: false,
+                message: `Failed to get users: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Given an email, return the user info (if it exists)
      */
     async lookupUser(params) {
-        // input user email
-
-        // return id, name, email, permissions, isAdmin 
+        const { email } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            
+            if (!user) {
+                return {
+                    success: false,
+                    exists: false,
+                    message: 'User not found'
+                };
+            }
+            
+            return {
+                success: true,
+                exists: true,
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    email: user.email,
+                    permissions: user.permissions,
+                    blocked: user.blocked,
+                    hasPassword: !!user.passwordHash && user.passwordHash !== '',
+                    isAdmin: user.permissions.includes('admin')
+                }
+            };
+        } catch (error) {
+            console.error('Error looking up user:', error);
+            return {
+                success: false,
+                message: `Failed to lookup user: ${error.message}`
+            };
+        }
     }
 
     /**
-     * Called to intialize user on first login
+     * Called to initialize user on first login or registration
      */
     async setupUser(params) {
-        // Assign user next free ID, save name, email, Hash and save password
-
-        // Return session credentials, use these throughout the session to prove you are who you say youare
+        const { username, email, password } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Check if user already exists
+            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            if (existingUser) {
+                return {
+                    success: false,
+                    message: 'User already exists'
+                };
+            }
+            
+            // Generate new user ID
+            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
+            const newId = maxId + 1;
+            
+            // Hash password
+            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
+            
+            // Determine permissions - first user gets all permissions including admin
+            let permissions = ['view'];
+            if (users.length === 0) {
+                permissions = ['view', 'add', 'admin', 'dev'];
+                console.log('First user created - granted all permissions including admin');
+            }
+            
+            // Create new user
+            const newUser = {
+                id: newId,
+                username,
+                email,
+                passwordHash,
+                permissions,
+                blocked: false
+            };
+            
+            users.push(newUser);
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                user: {
+                    id: newUser.id,
+                    username: newUser.username,
+                    email: newUser.email,
+                    permissions: newUser.permissions,
+                    isFirstUser: users.length === 1
+                }
+            };
+        } catch (error) {
+            console.error('Error setting up user:', error);
+            return {
+                success: false,
+                message: `Failed to setup user: ${error.message}`
+            };
+        }
     }
 
     /**
-     * Checks if the hashed input for given userID matches their expected hash
+     * Checks if the password for given user email matches their expected hash
      */
     async validatePassword(params) {
-        // Input userID, password
-
-        // Hash the psswd, compare to expected
-
-        // return true/false
+        const { email, password } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            
+            if (!user) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            if (user.blocked) {
+                return {
+                    success: false,
+                    blocked: true,
+                    message: 'User account is blocked'
+                };
+            }
+            
+            if (!user.passwordHash || user.passwordHash === '') {
+                return {
+                    success: false,
+                    needsPasswordSetup: true,
+                    message: 'Password needs to be set'
+                };
+            }
+            
+            const isValid = await bcrypt.compare(password, user.passwordHash);
+            
+            if (isValid) {
+                return {
+                    success: true,
+                    user: {
+                        id: user.id,
+                        username: user.username,
+                        email: user.email,
+                        permissions: user.permissions
+                    }
+                };
+            } else {
+                return {
+                    success: false,
+                    message: 'Invalid password'
+                };
+            }
+        } catch (error) {
+            console.error('Error validating password:', error);
+            return {
+                success: false,
+                message: `Failed to validate password: ${error.message}`
+            };
+        }
     }
 
     /**
-     * Reset the user password, letting user create it on next login
-     * @param {*} params 
+     * Reset the user password, clearing hash to prompt new password on next login
      */
-    resetUserPassword(params) {
-        // intput userID, credentials
+    async resetUserPassword(params) {
+        const { email, adminEmail } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can reset passwords'
+                };
+            }
+            
+            // Find target user
+            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+            if (userIndex === -1) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            // Clear password hash
+            users[userIndex].passwordHash = '';
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                message: `Password reset for ${email}. User will be prompted to set new password on next login.`
+            };
+        } catch (error) {
+            console.error('Error resetting password:', error);
+            return {
+                success: false,
+                message: `Failed to reset password: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Set a new password for user (used when user needs to create/reset password)
+     */
+    async setUserPassword(params) {
+        const { email, password } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+            if (userIndex === -1) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            if (users[userIndex].blocked) {
+                return {
+                    success: false,
+                    message: 'Cannot set password for blocked user'
+                };
+            }
+            
+            // Hash and set new password
+            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
+            users[userIndex].passwordHash = passwordHash;
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                user: {
+                    id: users[userIndex].id,
+                    username: users[userIndex].username,
+                    email: users[userIndex].email,
+                    permissions: users[userIndex].permissions
+                }
+            };
+        } catch (error) {
+            console.error('Error setting password:', error);
+            return {
+                success: false,
+                message: `Failed to set password: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Update user permissions
+     */
+    async updateUserPermissions(params) {
+        const { email, permissions, adminEmail } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can update permissions'
+                };
+            }
+            
+            // Find target user
+            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+            if (userIndex === -1) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            // Check if removing admin would leave zero admins
+            const wasAdmin = users[userIndex].permissions.includes('admin');
+            const willBeAdmin = permissions.includes('admin');
+            
+            if (wasAdmin && !willBeAdmin) {
+                const activeAdmins = users.filter(u => 
+                    !u.blocked && 
+                    u.permissions.includes('admin') && 
+                    u.email.toLowerCase() !== email.toLowerCase()
+                );
+                
+                if (activeAdmins.length === 0) {
+                    return {
+                        success: false,
+                        message: 'Cannot remove admin permission - at least one admin must remain'
+                    };
+                }
+            }
+            
+            // Update permissions
+            users[userIndex].permissions = permissions;
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                user: {
+                    id: users[userIndex].id,
+                    username: users[userIndex].username,
+                    email: users[userIndex].email,
+                    permissions: users[userIndex].permissions
+                }
+            };
+        } catch (error) {
+            console.error('Error updating permissions:', error);
+            return {
+                success: false,
+                message: `Failed to update permissions: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Block a user account
+     */
+    async blockUser(params) {
+        const { email, adminEmail } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can block users'
+                };
+            }
+            
+            // Find target user
+            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+            if (userIndex === -1) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            // Prevent blocking if it would leave zero admins
+            if (users[userIndex].permissions.includes('admin')) {
+                const activeAdmins = users.filter(u => 
+                    !u.blocked && 
+                    u.permissions.includes('admin') && 
+                    u.email.toLowerCase() !== email.toLowerCase()
+                );
+                
+                if (activeAdmins.length === 0) {
+                    return {
+                        success: false,
+                        message: 'Cannot block user - at least one active admin must remain'
+                    };
+                }
+            }
+            
+            // Block user
+            users[userIndex].blocked = true;
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                message: `User ${email} has been blocked`
+            };
+        } catch (error) {
+            console.error('Error blocking user:', error);
+            return {
+                success: false,
+                message: `Failed to block user: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Unblock a user account
+     */
+    async unblockUser(params) {
+        const { email, adminEmail } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can unblock users'
+                };
+            }
+            
+            // Find target user
+            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+            if (userIndex === -1) {
+                return {
+                    success: false,
+                    message: 'User not found'
+                };
+            }
+            
+            // Unblock user
+            users[userIndex].blocked = false;
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                message: `User ${email} has been unblocked`
+            };
+        } catch (error) {
+            console.error('Error unblocking user:', error);
+            return {
+                success: false,
+                message: `Failed to unblock user: ${error.message}`
+            };
+        }
     }
 
 
+
+    /**
+     * Get backend log file content
+     */
+    async getBackendLog() {
+        const fs = require('fs').promises;
+        
+        try {
+            const logPath = path.join(this.basePath, 'backend.log');
+            
+            try {
+                await fs.access(logPath);
+            } catch (error) {
+                return {
+                    success: true,
+                    content: 'No log file found'
+                };
+            }
+
+            const content = await fs.readFile(logPath, 'utf8');
+            
+            return {
+                success: true,
+                content: content || 'Log file is empty'
+            };
+        } catch (error) {
+            console.error('Error reading backend log:', error);
+            return {
+                success: false,
+                message: `Failed to read backend log: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Get frontend log file content
+     */
+    async getFrontendLog() {
+        const fs = require('fs').promises;
+        
+        try {
+            const logPath = path.join(this.basePath, 'frontend.log');
+            
+            try {
+                await fs.access(logPath);
+            } catch (error) {
+                return {
+                    success: true,
+                    content: 'No log file found'
+                };
+            }
+
+            const content = await fs.readFile(logPath, 'utf8');
+            
+            return {
+                success: true,
+                content: content || 'Log file is empty'
+            };
+        } catch (error) {
+            console.error('Error reading frontend log:', error);
+            return {
+                success: false,
+                message: `Failed to read frontend log: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Clear backend log file
+     */
+    async clearBackendLog() {
+        const fs = require('fs').promises;
+        
+        try {
+            const logPath = path.join(this.basePath, 'backend.log');
+            await fs.writeFile(logPath, '');
+            
+            return {
+                success: true,
+                message: 'Backend log cleared'
+            };
+        } catch (error) {
+            console.error('Error clearing backend log:', error);
+            return {
+                success: false,
+                message: `Failed to clear backend log: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Clear frontend log file
+     */
+    async clearFrontendLog() {
+        const fs = require('fs').promises;
+        
+        try {
+            const logPath = path.join(this.basePath, 'frontend.log');
+            await fs.writeFile(logPath, '');
+            
+            return {
+                success: true,
+                message: 'Frontend log cleared'
+            };
+        } catch (error) {
+            console.error('Error clearing frontend log:', error);
+            return {
+                success: false,
+                message: `Failed to clear frontend log: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * Pre-register a user with email and permissions (no password yet)
+     */
+    async preRegisterUser(params) {
+        const { email, permissions, adminEmail } = params;
+        
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+            
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can pre-register users'
+                };
+            }
+            
+            // Check if user already exists
+            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            if (existingUser) {
+                return {
+                    success: false,
+                    message: 'User already exists'
+                };
+            }
+            
+            // Generate new user ID
+            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
+            const newId = maxId + 1;
+            
+            // Create username from email (before @)
+            const username = email.split('@')[0];
+            
+            // Create new user without password
+            const newUser = {
+                id: newId,
+                username,
+                email,
+                passwordHash: '', // Empty - user will set on first login
+                permissions,
+                blocked: false
+            };
+            
+            users.push(newUser);
+            
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+            
+            return {
+                success: true,
+                user: {
+                    id: newUser.id,
+                    username: newUser.username,
+                    email: newUser.email,
+                    permissions: newUser.permissions
+                }
+            };
+        } catch (error) {
+            console.error('Error pre-registering user:', error);
+            return {
+                success: false,
+                message: `Failed to pre-register user: ${error.message}`
+            };
+        }
+    }
 }
 
 // Export singleton instance
@@ -920,4 +1619,19 @@ module.exports = {
     saveMedicalImage: (params) => localOps.saveMedicalImage(params),
     getMedicalImage: (params) => localOps.getMedicalImage(params),
     getMedicalImageCount: (params) => localOps.getMedicalImageCount(params),
+    checkUsers: () => localOps.checkUsers(),
+    getAllUsers: () => localOps.getAllUsers(),
+    lookupUser: (params) => localOps.lookupUser(params),
+    setupUser: (params) => localOps.setupUser(params),
+    validatePassword: (params) => localOps.validatePassword(params),
+    setUserPassword: (params) => localOps.setUserPassword(params),
+    resetUserPassword: (params) => localOps.resetUserPassword(params),
+    updateUserPermissions: (params) => localOps.updateUserPermissions(params),
+    blockUser: (params) => localOps.blockUser(params),
+    unblockUser: (params) => localOps.unblockUser(params),
+    getBackendLog: () => localOps.getBackendLog(),
+    getFrontendLog: () => localOps.getFrontendLog(),
+    clearBackendLog: () => localOps.clearBackendLog(),
+    clearFrontendLog: () => localOps.clearFrontendLog(),
+    preRegisterUser: (params) => localOps.preRegisterUser(params),
 };

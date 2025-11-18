@@ -1,79 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function Login() {
+function RegisterUser() {
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [userName, setUserName] = useState('');
-  const [isBlocked, setIsBlocked] = useState(false);
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [fetchingInfo, setFetchingInfo] = useState(true);
+  const [fetchingEmail, setFetchingEmail] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchInfo = async () => {
+    // Get authenticated email from Cloudflare
+    const fetchEmail = async () => {
       try {
-        const response = await fetch('/api/auth/check', {
+        const response = await fetch('/api/auth/email', {
           credentials: 'include'
         });
 
         if (response.ok) {
           const data = await response.json();
-          if (data.needsLogin) {
-            setEmail(data.email);
-            setUserName(data.userName);
-            setIsBlocked(data.blocked || false);
-          } else if (data.blocked) {
-            // User is blocked
-            setIsBlocked(true);
-            setEmail(data.email);
-            setUserName(data.userName || 'User');
-          } else {
-            window.location.href = '/';
-          }
+          setEmail(data.email);
         }
       } catch (error) {
-        console.error('Error fetching info:', error);
+        console.error('Error fetching email:', error);
         setError('Unable to verify authentication');
       } finally {
-        setFetchingInfo(false);
+        setFetchingEmail(false);
       }
     };
 
-    fetchInfo();
+    fetchEmail();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (isBlocked) {
-      setError('Your account is blocked. Please contact an administrator.');
+    setError('');
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
-    
-    setError('');
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ username, email, password })
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // Registration successful, redirect to main app
+        if (data.isFirstUser) {
+          alert('Welcome! As the first user, you have been granted admin privileges.');
+        }
         window.location.href = '/';
       } else {
-        setError(data.message || 'Login failed');
+        setError(data.message || 'Registration failed');
+        if (data.details) {
+          console.error('Validation errors:', data.details); // ADD THIS
+        }
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Registration error:', error);
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -148,34 +150,22 @@ function Login() {
       textAlign: 'center'
     },
     info: {
-      marginTop: '0',
-      marginBottom: '20px',
+      marginTop: '20px',
       padding: '15px',
       backgroundColor: '#d1ecf1',
       color: '#0c5460',
       borderRadius: '4px',
       fontSize: '14px',
       lineHeight: '1.5'
-    },
-    blockedInfo: {
-      marginTop: '0',
-      marginBottom: '20px',
-      padding: '15px',
-      backgroundColor: '#f8d7da',
-      color: '#721c24',
-      borderRadius: '4px',
-      fontSize: '14px',
-      lineHeight: '1.5',
-      fontWeight: 'bold'
     }
   };
 
-  if (fetchingInfo) {
+  if (fetchingEmail) {
     return (
       <div style={styles.container}>
         <div style={styles.form}>
           <h1 style={styles.title}>Cattle Management System</h1>
-          <p style={{ textAlign: 'center', color: '#666' }}>Loading...</p>
+          <p style={{ textAlign: 'center', color: '#666' }}>Verifying authentication...</p>
         </div>
       </div>
     );
@@ -184,21 +174,33 @@ function Login() {
   return (
     <div style={styles.container}>
       <form style={styles.form} onSubmit={handleSubmit}>
-        <h1 style={styles.title}>Cattle Management System</h1>
+        <h1 style={styles.title}>Create Account</h1>
         
-        {isBlocked ? (
-          <div style={styles.blockedInfo}>
-            BLOCKED_BY_ADMIN
-          </div>
-        ) : (
-          <div style={styles.info}>
-            Welcome back, <strong>{userName}</strong>!
-          </div>
-        )}
-
         {error && (
           <div style={styles.error}>{error}</div>
         )}
+
+        <div style={styles.info}>
+          You are authenticated as: <strong>{email}</strong>
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label} htmlFor="username">Username:</label>
+          <input
+            style={styles.input}
+            type="text"
+            id="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            disabled={loading}
+            autoComplete="username"
+            minLength={3}
+            maxLength={50}
+            pattern="[\w\-]+"
+            title="Username must contain only letters, numbers, underscores, and hyphens"
+          />
+        </div>
 
         <div style={styles.inputGroup}>
           <label style={styles.label} htmlFor="email">Email:</label>
@@ -221,25 +223,42 @@ function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            disabled={loading || isBlocked}
-            autoComplete="current-password"
-            autoFocus={!isBlocked}
+            disabled={loading}
+            autoComplete="new-password"
+            minLength={6}
+            maxLength={100}
+          />
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label} htmlFor="confirmPassword">Confirm Password:</label>
+          <input
+            style={styles.input}
+            type="password"
+            id="confirmPassword"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            disabled={loading}
+            autoComplete="new-password"
+            minLength={6}
+            maxLength={100}
           />
         </div>
 
         <button
           style={{
             ...styles.button,
-            ...((loading || isBlocked) ? styles.buttonDisabled : {})
+            ...(loading ? styles.buttonDisabled : {})
           }}
           type="submit"
-          disabled={loading || isBlocked}
+          disabled={loading}
         >
-          {loading ? 'Logging in...' : isBlocked ? 'Account Blocked' : 'Login'}
+          {loading ? 'Creating Account...' : 'Create Account'}
         </button>
       </form>
     </div>
   );
 }
 
-export default Login;
+export default RegisterUser;

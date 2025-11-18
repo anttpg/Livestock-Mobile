@@ -1,4 +1,3 @@
-// db/db.js - Simple database connection without branding complexity
 const sql = require('mssql');
 require('dotenv').config();
 

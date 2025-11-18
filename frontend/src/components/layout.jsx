@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from './header';
 
-function Layout({ children }) {
+function Layout({ children, user }) {  // Accept user prop
   const [isPopupOpen, setIsPopupOpen] = useState(false);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function Layout({ children }) {
 
   const styles = {
     container: {
-      paddingTop: '80px', // Space for fixed header (60px height + 20px padding)
+      paddingTop: '80px', //(60px height + 20px padding)
       minHeight: '100vh',
       backgroundColor: '#f4f4f4',
       position: 'relative'
@@ -45,7 +45,7 @@ function Layout({ children }) {
 
   return (
     <div style={styles.container}>
-      <Header />
+      <Header user={user} />  {/* Pass user to Header */}
       <div className="layout-content" style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {children}
       </div>

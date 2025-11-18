@@ -7,7 +7,7 @@ const { assignBreedingRecords } = require('../api/api');
 const commonPatterns = {
     cowTag: /^[A-Za-z0-9 _\-*/]+$/,  // Allow letters, numbers, spaces, underscores, hyphens, asterisks
     dateISO: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/,
-    username: /^[A-Za-z0-9_-]+$/
+    username: /^[A-Za-z0-9_\-]+$/
 };
 
 /**
@@ -322,10 +322,10 @@ const fieldValidators = {
             .customSanitizer((value) => {
                 return sanitizationFunctions.sanitizeForSQL(value);
             })
-            .matches(commonPatterns.username)
+            .matches(/^[a-zA-Z0-9_-]+$/)
             .withMessage('Username must contain only letters, numbers, underscores, and hyphens')
             .isLength({ min: 3, max: 50 })
-            .withMessage('Username must be 3-50 characters')
+            .withMessage('Username must be 3-50 characters'),
     ],
 
     password: () => [
@@ -1375,6 +1375,35 @@ const fieldValidators = {
             .isLength({ max: 1000 })
     ],
 
+    updateVetComments: () => [
+        body('VetComments')
+            .optional({ nullable: true, checkFalsy: true })
+            .isString()
+            .trim()
+            .customSanitizer((value) => {
+                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
+            })
+            .isLength({ max: 1000 })
+    ],
+
+    email: () => [
+        body('email')
+            .isEmail()
+            .normalizeEmail()
+            .withMessage('Valid email is required')
+    ],
+
+    permissionList: () => [
+        body('permissions')
+            .isArray()
+            .withMessage('Permissions must be an array')
+    ],
+
+    specificPermission: () => [
+        body('permissions.*')
+            .isString()
+    ]
+
 };
 
 /**
@@ -1758,7 +1787,46 @@ const validationSchemas = {
         ...fieldValidators.breedingYear()
     ],
 
+    register: [
+        ...fieldValidators.username(),
+        ...fieldValidators.email(),
+        ...fieldValidators.password()
+    ],
+    
+    setPassword: [
+        ...fieldValidators.email(),
+        ...fieldValidators.password()
+    ],
+    
+    login: [
+        ...fieldValidators.email(),
+        ...fieldValidators.password()
+    ],
 
+    
+    resetPassword: [
+        ...fieldValidators.email(),
+    ],
+    
+    updatePermissions: [
+        ...fieldValidators.email(),
+        ...fieldValidators.permissionList(),
+        ...fieldValidators.specificPermission(),
+    ],
+    
+    blockUser: [
+        ...fieldValidators.email(),
+    ],
+    
+    unblockUser: [
+        ...fieldValidators.email(),
+    ],
+
+    preRegisterUser: [
+        ...fieldValidators.email(),
+        ...fieldValidators.permissionList(),
+        ...fieldValidators.specificPermission(),
+    ],
 
 };
 

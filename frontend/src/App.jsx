@@ -6,16 +6,21 @@ import Overview from './components/overview';
 import Herds from './components/herds';
 import Fieldsheets from './components/fieldsheets';
 import Login from './components/login';
+import Register from './components/registerUser';
+import DevMenu from './components/devMenu';
+import SetPassword from './components/setPassword';
 import BreedingPlan from './components/breedingPlan'; 
 import Layout from './components/layout';
 import TimeoutPopup from './components/timeoutPopup';
+import UserManagement from './components/userManagement';
 import { userSessionManager } from './userSessionManager';
 import { setSessionExpiredCallback } from './apiInterceptor';
 import AnimalFolder from './components/animalFolder';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState('checking'); // checking, needsRegistration, needsPasswordSetup, needsLogin, blocked, authenticated
+  const [authData, setAuthData] = useState(null); // stores email, userName, etc.
+  const [user, setUser] = useState(null); // stores full user object after authentication
   const [showSessionExpired, setShowSessionExpired] = useState(false);
 
   const {
@@ -23,35 +28,67 @@ function App() {
     remainingTime,
     handleExtendSession,
     handleTimeoutClose
-  } = userSessionManager(isAuthenticated);
+  } = userSessionManager(authState === 'authenticated');
 
   useEffect(() => {
-    checkAuth();
+    checkAuthStatus();
 
     // Set up the session expired callback for API interceptor
     setSessionExpiredCallback(() => {
-      setIsAuthenticated(false);
+      setAuthState('needsLogin');
+      setUser(null);
       setShowSessionExpired(true);
     });
   }, []);
 
-  const checkAuth = async () => {
+  const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/check-auth', {
+      // Check if we have an existing session
+      const sessionResponse = await fetch('/api/check-auth', {
         credentials: 'include'
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setIsAuthenticated(data.authenticated);
+      if (sessionResponse.ok) {
+        const sessionData = await sessionResponse.json();
+        if (sessionData.authenticated) {
+          // User has valid session, they're authenticated
+          setUser(sessionData.user);
+          setAuthState('authenticated');
+          return;
+        }
+      }
+
+      // No session, check what auth flow they need
+      const authCheckResponse = await fetch('/api/auth/check', {
+        credentials: 'include'
+      });
+
+      if (authCheckResponse.ok) {
+        const authCheckData = await authCheckResponse.json();
+        
+        if (authCheckData.blocked) {
+          setAuthState('blocked');
+          setAuthData(authCheckData);
+        } else if (authCheckData.needsRegistration) {
+          setAuthState('needsRegistration');
+          setAuthData(authCheckData);
+        } else if (authCheckData.needsPasswordSetup) {
+          setAuthState('needsPasswordSetup');
+          setAuthData(authCheckData);
+        } else if (authCheckData.needsLogin) {
+          setAuthState('needsLogin');
+          setAuthData(authCheckData);
+        } else {
+          // Shouldn't happen, but fallback
+          setAuthState('needsLogin');
+        }
       } else {
-        setIsAuthenticated(false);
+        // API error, show login as fallback
+        setAuthState('needsLogin');
       }
     } catch (error) {
       console.error('Auth check failed:', error);
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
+      setAuthState('needsLogin');
     }
   };
 
@@ -59,7 +96,8 @@ function App() {
     setShowSessionExpired(false);
   };
 
-  if (loading) {
+  // Show loading state while checking auth
+  if (authState === 'checking') {
     return (
       <div style={{
         display: 'flex',
@@ -74,28 +112,78 @@ function App() {
     );
   }
 
+  // Show blocked message
+  if (authState === 'blocked') {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        padding: '20px'
+      }}>
+        <h1 style={{ color: '#dc3545', marginBottom: '20px' }}>Access Blocked</h1>
+        <p style={{ fontSize: '18px', color: '#666', textAlign: 'center' }}>
+          Your account has been blocked. Please contact an administrator for assistance.
+        </p>
+      </div>
+    );
+  }
+
+  // Show auth flows
+  if (authState === 'needsRegistration') {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/register" element={<Register />} />
+          <Route path="*" element={<Navigate to="/register" replace />} />
+        </Routes>
+      </Router>
+    );
+  }
+
+  if (authState === 'needsPasswordSetup') {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/set-password" element={<SetPassword />} />
+          <Route path="*" element={<Navigate to="/set-password" replace />} />
+        </Routes>
+      </Router>
+    );
+  }
+
+  if (authState === 'needsLogin') {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    );
+  }
+
+  // User is authenticated, show main app
   return (
     <>
       <Router>
         <Routes>
           <Route
-            path="/login"
-            element={isAuthenticated ? <Navigate to="/general" replace /> : <Login />}
-          />
-          <Route
             path="/overview"
             element={
-              isAuthenticated
-                ? <Layout><Overview /></Layout>
-                : <Navigate to="/login" replace />
+              <Layout user={user}>
+                <Overview />
+              </Layout>
             }
           />
           <Route
             path="/animal"
             element={
-              isAuthenticated
-                ? <Layout><AnimalFolder /></Layout>
-                : <Navigate to="/login" replace />
+              <Layout user={user}>
+                <AnimalFolder />
+              </Layout>
             }
           />
           <Route
@@ -109,38 +197,57 @@ function App() {
           <Route
             path="/breeding"
             element={
-              isAuthenticated
-                ? <Layout><BreedingPlan /></Layout>
-                : <Navigate to="/login" replace />
+              <Layout user={user}>
+                <BreedingPlan />
+              </Layout>
             }
           />
           <Route
             path="/herds"
             element={
-              isAuthenticated
-                ? <Layout><Herds /></Layout>
-                : <Navigate to="/login" replace />
+              <Layout user={user}>
+                <Herds />
+              </Layout>
             }
           />
           <Route
             path="/fieldsheets"
             element={
-              isAuthenticated
-                ? <Layout><Fieldsheets /></Layout>
-                : <Navigate to="/login" replace />
+              <Layout user={user}>
+                <Fieldsheets />
+              </Layout>
             }
           />
           <Route
-            path="/"
-            element={isAuthenticated ? <Navigate to="/animal" replace /> : <Navigate to="/login" replace />}
+            path="/user-management"
+            element={
+              user?.permissions?.includes('admin') ? (
+                <Layout user={user}>
+                  <UserManagement />
+                </Layout>
+              ) : (
+                <Navigate to="/animal" replace />
+              )
+            }
           />
-
-          {/* Update the catch-all redirect */}
+          <Route
+            path="/dev-console"
+            element={
+              user?.permissions?.includes('dev') ? (
+                <Layout user={user}>
+                  <DevMenu />
+                </Layout>
+              ) : (
+                <Navigate to="/animal" replace />
+              )
+            }
+          />
+          <Route path="/" element={<Navigate to="/animal" replace />} />
           <Route path="*" element={<Navigate to="/animal" replace />} />
         </Routes>
       </Router>
 
-      {/* Combined Session Management Popup */}
+      {/* Session Management Popup */}
       <TimeoutPopup
         isOpen={showTimeoutWarning || showSessionExpired}
         onClose={showSessionExpired ? handleSessionExpiredClose : handleTimeoutClose}

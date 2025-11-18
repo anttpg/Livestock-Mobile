@@ -1,188 +1,319 @@
-// db/accessControl.js - Flexible access control for temp and future SQL authentication
-const sql = require('mssql');
+const localFileOps = require('../api/local');
 require('dotenv').config();
 
 class AccessControl {
     constructor() {
-        // Authentication mode: 'temp' or 'sql'
-        this.authMode = process.env.AUTH_MODE || 'temp';
-        this.tempCredentials = {
-            username: process.env.TEMP_USERNAME || 'testUser',
-            password: process.env.TEMP_PASSWORD || 'testPass'
-        };
+        this.isDevelopment = process.env.NODE_ENV === 'development';
+        this.devBypassEmail = process.env.DEV_BYPASS_EMAIL || '_development';
     }
 
     /**
-     * Main access control middleware
+     * Initialize user system check/create users.csv on server start
      */
-    setupAccessControl() {
-        return (req, res, next) => {
-            //console.log('Access control check for user:', req.session.user);
-
-            if (!req.session.user || !req.session.user.username) {
-                console.log('Access denied. No user session found.');
-                return res.status(403).json({ error: 'Access denied' });
-            }
-
-            // Additional checks based on auth mode
-            if (this.authMode === 'sql') {
-                return this.validateSQLSession(req, res, next);
+    async initialize() {
+        try {
+            const result = await localFileOps.checkUsers();
+            if (result.created) {
+                console.log('User system initialized - first user will receive admin privileges');
             } else {
-                return this.validateTempSession(req, res, next);
-            }
-        };
-    }
-
-    /**
-     * Validate temporary authentication session
-     */
-    validateTempSession(req, res, next) {
-        // For temp mode, just check if user exists in session
-        if (req.session.user && req.session.user.username) {
-            //console.log('Temp auth validated for user:', req.session.user.username);
-            next();
-        } else {
-            console.log('Temp auth failed - no valid session');
-            return res.status(403).json({ error: 'Invalid session' });
-        }
-    }
-
-    /**
-     * Validate SQL-based authentication session
-     */
-    async validateSQLSession(req, res, next) {
-        try {
-            // Check if we have SQL credentials in session
-            if (!req.session.dbUser || !req.session.dbPassword) {
-                console.log('SQL auth failed - no database credentials in session');
-                return res.status(403).json({ error: 'No database credentials' });
-            }
-
-            // Verify SQL connection is still valid
-            const isValid = await this.verifySQLConnection(
-                req.session.dbUser, 
-                req.session.dbPassword
-            );
-
-            if (isValid) {
-                console.log('SQL auth validated for user:', req.session.dbUser);
-                next();
-            } else {
-                console.log('SQL auth failed - invalid database connection');
-                // Clear invalid session
-                req.session.destroy();
-                return res.status(403).json({ error: 'Database authentication failed' });
-            }
-        } catch (error) {
-            console.error('Error validating SQL session:', error);
-            return res.status(500).json({ error: 'Authentication error' });
-        }
-    }
-
-    /**
-     * Authenticate user with temporary credentials
-     */
-    async authenticateTemp(username, password) {
-        if (username === this.tempCredentials.username && 
-            password === this.tempCredentials.password) {
-            return {
-                success: true,
-                user: { username }
-            };
-        }
-        return {
-            success: false,
-            message: 'Invalid username or password'
-        };
-    }
-
-    /**
-     * Authenticate user with SQL Server credentials
-     */
-    async authenticateSQL(username, password) {
-        const tempDbConfig = {
-            server: process.env.DB_SERVER,
-            database: process.env.DB_DATABASE,
-            user: username,
-            password: password,
-            options: {
-                encrypt: process.env.DB_ENCRYPT === 'true',
-                trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
-            }
-        };
-
-        try {
-            await sql.connect(tempDbConfig);
-            return {
-                success: true,
-                user: { username },
-                dbConfig: tempDbConfig
-            };
-        } catch (error) {
-            console.error('SQL authentication failed:', error);
-            return {
-                success: false,
-                message: 'Invalid database credentials'
-            };
-        }
-    }
-
-    /**
-     * Verify existing SQL connection
-     */
-    async verifySQLConnection(username, password) {
-        try {
-            const tempDbConfig = {
-                server: process.env.DB_SERVER,
-                database: process.env.DB_DATABASE,
-                user: username,
-                password: password,
-                options: {
-                    encrypt: process.env.DB_ENCRYPT === 'true',
-                    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
+                console.log(`User system loaded - ${result.userCount} users found`);
+                if (!result.hasAdmin) {
+                    console.warn('WARNING: No active admin users found!');
                 }
-            };
-
-            const pool = new sql.ConnectionPool(tempDbConfig);
-            await pool.connect();
-            await pool.close();
-            return true;
+            }
+            return result;
         } catch (error) {
-            console.error('SQL connection verification failed:', error);
-            return false;
+            console.error('Failed to initialize user system:', error);
+            throw error;
         }
     }
 
     /**
-     * Main authentication method - routes to appropriate auth
+     * Extract user email from Cloudflare Access header or development mode
      */
-    async authenticate(username, password) {
-        if (this.authMode === 'sql') {
-            return this.authenticateSQL(username, password);
-        } else {
-            return this.authenticateTemp(username, password);
+    getUserEmail(req) {
+        // In development, allow bypass
+        if (this.isDevelopment) {
+            const devEmail = req.headers['x-dev-email'] || this.devBypassEmail;
+            console.log('Development mode - using email:', devEmail);
+            return devEmail;
+        }
+
+        // Production: Get email from Cloudflare Access
+        const email = req.headers['cf-access-authenticated-user-email'];
+        if (!email) {
+            console.warn('No Cloudflare Access email header found');
+            return null;
+        }
+
+        return email;
+    }
+
+    /**
+     * Authenticate user and establish session
+     */
+    async authenticate(req, res, next) {
+        try {
+            const email = this.getUserEmail(req);
+            
+            if (!email) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Authentication required'
+                });
+            }
+
+            const userResult = await localFileOps.lookupUser({ email });
+
+            if (!userResult.exists) {
+                return res.json({
+                    success: true,
+                    needsRegistration: true,
+                    email: email
+                });
+            }
+
+            const user = userResult.user;
+
+            if (user.blocked) {
+                return res.json({
+                    success: true,
+                    blocked: true,
+                    email: email,
+                    userName: user.username
+                });
+            }
+
+            if (!user.hasPassword) {
+                return res.json({
+                    success: true,
+                    needsPasswordSetup: true,
+                    email: email,
+                    userName: user.username
+                });
+            }
+
+            return res.json({
+                success: true,
+                needsLogin: true,
+                email: email,
+                userName: user.username,
+                blocked: false  // Explicitly set
+            });
+
+        } catch (error) {
+            console.error('Authentication error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Authentication service error'
+            });
         }
     }
 
     /**
-     * Get user permissions (placeholder for future role-based access)
+     * Verify login credentials
      */
-    getUserPermissions(username) {
-        // TODO: Implement role-based permissions
-        return {
-            canRead: true,
-            canWrite: true,
-            canDelete: false,
-            admin: false
+    async login(req, res) {
+        try {
+            const { email, password } = req.body;
+
+            if (!email || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email and password required'
+                });
+            }
+
+            // Validate password
+            const result = await localFileOps.validatePassword({ email, password });
+
+            if (result.success) {
+                // Set session
+                req.session.user = result.user;
+                
+                req.session.save(() => {
+                    return res.json({
+                        success: true,
+                        user: {
+                            id: result.user.id,
+                            username: result.user.username,
+                            email: result.user.email,
+                            permissions: result.user.permissions
+                        }
+                    });
+                });
+            } else {
+                return res.status(401).json(result);
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Login service error'
+            });
+        }
+    }
+
+    /**
+     * Register new user
+     */
+    async register(req, res) {
+        try {
+            const { username, email, password } = req.body;
+
+            if (!username || !email || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Name, email, and password required'
+                });
+            }
+
+            // Verify email matches Cloudflare Access email (or dev bypass)
+            const authenticatedEmail = this.getUserEmail(req);
+            if (email.toLowerCase() !== authenticatedEmail.toLowerCase()) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Email does not match authenticated user'
+                });
+            }
+
+            const result = await localFileOps.setupUser({ username, email, password });
+
+            if (result.success) {
+                // Automatically log in new user
+                req.session.user = result.user;
+                
+                req.session.save(() => {
+                    return res.json({
+                        success: true,
+                        user: result.user,
+                        isFirstUser: result.isFirstUser
+                    });
+                });
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Registration service error'
+            });
+        }
+    }
+
+    /**
+     * Set password for existing user (password reset or first-time setup)
+     */
+    async setPassword(req, res) {
+        try {
+            const { email, password } = req.body;
+
+            if (!email || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email and password required'
+                });
+            }
+
+            // Verify email matches authenticated user
+            const authenticatedEmail = this.getUserEmail(req);
+            if (email.toLowerCase() !== authenticatedEmail.toLowerCase()) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Email does not match authenticated user'
+                });
+            }
+
+            const result = await localFileOps.setUserPassword({ email, password });
+
+            if (result.success) {
+                // Automatically log in user
+                req.session.user = result.user;
+                
+                req.session.save(() => {
+                    return res.json({
+                        success: true,
+                        user: result.user
+                    });
+                });
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Set password error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Set password service error'
+            });
+        }
+    }
+
+    /**
+     * Main access control middleware - checks if user has valid session
+     */
+    requireAuth() {
+        return (req, res, next) => {
+            if (!req.session.user) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Authentication required'
+                });
+            }
+            next();
         };
+    }
+
+    /**
+     * Require specific permission
+     */
+    requirePermission(permission) {
+        return (req, res, next) => {
+            if (!req.session.user) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Authentication required'
+                });
+            }
+
+            if (!req.session.user.permissions.includes(permission)) {
+                return res.status(403).json({
+                    success: false,
+                    message: `Permission '${permission}' required`
+                });
+            }
+
+            next();
+        };
+    }
+
+    /**
+     * Require admin permission
+     */
+    requireAdmin() {
+        return this.requirePermission('admin');
+    }
+
+    /**
+     * Require dev permission
+     */
+    requireDev() {
+        return this.requirePermission('dev');
     }
 }
 
 // Export singleton instance
 const accessControl = new AccessControl();
 
-module.exports = { 
-    setupAccessControl: () => accessControl.setupAccessControl(),
-    authenticate: (username, password) => accessControl.authenticate(username, password),
-    getUserPermissions: (username) => accessControl.getUserPermissions(username)
+module.exports = {
+    initialize: () => accessControl.initialize(),
+    authenticate: (req, res, next) => accessControl.authenticate(req, res, next),
+    login: (req, res) => accessControl.login(req, res),
+    register: (req, res) => accessControl.register(req, res),
+    setPassword: (req, res) => accessControl.setPassword(req, res),
+    requireAuth: () => accessControl.requireAuth(),
+    requirePermission: (permission) => accessControl.requirePermission(permission),
+    requireAdmin: () => accessControl.requireAdmin(),
+    requireDev: () => accessControl.requireDev(),
+    getUserEmail: (req) => accessControl.getUserEmail(req)
 };

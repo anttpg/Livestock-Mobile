@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-function Header() {
+function Header({ user }) {  // Accept user prop
   const [menuOpen, setMenuOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const devMode = true;
+  
+  // Determine dev mode from user permissions
+  const devMode = user?.permissions?.includes('dev') || false;
 
   // Update window width on resize
   useEffect(() => {
@@ -161,9 +163,8 @@ function Header() {
           <span style={{...styles.menuLine, ...styles.menuLineBottom}}></span>
         </button>
 
-        {/* Title - switches based on devMode */}
         <h1 style={styles.title}>
-          {devMode ? `DevMode, Width: ${windowWidth}px` : 'Ranch Management System'}
+          {devMode ? `DevMode, Width: ${windowWidth}px` : ''}
         </h1>
 
         {/* Logout Button */}
@@ -184,7 +185,7 @@ function Header() {
       <nav style={styles.dropdown}>
         <ul style={styles.menuList}>
           <li style={styles.menuItem}>
-          <Link
+            <Link
               to="/overview"
               style={{
                 ...styles.menuLink,
@@ -245,6 +246,44 @@ function Header() {
               Print Field Sheets
             </a>
           </li>
+          
+          
+          {/* User Management */}
+          {user?.permissions?.includes('admin') && (
+            <li style={styles.menuItem}>
+              <Link
+                to="/user-management"
+                style={{
+                  ...styles.menuLink,
+                  ...(hoveredItem === 'user-management' ? styles.menuLinkHover : {})
+                }}
+                onMouseEnter={() => setHoveredItem('user-management')}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={closeMenu}
+              >
+                User Management
+              </Link>
+            </li>
+            )}
+
+          {/* Dev Console - Only show if dev */}
+          {user?.permissions?.includes('dev') && (
+            <li style={styles.menuItem}>
+              <Link
+                to="/dev-console"
+                style={{
+                  ...styles.menuLink,
+                  ...(hoveredItem === 'dev-console' ? styles.menuLinkHover : {})
+                }}
+                onMouseEnter={() => setHoveredItem('dev-console')}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={closeMenu}
+              >
+                Dev Console
+              </Link>
+            </li>
+          )}
+            
         </ul>
       </nav>
 

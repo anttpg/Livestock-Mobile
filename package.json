@@ -7,7 +7,7 @@
     "frontend": "cd frontend && vite",
     "build": "cd frontend && vite build",
     "preview": "cd frontend && vite preview --port 8080 --host",
-    "start": "concurrently \"npm run backend\" \"npm run frontend\""
+    "start": "concurrently --raw \"npm run backend\" \"npm run frontend\""
   },
   "keywords": [],
   "author": "",

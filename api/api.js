@@ -8,9 +8,6 @@ const localFileOps = require('./local');
  * without the complexity of branded types
  */
 class APIWrapper {
-    constructor() {
-        this.accessControl = setupAccessControl();
-    }
 
     /**
      * Generic operation executor with validation and access control
@@ -22,11 +19,11 @@ class APIWrapper {
      */
     async executeDBOperation(req, res, operation, paramExtractor) {
         try {
-            // Step 1: Access Control (always enforced)
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+            // Access Control (always enforced)
+            // const accessResult = await this.checkAccess(req, res);
+            // if (!accessResult.success) {
+            //     return res.status(403).json({ error: accessResult.error });
+            // }
 
             // Step 2: Input Validation (already done by route middleware)
             const validationErrors = validationResult(req);
@@ -63,11 +60,9 @@ class APIWrapper {
      */
     async executeFileOperation(req, res, operation, paramExtractor) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+            // if (!accessResult.success) {
+            //     return res.status(403).json({ error: accessResult.error });
+            // }
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -105,30 +100,11 @@ class APIWrapper {
     }
 
     /**
-     * Check access control
-     */
-    async checkAccess(req, res) {
-        return new Promise((resolve) => {
-            this.accessControl(req, res, (error) => {
-                if (error) {
-                    resolve({ success: false, error: 'Access denied' });
-                } else {
-                    resolve({ success: true });
-                }
-            });
-        });
-    }
-
-    /**
      * Returns primary cow data
      */
     async getCowData(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -187,11 +163,7 @@ class APIWrapper {
      */
     async getCowEpds(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -223,11 +195,8 @@ class APIWrapper {
      */
     async getCowMedicalRecords(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -452,11 +421,8 @@ class APIWrapper {
      */
     async addCow(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -582,11 +548,8 @@ class APIWrapper {
 
     async getCowImage(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -626,11 +589,8 @@ class APIWrapper {
 
     async getNthCowImage(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -665,11 +625,8 @@ class APIWrapper {
 
     async getCowImageCount(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -816,11 +773,8 @@ class APIWrapper {
 
     async getMinimap(req, res) {
         try {
-            // Access control
-            const accessResult = await this.checkAccess(req, res);
-            if (!accessResult.success) {
-                return res.status(403).json({ error: accessResult.error });
-            }
+
+
 
             // Validation check
             const validationErrors = validationResult(req);
@@ -1147,15 +1101,329 @@ class APIWrapper {
     }
 
     /**
-     * Logs in the given user. 
-     * 
-     * If user i
-     * Prompts user to create 
-     * @param {*} req 
-     * @param {*} res 
+     * Get user's email from Cloudflare Access
      */
-    async login(req, res) {
+    async getUserEmail(req, res) {
+        try {
+            const { getUserEmail } = require('../backend/accessControl');
+            const email = getUserEmail(req);
+            
+            if (!email) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'No authenticated email found'
+                });
+            }
+            
+            return res.json({
+                success: true,
+                email: email
+            });
+        } catch (error) {
+            console.error('Error getting user email:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to get user email'
+            });
+        }
+    }
 
+    /**
+     * Get all users - Admin only
+     */
+    async getAllUsers(req, res) {
+        try {
+            // Admin check is done by middleware
+            const result = await localFileOps.getAllUsers();
+            return res.status(200).json(result);
+        } catch (error) {
+            console.error('Error getting all users:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to get users'
+            });
+        }
+    }
+
+    /**
+     * Reset user password - Admin only
+     */
+    async resetUserPassword(req, res) {
+        try {
+            // Validation check
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            const { email } = req.body;
+            const adminEmail = req.session.user.email;
+
+            const result = await localFileOps.resetUserPassword({
+                email,
+                adminEmail
+            });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Error resetting password:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to reset password'
+            });
+        }
+    }
+
+    /**
+     * Update user permissions - Admin only
+     */
+    async updateUserPermissions(req, res) {
+        try {
+            // Validation check
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            const { email, permissions } = req.body;
+            const adminEmail = req.session.user.email;
+
+            // Validate permissions array
+            const validPermissions = ['view', 'add', 'admin', 'dev'];
+            const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
+            
+            if (invalidPerms.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid permissions: ${invalidPerms.join(', ')}`
+                });
+            }
+
+            const result = await localFileOps.updateUserPermissions({
+                email,
+                permissions,
+                adminEmail
+            });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Error updating permissions:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update permissions'
+            });
+        }
+    }
+
+    /**
+     * Block user - Admin only
+     */
+    async blockUser(req, res) {
+        try {
+            // Validation check
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            const { email } = req.body;
+            const adminEmail = req.session.user.email;
+
+            const result = await localFileOps.blockUser({
+                email,
+                adminEmail
+            });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Error blocking user:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to block user'
+            });
+        }
+    }
+
+    /**
+     * Unblock user - Admin only
+     */
+    async unblockUser(req, res) {
+        try {
+            // Validation check
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            const { email } = req.body;
+            const adminEmail = req.session.user.email;
+
+            const result = await localFileOps.unblockUser({
+                email,
+                adminEmail
+            });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Error unblocking user:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to unblock user'
+            });
+        }
+    }
+
+
+    /**
+     * Get backend log - Dev only
+     */
+    async getBackendLog(req, res) {
+        try {
+            // Dev check is done by middleware
+            const result = await localFileOps.getBackendLog();
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('Error getting backend log:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to get backend log'
+            });
+        }
+    }
+
+    /**
+     * Get frontend log - Dev only
+     */
+    async getFrontendLog(req, res) {
+        try {
+            // Dev check is done by middleware
+            const result = await localFileOps.getFrontendLog();
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('Error getting frontend log:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to get frontend log'
+            });
+        }
+    }
+
+    /**
+     * Clear backend log - Dev only
+     */
+    async clearBackendLog(req, res) {
+        try {
+            // Dev check is done by middleware
+            const result = await localFileOps.clearBackendLog();
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('Error clearing backend log:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to clear backend log'
+            });
+        }
+    }
+
+    /**
+     * Clear frontend log - Dev only
+     */
+    async clearFrontendLog(req, res) {
+        try {
+            // Dev check is done by middleware
+            const result = await localFileOps.clearFrontendLog();
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('Error clearing frontend log:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to clear frontend log'
+            });
+        }
+    }
+
+    /**
+     * Pre-register user - Admin only
+     */
+    async preRegisterUser(req, res) {
+        try {
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            const { email, permissions } = req.body;
+            const adminEmail = req.session.user.email;
+
+            const result = await localFileOps.preRegisterUser({
+                email,
+                permissions,
+                adminEmail
+            });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json(result);
+            }
+        } catch (error) {
+            console.error('Error pre-registering user:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to pre-register user'
+            });
+        }
     }
 }
 
