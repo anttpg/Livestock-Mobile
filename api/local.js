@@ -13,6 +13,7 @@ class LocalFileOperations {
         this.cowPhotosDir = path.join(this.basePath, 'Cow Photos');
         this.mapDataDir = path.join(this.basePath, 'MapData');
         this.minimapsDir = path.join(this.mapDataDir, 'minimaps');
+        this.users = path.join(this.basePath, 'users.csv')
     }
 
     /**
@@ -820,7 +821,7 @@ class LocalFileOperations {
     }
 
     /**
-     * Configure multer for file uploads (only for cow images)
+     * Configure multer for file upload
      */
     configureMulter() {
         const storage = multer.memoryStorage(); // Store in memory for processing
@@ -828,8 +829,8 @@ class LocalFileOperations {
         return multer({
             storage: storage,
             limits: {
-                fileSize: 10 * 1024 * 1024, // 10MB limit
-                files: 1 // Only one file at a time for cow images
+                fileSize: 20 * 1024 * 1024, // 20MB limit
+                files: 1 // Only one file at a time
             },
             fileFilter: (req, file, cb) => {
                 const isValidImage = this.validateFileType(file.originalname, this.imageFormats);
@@ -842,6 +843,61 @@ class LocalFileOperations {
             }
         });
     }
+
+    /**
+     * Checks the users file is valid, creates it if file does not exist.
+     */
+    checkUsers() {
+        
+    }
+
+    /**
+     * Gets a list of all the users
+     */
+    async getAllUsers(params) {
+        // input credentials
+
+        // returns listof userinfo, 
+    }
+
+    /**
+     * Given an email, return the user ID (if it exists), name, and if the user has set a password
+     */
+    async lookupUser(params) {
+        // input user email
+
+        // return id, name, email, permissions, isAdmin 
+    }
+
+    /**
+     * Called to intialize user on first login
+     */
+    async setupUser(params) {
+        // Assign user next free ID, save name, email, Hash and save password
+
+        // Return session credentials, use these throughout the session to prove you are who you say youare
+    }
+
+    /**
+     * Checks if the hashed input for given userID matches their expected hash
+     */
+    async validatePassword(params) {
+        // Input userID, password
+
+        // Hash the psswd, compare to expected
+
+        // return true/false
+    }
+
+    /**
+     * Reset the user password, letting user create it on next login
+     * @param {*} params 
+     */
+    resetUserPassword(params) {
+        // intput userID, credentials
+    }
+
+
 }
 
 // Export singleton instance

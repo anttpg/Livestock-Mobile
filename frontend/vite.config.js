@@ -17,13 +17,11 @@ export default defineConfig({
       key: fs.readFileSync(process.env.HOST_KEY),
       cert: fs.readFileSync(process.env.HOST_PEM),
     } : false,
-    allowedHosts: process.env.TUNNEL_HOST 
-    ? process.env.TUNNEL_HOST.split(',').map(host => host.trim())
-    : undefined,
+    allowedHosts: process.env.TUNNEL_HOST ? [process.env.TUNNEL_HOST] : undefined,
     proxy: {
       '/api': {
         target: process.env.HOST_KEY && process.env.HOST_PEM 
-          ? 'https://localhost:3000' 
+          ? 'https://localhost:3000'
           : 'http://localhost:3000',
         changeOrigin: true,
         secure: false // cloudflare certs are selfsigned..?

@@ -173,7 +173,7 @@ class AccessControl {
             canRead: true,
             canWrite: true,
             canDelete: false,
-            canAdmin: false
+            admin: false
         };
     }
 }

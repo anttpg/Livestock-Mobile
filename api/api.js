@@ -1145,6 +1145,18 @@ class APIWrapper {
     async deleteSheet(req, res) {
         return this.executeDBOperation(req, res, 'deleteSheetFromDB', (req) => req.params.sheetId);
     }
+
+    /**
+     * Logs in the given user. 
+     * 
+     * If user i
+     * Prompts user to create 
+     * @param {*} req 
+     * @param {*} res 
+     */
+    async login(req, res) {
+
+    }
 }
 
 // Export singleton instance
