@@ -13,7 +13,37 @@ echo Killing processes on ports 3000 and 8080...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000') do taskkill /F /PID %%a 2>nul
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080') do taskkill /F /PID %%a 2>nul
 
-timeout /t 3
+echo Waiting for ports to be freed...
+timeout /t 2 /nobreak >nul
+
+REM Wait for port 3000 to be completely free
+set MAX_ATTEMPTS=10
+set ATTEMPT=0
+
+:CHECK_PORT_3000
+set /a ATTEMPT+=1
+if %ATTEMPT% GTR %MAX_ATTEMPTS% (
+    echo ERROR: Port 3000 is still in use after %MAX_ATTEMPTS% attempts!
+    echo Please manually kill the process or restart your computer.
+    pause
+    exit /b 1
+)
+
+netstat -ano | findstr :3000 | findstr LISTENING >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo Port 3000 still in use, attempt %ATTEMPT%/%MAX_ATTEMPTS%...
+    
+    REM Try to kill again
+    for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do (
+        echo Killing PID %%a...
+        taskkill /F /PID %%a 2>nul
+    )
+    
+    timeout /t 3 /nobreak >nul
+    goto CHECK_PORT_3000
+) else (
+    echo Port 3000 is now free!
+)
 
 REM Load LOCAL_PATH from .env and strip quotes
 if exist ".env" (
@@ -42,9 +72,12 @@ REM Create log files if they don't exist
 if not exist "%LOCAL_PATH%\backend.log" type nul > "%LOCAL_PATH%\backend.log"
 if not exist "%LOCAL_PATH%\frontend.log" type nul > "%LOCAL_PATH%\frontend.log"
 
+echo.
 echo Starting applications with logging...
 start "Backend" cmd /c "npm run backend > "%LOCAL_PATH%\backend.log" 2>&1"
-timeout /t 2
+
+timeout /t 2 /nobreak >nul
+
 start "Frontend" cmd /c "npm run frontend > "%LOCAL_PATH%\frontend.log" 2>&1"
 
 echo.
