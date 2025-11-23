@@ -1,7 +1,9 @@
 @echo off
-cd "C:\Users\RanchDB\Desktop\RanchDB\Livestock-Mobile"
+REM Get the directory where this batch file is located
+set SCRIPT_DIR=%~dp0
+cd /d "%SCRIPT_DIR%"
 
-git config --global --add safe.directory C:/Users/RanchDB/Desktop/RanchDB/Livestock-Mobile
+git config --global --add safe.directory %CD%
 git pull origin main
 call npm install
 call npm run build
