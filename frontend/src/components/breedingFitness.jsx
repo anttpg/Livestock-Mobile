@@ -342,7 +342,7 @@ function BreedingFitness({
             color: '#007bff',
             textDecoration: 'underline',
             cursor: 'pointer',
-            fontSize: '14px',
+            fontSize: 'var(--table-text-size, 14px)', // Changed from '14px'
             padding: '0',
             margin: '0'
           }}
@@ -354,7 +354,7 @@ function BreedingFitness({
     {
       key: 'DOB',
       header: 'DOB',
-      width: '12%',
+      width: '16%',
       customRender: (value) => formatDate(value)
     },
     {
@@ -377,7 +377,7 @@ function BreedingFitness({
               color: '#007bff',
               textDecoration: 'underline',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: 'var(--table-text-size, 14px)', // Changed from '14px'
               padding: '0',
               margin: '0'
             }}
@@ -388,24 +388,24 @@ function BreedingFitness({
       )
     },
     {
-      key: 'Genotype',
-      header: 'Type',
+      key: 'Breed',
+      header: 'Breed',
       width: '18%'
     },
     {
       key: 'Birthweight',
       header: 'BW',
-      width: '10%'
+      width: '8%'
     },
     {
       key: 'WeaningWeight',
       header: 'WW',
-      width: '10%'
+      width: '8%'
     },
     {
       key: 'IsAI',
       header: 'AI?',
-      width: '12%',
+      width: '10%',
       customRender: (value) => value ? 'Yes' : 'No'
     }
   ];

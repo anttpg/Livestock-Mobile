@@ -1,14 +1,16 @@
 :root {
-        /* Large screens */
+    /* Large screens */
     --bubble-padding: 15px;
     --layout-padding: 20px;
     --multibubble-gap: 20px;
     --timeline-color: rgb(170, 170, 170);
     --minimap-size: 200px;
     --folder-gap: 15px;
-    --folder-offset: 30px; /* margin-left */
+    --folder-offset: 30px;
     --tree-gap: 120px;
     --image-size: 250px;
+    --table-text-size: 14px;
+    --table-padding: 8px;
 }
 
 @media (max-width: 768px) {
@@ -21,6 +23,8 @@
         --folder-offset: 20px;
         --tree-gap: 60px;
         --image-size: 180px;
+        --table-text-size: 13px;
+        --table-padding: 7px;
     }
 }
 
@@ -34,6 +38,8 @@
         --folder-offset: 10px;
         --tree-gap: 50px;
         --image-size: 160px;
+        --table-text-size: 12px;
+        --table-padding: 6px;
     }
 }
 
@@ -47,6 +53,8 @@
         --folder-offset: 5px;
         --tree-gap: 40px;
         --image-size: 140px;
+        --table-text-size: 12px;
+        --table-padding: 5px;
     }
 }
 
@@ -60,8 +68,27 @@
         --folder-offset: 5px;
         --tree-gap: 20px;
         --image-size: 130px;
+        --table-text-size: 11px;
+        --table-padding: 3px;
     }
 }
+
+@media (max-width: 350px) {
+    :root {
+        --bubble-padding: 7px;
+        --layout-padding: 5px;
+        --multibubble-gap: 5px;
+        --minimap-size: 130px;
+        --folder-gap: 5px;
+        --folder-offset: 5px;
+        --tree-gap: 20px;
+        --image-size: 130px;
+        --table-text-size: 10px;
+        --table-padding: 2px;
+    }
+}
+
+
 
 .layout-content {
     padding: var(--layout-padding);

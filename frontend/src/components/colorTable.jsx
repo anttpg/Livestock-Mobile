@@ -127,7 +127,7 @@ function ColorTable({
   const tableStyle = {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px',
+    fontSize: 'var(--table-text-size, 14px)',
     margin: '0',
     tableLayout: 'fixed',
     ...(maxWidth && { maxWidth }),
@@ -136,7 +136,7 @@ function ColorTable({
 
   const headerStyle = {
     border: borderStyle,
-    padding: '8px',
+    padding: 'var(--table-padding, 8px)',
     textAlign: 'left',
     backgroundColor: '#f8f9fa',
     fontWeight: 'bold',
@@ -151,16 +151,14 @@ function ColorTable({
     position: 'relative'
   };
 
-  // Enhanced custom render that handles automatic coloring
+
   const renderCellContent = (column, row, rowIndex) => {
     const styling = getCellStyling(row, column, rowIndex);
     const value = row[column.key];
 
-    // If column has custom render, use it but wrap it in the base div if it doesn't provide one
     if (column.customRender) {
       const customContent = column.customRender(value, row, rowIndex, styling);
       
-      // If custom render returns a div, use it as-is; otherwise wrap it
       if (React.isValidElement(customContent) && customContent.type === 'div') {
         return customContent;
       } else {
@@ -173,7 +171,7 @@ function ColorTable({
             display: 'flex',
             alignItems: 'center',
             minHeight: '30px',
-            padding: '8px',
+            padding: 'var(--table-padding, 8px)',
             boxSizing: 'border-box',
             whiteSpace: column.noWrap ? 'nowrap' : 'normal'
           }}>
@@ -183,24 +181,23 @@ function ColorTable({
       }
     }
 
-    // Default colored cell wrapper
-    return (
-      <div style={{
-        backgroundColor: styling.backgroundColor,
-        color: styling.textColor,
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        minHeight: '30px',
-        padding: '8px',
-        boxSizing: 'border-box',
-        whiteSpace: column.noWrap ? 'nowrap' : 'normal'
-      }}>
-        {formatValue(value, column.type)}
-      </div>
-    );
-  };
+  return (
+    <div style={{
+      backgroundColor: styling.backgroundColor,
+      color: styling.textColor,
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      minHeight: '30px',
+      padding: 'var(--table-padding, 8px)',
+      boxSizing: 'border-box',
+      whiteSpace: column.noWrap ? 'nowrap' : 'normal'
+    }}>
+      {formatValue(value, column.type)}
+    </div>
+  );
+};
 
   const PopupTable = () => (
     <div style={{ overflowX: 'auto', maxHeight: '70vh'}}>
