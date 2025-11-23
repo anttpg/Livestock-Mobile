@@ -9,8 +9,9 @@ echo.
 echo Killing old processes...
 taskkill /F /IM node.exe 2>nul
 
-echo Killing processes on ports 3000 and 8080...
+echo Killing processes on ports 3000, 7080, and 8080...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000') do taskkill /F /PID %%a 2>nul
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :7080') do taskkill /F /PID %%a 2>nul
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080') do taskkill /F /PID %%a 2>nul
 
 timeout /t 3
@@ -43,12 +44,25 @@ if not exist "%LOCAL_PATH%\backend.log" type nul > "%LOCAL_PATH%\backend.log"
 if not exist "%LOCAL_PATH%\frontend.log" type nul > "%LOCAL_PATH%\frontend.log"
 
 echo Starting applications with logging...
+
+echo Starting log viewer on port 7080...
+start "Log Viewer" cmd /c "node log-viewer.js"
+timeout /t 1
+
+echo Starting backend on port 3000...
 start "Backend" cmd /c "npm run backend > "%LOCAL_PATH%\backend.log" 2>&1"
 timeout /t 2
+
+echo Starting frontend on port 8080...
 start "Frontend" cmd /c "npm run frontend > "%LOCAL_PATH%\frontend.log" 2>&1"
 
 echo.
-echo Applications started. Logs saved to:
+echo Applications started:
+echo Backend: Port 3000
+echo Frontend: Port 8080
+echo Log Viewer: http://localhost:7080
+echo.
+echo Logs saved to:
 echo Backend: %LOCAL_PATH%\backend.log
 echo Frontend: %LOCAL_PATH%\frontend.log
 echo.
