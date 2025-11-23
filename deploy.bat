@@ -10,5 +10,11 @@ echo Killing old processes...
 taskkill /F /IM node.exe 2>nul
 timeout /t 3
 
-echo Triggering Task Scheduler to start applications...
-schtasks /run /tn "Run Livestock Site"
+REM echo Triggering Task Scheduler to start applications...
+REM schtasks /run /tn "Run Livestock Site"
+
+echo Rebooting system in 10 seconds...
+echo Press Ctrl+C to cancel
+timeout /t 10
+
+shutdown /r /t 0
