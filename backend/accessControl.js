@@ -84,6 +84,16 @@ class AccessControl {
                 });
             }
 
+            // Check if user is pre-registered (needs to complete registration)
+            if (user.username === 'PREREGISTERED' && !user.hasPassword) {
+                return res.json({
+                    success: true,
+                    needsRegistration: true,  // Send to registration page
+                    email: email,
+                    isPreregistered: true
+                });
+            }
+
             if (!user.hasPassword) {
                 return res.json({
                     success: true,
@@ -98,7 +108,7 @@ class AccessControl {
                 needsLogin: true,
                 email: email,
                 userName: user.username,
-                blocked: false  // Explicitly set
+                blocked: false
             });
 
         } catch (error) {
@@ -109,6 +119,7 @@ class AccessControl {
             });
         }
     }
+
 
     /**
      * Verify login credentials

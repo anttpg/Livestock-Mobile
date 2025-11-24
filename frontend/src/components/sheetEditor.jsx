@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 import AutoCombobox from './autoCombobox';
-import ConfirmPopup from './confirmPopup';
+import ConfirmPopup from './popupConfirm';
 import '../cow-data.css';
 
 // SheetEditor Component

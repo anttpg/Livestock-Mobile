@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import ConfirmPopup from './confirmPopup';
+import PopupConfirm from './popupConfirm';
+import PopupNotify from './popupNotify';
 
 function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -11,17 +12,24 @@ function UserManagement() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPermissions, setNewUserPermissions] = useState({
     view: true,
-    add: false,
+    add: true,  // Changed: default to true
     admin: false,
     dev: false
   });
   const [addingUser, setAddingUser] = useState(false);
   
-  const [confirmPopup, setConfirmPopup] = useState({
+  // Fixed: Renamed from PopupConfirm to confirmDialog to avoid naming conflict
+  const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
     title: '',
     message: '',
     onConfirm: null
+  });
+
+  // Notify popup state
+  const [notify, setNotify] = useState({
+    isOpen: false,
+    message: ''
   });
 
   useEffect(() => {
@@ -61,7 +69,10 @@ function UserManagement() {
       );
       
       if (activeAdmins.length === 1) {
-        alert('Cannot remove admin permission - at least one admin must remain');
+        setNotify({
+          isOpen: true,
+          message: 'Cannot remove admin permission - at least one admin must remain'
+        });
         return;
       }
     }
@@ -83,16 +94,22 @@ function UserManagement() {
         await fetchUsers();
       } else {
         const data = await response.json();
-        alert(data.message || 'Failed to update permissions');
+        setNotify({
+          isOpen: true,
+          message: data.message || 'Failed to update permissions'
+        });
       }
     } catch (error) {
       console.error('Error updating permissions:', error);
-      alert('Network error');
+      setNotify({
+        isOpen: true,
+        message: 'Network error'
+      });
     }
   };
 
   const handleResetPassword = (userEmail, userName) => {
-    setConfirmPopup({
+    setConfirmDialog({
       isOpen: true,
       title: 'Reset Password',
       message: (
@@ -119,13 +136,19 @@ function UserManagement() {
           if (response.ok) {
             await fetchUsers();
           } else {
-            alert(data.message || 'Failed to reset password');
+            setNotify({
+              isOpen: true,
+              message: data.message || 'Failed to reset password'
+            });
           }
         } catch (error) {
           console.error('Error resetting password:', error);
-          alert('Network error');
+          setNotify({
+            isOpen: true,
+            message: 'Network error'
+          });
         }
-        setConfirmPopup({ ...confirmPopup, isOpen: false });
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
       }
     });
   };
@@ -138,12 +161,15 @@ function UserManagement() {
       );
       
       if (activeAdmins.length === 1) {
-        alert('Cannot block user - at least one active admin must remain');
+        setNotify({
+          isOpen: true,
+          message: 'Cannot block user - at least one active admin must remain'
+        });
         return;
       }
     }
 
-    setConfirmPopup({
+    setConfirmDialog({
       isOpen: true,
       title: 'Block User',
       message: `Are you sure you want to block ${userName}? They will no longer be able to access the system.`,
@@ -162,13 +188,19 @@ function UserManagement() {
             await fetchUsers();
           } else {
             const data = await response.json();
-            alert(data.message || 'Failed to block user');
+            setNotify({
+              isOpen: true,
+              message: data.message || 'Failed to block user'
+            });
           }
         } catch (error) {
           console.error('Error blocking user:', error);
-          alert('Network error');
+          setNotify({
+            isOpen: true,
+            message: 'Network error'
+          });
         }
-        setConfirmPopup({ ...confirmPopup, isOpen: false });
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
       }
     });
   };
@@ -188,16 +220,29 @@ function UserManagement() {
         await fetchUsers();
       } else {
         const data = await response.json();
-        alert(data.message || 'Failed to unblock user');
+        setNotify({
+          isOpen: true,
+          message: data.message || 'Failed to unblock user'
+        });
       }
     } catch (error) {
       console.error('Error unblocking user:', error);
-      alert('Network error');
+      setNotify({
+        isOpen: true,
+        message: 'Network error'
+      });
     }
   };
 
-  const handlePreRegisterUser = async (e) => {
-    e.preventDefault();
+  const handlePreRegisterUser = async () => {
+    if (!newUserEmail) {
+      setNotify({
+        isOpen: true,
+        message: 'Please enter an email address'
+      });
+      return;
+    }
+
     setAddingUser(true);
 
     const permissions = Object.keys(newUserPermissions).filter(
@@ -220,16 +265,25 @@ function UserManagement() {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`User ${newUserEmail} has been pre-registered. They can now log in and set their password.`);
+        setNotify({
+          isOpen: true,
+          message: `User ${newUserEmail} has been pre-registered. They can now log in and set their password.`
+        });
         setNewUserEmail('');
-        setNewUserPermissions({ view: true, add: false, admin: false, dev: false });
+        setNewUserPermissions({ view: true, add: true, admin: false, dev: false });
         await fetchUsers();
       } else {
-        alert(data.message || 'Failed to pre-register user');
+        setNotify({
+          isOpen: true,
+          message: data.message || 'Failed to pre-register user'
+        });
       }
     } catch (error) {
       console.error('Error pre-registering user:', error);
-      alert('Network error');
+      setNotify({
+        isOpen: true,
+        message: 'Network error'
+      });
     } finally {
       setAddingUser(false);
     }
@@ -238,176 +292,54 @@ function UserManagement() {
   const activeUsers = users.filter(u => !u.blocked);
   const blockedUsers = users.filter(u => u.blocked);
 
-  const styles = {
-    container: {
-      padding: '20px',
-      maxWidth: '1200px',
-      margin: '0 auto'
-    },
-    header: {
-      marginBottom: '20px'
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse',
-      backgroundColor: 'white',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-      borderRadius: '8px',
-      overflow: 'hidden',
-      marginBottom: '30px'
-    },
-    th: {
-      backgroundColor: '#f8f9fa',
-      padding: '12px',
-      textAlign: 'left',
-      fontWeight: '600',
-      borderBottom: '2px solid #dee2e6',
-      color: '#333'
-    },
-    td: {
-      padding: '12px',
-      borderBottom: '1px solid #dee2e6',
-      color: '#333'
-    },
-    checkbox: {
-      width: '18px',
-      height: '18px',
-      cursor: 'pointer'
-    },
-    button: {
-      padding: '6px 12px',
-      margin: '0 4px',
-      border: 'none',
-      borderRadius: '4px',
-      cursor: 'pointer',
-      fontSize: '14px',
-      fontWeight: '500'
-    },
-    resetButton: {
-      backgroundColor: '#ffc107',
-      color: '#000'
-    },
-    blockButton: {
-      backgroundColor: '#dc3545',
-      color: 'white'
-    },
-    unblockButton: {
-      backgroundColor: '#28a745',
-      color: 'white'
-    },
-    blockedSection: {
-      marginTop: '30px'
-    },
-    expandButton: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '10px',
-      padding: '10px',
-      backgroundColor: '#f8f9fa',
-      border: '1px solid #dee2e6',
-      borderRadius: '4px',
-      cursor: 'pointer',
-      width: '100%',
-      fontSize: '16px',
-      fontWeight: '600',
-      color: '#333'
-    },
-    arrow: {
-      transition: 'transform 0.3s',
-      transform: showBlockedUsers ? 'rotate(90deg)' : 'rotate(0deg)'
-    },
-    error: {
-      backgroundColor: '#f8d7da',
-      color: '#721c24',
-      padding: '10px',
-      borderRadius: '4px',
-      marginBottom: '20px'
-    },
-    badge: {
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '12px',
-      fontSize: '12px',
-      fontWeight: '600',
-      marginLeft: '8px'
-    },
-    noPwdBadge: {
-      backgroundColor: '#fff3cd',
-      color: '#856404'
-    },
-    addUserSection: {
-      backgroundColor: '#e7f3ff',
-      padding: '20px',
-      borderRadius: '8px',
-      marginBottom: '30px',
-      border: '2px solid #007bff'
-    },
-    addUserForm: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '15px',
-      maxWidth: '600px'
-    },
-    input: {
-      padding: '8px',
-      border: '1px solid #ced4da',
-      borderRadius: '4px',
-      fontSize: '14px'
-    },
-    permissionGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(4, 1fr)',
-      gap: '10px'
-    },
-    permissionLabel: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '5px',
-      cursor: 'pointer'
-    },
-    addButton: {
-      padding: '10px 20px',
-      backgroundColor: '#007bff',
-      color: 'white',
-      border: 'none',
-      borderRadius: '4px',
-      cursor: 'pointer',
-      fontSize: '16px',
-      fontWeight: '500'
-    }
-  };
-
   if (loading) {
-    return <div style={styles.container}>Loading users...</div>;
+    return <div className="layout-content">Loading users...</div>;
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
+    <div className="layout-content">
+      <div style={{ marginBottom: '20px' }}>
         <h1>User Management</h1>
         <p>Manage user permissions and access</p>
       </div>
 
-      {error && <div style={styles.error}>{error}</div>}
+      {error && (
+        <div style={{
+          backgroundColor: '#f8d7da',
+          color: '#721c24',
+          padding: '10px',
+          borderRadius: '4px',
+          marginBottom: '20px'
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* Pre-Register User Section */}
-      <div style={styles.addUserSection}>
+      <div className="bubble-container" style={{ 
+        marginBottom: '30px',
+        backgroundColor: '#e7f3ff',
+        borderColor: '#007bff'
+      }}>
         <h3>Add New User (Pre-Registration)</h3>
-        <p>Pre-register a user by adding their email and setting permissions. They will be prompted to create a password on first login.</p>
-        <form style={styles.addUserForm} onSubmit={handlePreRegisterUser}>
+        <p>Pre-register a user by adding their email and setting permissions. They will be prompted to create a password and username on first login.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', maxWidth: '600px' }}>
           <input
-            style={styles.input}
             type="email"
             placeholder="User Email"
             value={newUserEmail}
             onChange={(e) => setNewUserEmail(e.target.value)}
-            required
           />
           
           <div>
             <strong>Permissions:</strong>
-            <div style={styles.permissionGrid}>
-              <label style={styles.permissionLabel}>
+            <div style={{ 
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '10px',
+              marginTop: '10px'
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={newUserPermissions.view}
@@ -415,10 +347,11 @@ function UserManagement() {
                     ...newUserPermissions,
                     view: e.target.checked
                   })}
+                  style={{ width: '18px', height: '18px' }}
                 />
                 View
               </label>
-              <label style={styles.permissionLabel}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={newUserPermissions.add}
@@ -426,10 +359,11 @@ function UserManagement() {
                     ...newUserPermissions,
                     add: e.target.checked
                   })}
+                  style={{ width: '18px', height: '18px' }}
                 />
                 Add Records
               </label>
-              <label style={styles.permissionLabel}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={newUserPermissions.admin}
@@ -437,10 +371,11 @@ function UserManagement() {
                     ...newUserPermissions,
                     admin: e.target.checked
                   })}
+                  style={{ width: '18px', height: '18px' }}
                 />
                 Admin
               </label>
-              <label style={styles.permissionLabel}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={newUserPermissions.dev}
@@ -448,6 +383,7 @@ function UserManagement() {
                     ...newUserPermissions,
                     dev: e.target.checked
                   })}
+                  style={{ width: '18px', height: '18px' }}
                 />
                 Dev
               </label>
@@ -455,80 +391,102 @@ function UserManagement() {
           </div>
           
           <button
-            style={styles.addButton}
-            type="submit"
+            onClick={handlePreRegisterUser}
             disabled={addingUser}
+            style={{ width: 'fit-content' }}
           >
             {addingUser ? 'Adding User...' : 'Add User'}
           </button>
-        </form>
+        </div>
       </div>
 
       <h2>Active Users ({activeUsers.length})</h2>
-      <table style={styles.table}>
+      <table className="bubble-container" style={{ marginBottom: '30px' }}>
         <thead>
           <tr>
-            <th style={styles.th}>Username</th>
-            <th style={styles.th}>Email</th>
-            <th style={styles.th}>View</th>
-            <th style={styles.th}>Add Records</th>
-            <th style={styles.th}>Admin</th>
-            <th style={styles.th}>Dev</th>
-            <th style={styles.th}>Actions</th>
+            <th>Username</th>
+            <th>Email</th>
+            <th>View</th>
+            <th>Add Records</th>
+            <th>Admin</th>
+            <th>Dev</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {activeUsers.map(user => (
             <tr key={user.id}>
-              <td style={styles.td}>
+              <td>
                 {user.username}
-                {!user.hasPassword && (
-                  <span style={{...styles.badge, ...styles.noPwdBadge}}>No Password</span>
+                {user.username === 'PREREGISTERED' && (
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    marginLeft: '8px',
+                    backgroundColor: '#ff9800',
+                    color: 'white'
+                  }}>
+                    Awaiting first login
+                  </span>
                 )}
               </td>
-              <td style={styles.td}>{user.email}</td>
-              <td style={styles.td}>
+              <td>{user.email}</td>
+              <td>
                 <input
                   type="checkbox"
-                  style={styles.checkbox}
                   checked={user.permissions.includes('view')}
                   onChange={() => handlePermissionToggle(user.email, 'view')}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
               </td>
-              <td style={styles.td}>
+              <td>
                 <input
                   type="checkbox"
-                  style={styles.checkbox}
                   checked={user.permissions.includes('add')}
                   onChange={() => handlePermissionToggle(user.email, 'add')}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
               </td>
-              <td style={styles.td}>
+              <td>
                 <input
                   type="checkbox"
-                  style={styles.checkbox}
                   checked={user.permissions.includes('admin')}
                   onChange={() => handlePermissionToggle(user.email, 'admin')}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
               </td>
-              <td style={styles.td}>
+              <td>
                 <input
                   type="checkbox"
-                  style={styles.checkbox}
                   checked={user.permissions.includes('dev')}
                   onChange={() => handlePermissionToggle(user.email, 'dev')}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
               </td>
-              <td style={styles.td}>
+              <td>
                 <button
-                  style={{...styles.button, ...styles.resetButton}}
                   onClick={() => handleResetPassword(user.email, user.username)}
+                  style={{ 
+                    backgroundColor: '#ffc107',
+                    color: '#000',
+                    margin: '0 4px',
+                    padding: '6px 12px',
+                    fontSize: '14px'
+                  }}
                 >
                   Reset Password
                 </button>
                 <button
-                  style={{...styles.button, ...styles.blockButton}}
                   onClick={() => handleBlockUser(user.email, user.username)}
+                  style={{ 
+                    backgroundColor: '#dc3545',
+                    margin: '0 4px',
+                    padding: '6px 12px',
+                    fontSize: '14px'
+                  }}
                 >
                   Block
                 </button>
@@ -539,35 +497,56 @@ function UserManagement() {
       </table>
 
       {blockedUsers.length > 0 && (
-        <div style={styles.blockedSection}>
+        <div style={{ marginTop: '30px' }}>
           <button
-            style={styles.expandButton}
             onClick={() => setShowBlockedUsers(!showBlockedUsers)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px',
+              backgroundColor: '#f8f9fa',
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              width: '100%',
+              fontSize: '16px',
+              fontWeight: '600',
+              color: '#333'
+            }}
           >
-            <span style={styles.arrow}>▶</span>
+            <span style={{
+              transition: 'transform 0.3s',
+              transform: showBlockedUsers ? 'rotate(90deg)' : 'rotate(0deg)'
+            }}>
+              ▶
+            </span>
             Blocked Users ({blockedUsers.length})
           </button>
 
           {showBlockedUsers && (
-            <table style={{...styles.table, marginTop: '10px'}}>
+            <table className="bubble-container" style={{ marginTop: '10px' }}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Username</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Permissions</th>
-                  <th style={styles.th}>Actions</th>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Permissions</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {blockedUsers.map(user => (
                   <tr key={user.id}>
-                    <td style={styles.td}>{user.username}</td>
-                    <td style={styles.td}>{user.email}</td>
-                    <td style={styles.td}>{user.permissions.join(', ')}</td>
-                    <td style={styles.td}>
+                    <td>{user.username}</td>
+                    <td>{user.email}</td>
+                    <td>{user.permissions.join(', ')}</td>
+                    <td>
                       <button
-                        style={{...styles.button, ...styles.unblockButton}}
                         onClick={() => handleUnblockUser(user.email)}
+                        style={{ 
+                          padding: '6px 12px',
+                          fontSize: '14px'
+                        }}
                       >
                         Unblock
                       </button>
@@ -580,14 +559,21 @@ function UserManagement() {
         </div>
       )}
 
-      <ConfirmPopup
-        isOpen={confirmPopup.isOpen}
-        onClose={() => setConfirmPopup({ ...confirmPopup, isOpen: false })}
-        onConfirm={confirmPopup.onConfirm}
-        title={confirmPopup.title}
-        message={confirmPopup.message}
+      <PopupConfirm
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
         confirmText="Confirm"
         cancelText="Cancel"
+      />
+
+      <PopupNotify
+        isOpen={notify.isOpen}
+        onClose={() => setNotify({ ...notify, isOpen: false })}
+        message={notify.message}
+        title="Notice"
       />
     </div>
   );

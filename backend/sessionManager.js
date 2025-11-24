@@ -269,9 +269,8 @@ app.post('/api/users/pre-register',
 
 
 // DEV ONLY
-/**
- * Get backend log file
- */
+
+// Get backend log file
 app.get('/api/dev/logs/backend',
     requireAuth(),
     requireDev(),
@@ -280,9 +279,7 @@ app.get('/api/dev/logs/backend',
     }
 );
 
-/**
- * Get frontend log file
- */
+// Get frontend log file
 app.get('/api/dev/logs/frontend',
     requireAuth(),
     requireDev(),
@@ -291,9 +288,7 @@ app.get('/api/dev/logs/frontend',
     }
 );
 
-/**
- * Clear backend log file
- */
+// Clear backend log
 app.post('/api/dev/logs/backend/clear',
     requireAuth(),
     requireDev(),
@@ -302,14 +297,42 @@ app.post('/api/dev/logs/backend/clear',
     }
 );
 
-/**
- * Clear frontend log file
- */
+// Clear frontend log
 app.post('/api/dev/logs/frontend/clear',
     requireAuth(),
     requireDev(),
     async (req, res) => {
         return apiWrapper.clearFrontendLog(req, res);
+    }
+);
+
+
+// Because these functions are sensitive, perform validation in the function itself. 
+// Ensures we cant possibly call it with improper permissions.
+// Execute console command
+app.post('/api/dev/console',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.executeConsoleCommand(req, res);
+    }
+);
+
+// Connect to SQL Server
+app.post('/api/dev/sql/connect',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.connectSqlServer(req, res);
+    }
+);
+
+// Execute SQL query
+app.post('/api/dev/sql/execute',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.executeSqlQuery(req, res);
     }
 );
 

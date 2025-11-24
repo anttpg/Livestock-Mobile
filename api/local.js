@@ -648,7 +648,7 @@ class LocalFileOperations {
 
 
     /**
-     * Get main map image (no validation needed - public resource)
+     * Get main map image, public resource
         */
     async getMap(params = {}) {
         const fs = require('fs').promises;
@@ -799,7 +799,7 @@ class LocalFileOperations {
     }
 
     /**
-     * Get list of available minimap field names (no validation needed - public resource)
+     * Get list of available minimap field names, public resource
      */
     async getAvailableMinimaps() {
         const fs = require('fs').promises;
@@ -1012,15 +1012,51 @@ class LocalFileOperations {
             const content = await fs.readFile(this.usersFile, 'utf8');
             const users = this.parseUsersCSV(content);
             
-            // Check if user already exists
-            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-            if (existingUser) {
+            // Validate username is not reserved
+            if (username.toUpperCase() === 'PREREGISTERED') {
                 return {
                     success: false,
-                    message: 'User already exists'
+                    message: 'Username "PREREGISTERED" is reserved. Please choose a different username.'
                 };
             }
             
+            // Check if user already exists
+            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            
+            if (existingUser) {
+                // User exists (pre-registered) - update their username and password
+                if (existingUser.username !== 'PREREGISTERED') {
+                    return {
+                        success: false,
+                        message: 'User already has a username set'
+                    };
+                }
+                
+                // Hash password
+                const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
+                
+                // Update user
+                const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+                users[userIndex].username = username;
+                users[userIndex].passwordHash = passwordHash;
+                
+                // Save to file
+                const csvContent = this.usersToCSV(users);
+                await fs.writeFile(this.usersFile, csvContent);
+                
+                return {
+                    success: true,
+                    user: {
+                        id: users[userIndex].id,
+                        username: users[userIndex].username,
+                        email: users[userIndex].email,
+                        permissions: users[userIndex].permissions
+                    },
+                    wasPreregistered: true
+                };
+            }
+            
+            // New user - create fresh account
             // Generate new user ID
             const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
             const newId = maxId + 1;
@@ -1561,13 +1597,10 @@ class LocalFileOperations {
             const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
             const newId = maxId + 1;
             
-            // Create username from email (before @)
-            const username = email.split('@')[0];
-            
-            // Create new user without password
+            // Create new user with PREREGISTERED username and no password
             const newUser = {
                 id: newId,
-                username,
+                username: 'PREREGISTERED',  // Changed: Use reserved name
                 email,
                 passwordHash: '', // Empty - user will set on first login
                 permissions,
@@ -1597,7 +1630,228 @@ class LocalFileOperations {
             };
         }
     }
-}
+
+
+    /**
+     * Dev console command
+     */
+    async executeConsoleCommand(params) {
+        const { command, userPermissions } = params;
+        
+        // Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        // Command must be provided
+        if (!command || typeof command !== 'string') {
+            return {
+                success: false,
+                message: 'Command required',
+                code: 'BAD_REQUEST'
+            };
+        }
+        
+        //  Command must be in whitelist
+        const safeCommands = ['dir', 'pwd', 'cat'];
+        const cmdParts = command.trim().split(' ');
+        const baseCmd = cmdParts[0];
+        if (!safeCommands.includes(baseCmd)) {
+            return {
+                success: false,
+                message: `Command '${baseCmd}' not allowed. Allowed commands: ${safeCommands.join(', ')}`,
+                code: 'FORBIDDEN'
+            };
+        }
+        
+
+        return {
+            success: false,
+            message: `Dev console is disabled until further experimentation & talks with client`,
+            code: 'FORBIDDEN'
+        };
+        // Execute the command TEMP DISABLED, CHECK SECURITY, SANITIZE COMMANDS, ECT?
+        // const { exec } = require('child_process');
+        // const util = require('util');
+        // const execPromise = util.promisify(exec);
+        
+        // try {
+        //     const { stdout, stderr } = await execPromise(command, {
+        //         cwd: this.basePath,
+        //         timeout: 5000,
+        //         maxBuffer: 1024 * 1024
+        //     });
+            
+        //     return {
+        //         success: true,
+        //         output: stdout || stderr || 'Command executed (no output)'
+        //     };
+        // } catch (error) {
+        //     return {
+        //         success: false,
+        //         message: error.message,
+        //         output: error.stderr || '',
+        //         code: 'EXECUTION_ERROR'
+        //     };
+        // }
+    }
+
+    async connectSqlServer(params) {
+        const { username, password, userPermissions } = params;
+        
+        // VALIDATION 1: Access Control - Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        // VALIDATION 2: Credentials required
+        if (!username || !password) {
+            return {
+                success: false,
+                message: 'Username and password required',
+                code: 'BAD_REQUEST'
+            };
+        }
+        
+        const { createDevConnection } = require('./db');
+        
+        try {
+            console.log('Creating dev SQL connection for user:', username);
+            
+            await createDevConnection(username, password);
+            
+            return {
+                success: true,
+                message: 'Connected successfully',
+                server: process.env.DB_SERVER,
+                database: process.env.DB_DATABASE,
+                port: parseInt(process.env.DB_PORT, 10) || 1433
+            };
+        } catch (error) {
+            console.error('SQL connection error:', error);
+            
+            // Provide more helpful error messages
+            let helpfulMessage = error.message;
+            if (error.code === 'ELOGIN') {
+                helpfulMessage = `Login failed for user '${username}'. Check credentials and SQL Server authentication mode.`;
+            } else if (error.code === 'ESOCKET') {
+                helpfulMessage = `Cannot connect to server '${process.env.DB_SERVER}:${process.env.DB_PORT}'. Check server address and firewall settings.`;
+            }
+            
+            return {
+                success: false,
+                message: helpfulMessage,
+                details: error.code || '',
+                code: 'CONNECTION_ERROR'
+            };
+        }
+    }
+
+    /**
+     * Execute SQL query - DEV ONLY
+     * Uses the persistent dev connection created by connectSqlServer
+     */
+    async executeSqlQuery(params) {
+        const { query, userPermissions } = params;
+        
+        // Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        //Query required
+        if (!query) {
+            return {
+                success: false,
+                message: 'Query required',
+                code: 'BAD_REQUEST'
+            };
+        }
+        
+        const { getDevConnection, hasDevConnection } = require('./db');
+        
+        try {
+            // Check if dev connection exists
+            if (!hasDevConnection()) {
+                return {
+                    success: false,
+                    message: 'No active database connection. Please connect first.',
+                    code: 'NO_CONNECTION'
+                };
+            }
+            
+            const pool = getDevConnection();
+            const result = await pool.request().query(query);
+            
+            return {
+                success: true,
+                data: result.recordset || [],
+                rowCount: result.rowsAffected[0] || 0
+            };
+        } catch (error) {
+            console.error('SQL query error:', error);
+            
+            // Provide helpful error messages
+            let helpfulMessage = error.message;
+            if (error.code === 'ELOGIN') {
+                helpfulMessage = `Authentication failed. Connection may have expired, please reconnect.`;
+            } else if (error.message.includes('No active dev connection')) {
+                helpfulMessage = 'Connection lost. Please reconnect.';
+            }
+            
+            return {
+                success: false,
+                message: helpfulMessage,
+                code: 'QUERY_ERROR'
+            };
+        }
+    }
+
+    /**
+     * Close dev SQL connection - DEV ONLY
+     */
+    async closeDevSqlConnection(params = {}) {
+        const { userPermissions } = params;
+        
+        // Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        const { closeDevConnection } = require('./db');
+        
+        try {
+            await closeDevConnection();
+            return {
+                success: true,
+                message: 'Dev connection closed'
+            };
+        } catch (error) {
+            console.error('Error closing dev connection:', error);
+            return {
+                success: false,
+                message: `Failed to close connection: ${error.message}`,
+                code: 'INTERNAL_ERROR'
+            };
+        }
+    }
+    }
 
 // Export singleton instance
 const localOps = new LocalFileOperations();
@@ -1634,4 +1888,8 @@ module.exports = {
     clearBackendLog: () => localOps.clearBackendLog(),
     clearFrontendLog: () => localOps.clearFrontendLog(),
     preRegisterUser: (params) => localOps.preRegisterUser(params),
+    executeConsoleCommand: (params) => localOps.executeConsoleCommand(params), 
+    connectSqlServer: (params) => localOps.connectSqlServer(params),
+    executeSqlQuery: (params) => localOps.executeSqlQuery(params),
+    closeDevSqlConnection: (params) => localOps.closeDevSqlConnection(params),
 };

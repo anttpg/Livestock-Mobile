@@ -5,7 +5,7 @@ import MultiCowTable from './multiCowTable';
 import HerdLog from './herdLog';
 import PastureLog from './pastureLog';
 import HerdSplitter from './herdSplitter';
-import ConfirmPopup from './confirmPopup';
+import ConfirmPopup from './popupConfirm';
 
 const UseLegacyHerdFeed = false; // Toggle for legacy inputs (Buttons)
 

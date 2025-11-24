@@ -1425,6 +1425,103 @@ class APIWrapper {
             });
         }
     }
+
+    /**
+     * Execute console command - Validation in local.js
+     */
+    async executeConsoleCommand(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            const { command } = req.body;
+            
+            const result = await localFileOps.executeConsoleCommand({
+                command,
+                userPermissions
+            });
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+            
+            // Map error codes to HTTP status codes
+            const statusCode = result.code === 'FORBIDDEN' ? 403 :
+                            result.code === 'BAD_REQUEST' ? 400 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error executing console command:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to execute command'
+            });
+        }
+    }
+
+    /**
+     * Connect to SQL Server - Validation in local.js
+     */
+    async connectSqlServer(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            const { username, password } = req.body;
+            
+            const result = await localFileOps.connectSqlServer({
+                username,
+                password,
+                userPermissions
+            });
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+            
+            const statusCode = result.code === 'FORBIDDEN' ? 403 :
+                            result.code === 'BAD_REQUEST' ? 400 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error connecting to SQL:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to connect to SQL server'
+            });
+        }
+    }
+
+    /**
+     * Execute SQL query - Validation in local.js
+     */
+    async executeSqlQuery(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            const { username, password, query } = req.body;
+            
+            const result = await localFileOps.executeSqlQuery({
+                username,
+                password,
+                query,
+                userPermissions
+            });
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+            
+            const statusCode = result.code === 'FORBIDDEN' ? 403 :
+                            result.code === 'BAD_REQUEST' ? 400 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error executing SQL query:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to execute SQL query'
+            });
+        }
+    }
 }
 
 // Export singleton instance

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 function SetPassword() {
   const [email, setEmail] = useState('');
@@ -9,7 +8,6 @@ function SetPassword() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     // Get authenticated email from Cloudflare
@@ -40,8 +38,7 @@ function SetPassword() {
     fetchInfo();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setError('');
 
     if (password !== confirmPassword) {
@@ -90,7 +87,7 @@ function SetPassword() {
       minHeight: '100vh',
       backgroundColor: '#f4f4f4'
     },
-    form: {
+    formContainer: {
       backgroundColor: 'white',
       padding: '40px',
       borderRadius: '8px',
@@ -160,7 +157,7 @@ function SetPassword() {
   if (fetchingInfo) {
     return (
       <div style={styles.container}>
-        <div style={styles.form}>
+        <div style={styles.formContainer}>
           <h1 style={styles.title}>Cattle Management System</h1>
           <p style={{ textAlign: 'center', color: '#666' }}>Loading...</p>
         </div>
@@ -170,7 +167,7 @@ function SetPassword() {
 
   return (
     <div style={styles.container}>
-      <form style={styles.form} onSubmit={handleSubmit}>
+      <div style={styles.formContainer}>
         <h1 style={styles.title}>Set Your Password</h1>
         
         <div style={styles.info}>
@@ -190,11 +187,9 @@ function SetPassword() {
             id="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            required
             disabled={loading}
             autoComplete="new-password"
-            minLength={6}
-            maxLength={100}
+            placeholder="At least 6 characters"
           />
         </div>
 
@@ -206,11 +201,9 @@ function SetPassword() {
             id="confirmPassword"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            required
             disabled={loading}
             autoComplete="new-password"
-            minLength={6}
-            maxLength={100}
+            placeholder="Re-enter password"
           />
         </div>
 
@@ -219,12 +212,12 @@ function SetPassword() {
             ...styles.button,
             ...(loading ? styles.buttonDisabled : {})
           }}
-          type="submit"
+          onClick={handleSubmit}
           disabled={loading}
         >
           {loading ? 'Setting Password...' : 'Set Password'}
         </button>
-      </form>
+      </div>
     </div>
   );
 }

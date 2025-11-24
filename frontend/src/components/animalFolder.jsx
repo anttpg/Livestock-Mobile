@@ -88,7 +88,7 @@ function AnimalFolder() {
             }
 
             const data = await response.json();
-            console.log(`Received cow data for endpoint ${endpoint}:`, data);
+            //console.log(`Received cow data for endpoint ${endpoint}:`, data);
 
             // Check for serious issues in medical data
             if (tab === 'medical' && data.medicalRecords && data.medicalRecords.issues) {

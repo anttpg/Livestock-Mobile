@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 
-function ConfirmPopup({ 
+function popupConfirm({ 
   isOpen, 
   onClose, 
   onConfirm, 
@@ -94,4 +94,4 @@ function ConfirmPopup({
   );
 }
 
-export default ConfirmPopup;
+export default popupConfirm;

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 function RegisterUser() {
   const [username, setUsername] = useState('');
@@ -9,7 +8,6 @@ function RegisterUser() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetchingEmail, setFetchingEmail] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     // Get authenticated email from Cloudflare
@@ -34,9 +32,19 @@ function RegisterUser() {
     fetchEmail();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setError('');
+
+    // Validate username
+    if (!username || username.trim().length < 3) {
+      setError('Username must be at least 3 characters');
+      return;
+    }
+
+    if (username.toUpperCase() === 'PREREGISTERED') {
+      setError('Username "PREREGISTERED" is reserved. Please choose a different username.');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match');
@@ -66,12 +74,14 @@ function RegisterUser() {
         // Registration successful, redirect to main app
         if (data.isFirstUser) {
           alert('Welcome! As the first user, you have been granted admin privileges.');
+        } else {
+          alert('Welcome! Your account has been created successfully.');
         }
         window.location.href = '/';
       } else {
         setError(data.message || 'Registration failed');
         if (data.details) {
-          console.error('Validation errors:', data.details); // ADD THIS
+          console.error('Validation errors:', data.details);
         }
       }
     } catch (error) {
@@ -90,7 +100,7 @@ function RegisterUser() {
       minHeight: '100vh',
       backgroundColor: '#f4f4f4'
     },
-    form: {
+    formContainer: {
       backgroundColor: 'white',
       padding: '40px',
       borderRadius: '8px',
@@ -163,7 +173,7 @@ function RegisterUser() {
   if (fetchingEmail) {
     return (
       <div style={styles.container}>
-        <div style={styles.form}>
+        <div style={styles.formContainer}>
           <h1 style={styles.title}>Cattle Management System</h1>
           <p style={{ textAlign: 'center', color: '#666' }}>Verifying authentication...</p>
         </div>
@@ -173,7 +183,7 @@ function RegisterUser() {
 
   return (
     <div style={styles.container}>
-      <form style={styles.form} onSubmit={handleSubmit}>
+      <div style={styles.formContainer}>
         <h1 style={styles.title}>Create Account</h1>
         
         {error && (
@@ -181,7 +191,7 @@ function RegisterUser() {
         )}
 
         <div style={styles.info}>
-          You are authenticated as: <strong>{email}</strong>
+          <strong>Welcome!</strong> Please create your account by choosing a username and password.
         </div>
 
         <div style={styles.inputGroup}>
@@ -192,13 +202,9 @@ function RegisterUser() {
             id="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            required
             disabled={loading}
             autoComplete="username"
-            minLength={3}
-            maxLength={50}
-            pattern="[\w\-]+"
-            title="Username must contain only letters, numbers, underscores, and hyphens"
+            placeholder="Choose a username"
           />
         </div>
 
@@ -222,11 +228,9 @@ function RegisterUser() {
             id="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            required
             disabled={loading}
             autoComplete="new-password"
-            minLength={6}
-            maxLength={100}
+            placeholder="At least 6 characters"
           />
         </div>
 
@@ -238,11 +242,9 @@ function RegisterUser() {
             id="confirmPassword"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            required
             disabled={loading}
             autoComplete="new-password"
-            minLength={6}
-            maxLength={100}
+            placeholder="Re-enter password"
           />
         </div>
 
@@ -251,12 +253,12 @@ function RegisterUser() {
             ...styles.button,
             ...(loading ? styles.buttonDisabled : {})
           }}
-          type="submit"
+          onClick={handleSubmit}
           disabled={loading}
         >
           {loading ? 'Creating Account...' : 'Create Account'}
         </button>
-      </form>
+      </div>
     </div>
   );
 }

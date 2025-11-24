@@ -7,13 +7,23 @@ function DevMenu() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const backendLogRef = useRef(null);
   const frontendLogRef = useRef(null);
+  const consoleLogRef = useRef(null);
 
-  // SQL Test state
-  const [showSqlTest, setShowSqlTest] = useState(false);
+  // Console state
+  const [consoleOutput, setConsoleOutput] = useState('');
+  const [consoleInput, setConsoleInput] = useState('');
+  const [consoleExecuting, setConsoleExecuting] = useState(false);
+
+  // SQL Console state
+  const [sqlConnected, setSqlConnected] = useState(false);
   const [sqlUsername, setSqlUsername] = useState('');
   const [sqlPassword, setSqlPassword] = useState('');
   const [sqlTestResult, setSqlTestResult] = useState(null);
   const [sqlTesting, setSqlTesting] = useState(false);
+  const [sqlQuery, setSqlQuery] = useState('');
+  const [sqlOutput, setSqlOutput] = useState('');
+  const [sqlExecuting, setSqlExecuting] = useState(false);
+  const sqlOutputRef = useRef(null);
 
   useEffect(() => {
     fetchLogs();
@@ -36,6 +46,18 @@ function DevMenu() {
     }
   }, [frontendLogs, activeTab]);
 
+  useEffect(() => {
+    if (activeTab === 'console' && consoleLogRef.current) {
+      consoleLogRef.current.scrollTop = consoleLogRef.current.scrollHeight;
+    }
+  }, [consoleOutput, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'sql' && sqlOutputRef.current) {
+      sqlOutputRef.current.scrollTop = sqlOutputRef.current.scrollHeight;
+    }
+  }, [sqlOutput, activeTab]);
+
   const ansiToHtml = (text) => {
     const ansiColors = {
       '30': '#000000', '31': '#cd3131', '32': '#0dbc79', '33': '#e5e510',
@@ -44,37 +66,49 @@ function DevMenu() {
       '94': '#3b8eea', '95': '#d670d6', '96': '#29b8db', '97': '#ffffff',
     };
 
-    let html = text;
-    let styles = [];
-
-    html = html.replace(/\x1b\[([0-9;]+)m/g, (match, codes) => {
-      const codeList = codes.split(';');
-      let openTags = '';
+    let html = '';
+    let currentColor = null;
+    let isBold = false;
+    let isDim = false;
+    
+    const parts = text.split(/(\x1b\[[0-9;]+m)/g);
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
       
-      codeList.forEach(code => {
-        if (code === '0') {
-          if (styles.length > 0) {
-            openTags = '</span>'.repeat(styles.length);
-            styles = [];
+      if (part.startsWith('\x1b[')) {
+        const codes = part.slice(2, -1).split(';');
+        
+        codes.forEach(code => {
+          if (code === '0') {
+            currentColor = null;
+            isBold = false;
+            isDim = false;
+          } else if (code === '1') {
+            isBold = true;
+          } else if (code === '22') {
+            isBold = false;
+            isDim = false;
+          } else if (code === '2') {
+            isDim = true;
+          } else if (ansiColors[code]) {
+            currentColor = ansiColors[code];
           }
-        } else if (code === '1') {
-          styles.push('bold');
-          openTags += '<span style="font-weight: bold;">';
-        } else if (code === '22') {
-          // Normal intensity
-        } else if (code === '2') {
-          styles.push('dim');
-          openTags += '<span style="opacity: 0.6;">';
-        } else if (ansiColors[code]) {
-          styles.push('color');
-          openTags += `<span style="color: ${ansiColors[code]};">`;
+        });
+      } else if (part) {
+        let styles = [];
+        if (currentColor) styles.push(`color: ${currentColor}`);
+        if (isBold) styles.push('font-weight: bold');
+        if (isDim) styles.push('opacity: 0.6');
+        
+        if (styles.length > 0) {
+          html += `<span style="${styles.join('; ')}">${part}</span>`;
+        } else {
+          html += part;
         }
-      });
-      
-      return openTags;
-    });
-
-    html += '</span>'.repeat(styles.length);
+      }
+    }
+    
     return html;
   };
 
@@ -120,13 +154,47 @@ function DevMenu() {
     }
   };
 
+  const executeConsoleCommand = async (e) => {
+    e.preventDefault();
+    if (!consoleInput.trim()) return;
+
+    setConsoleExecuting(true);
+    const timestamp = new Date().toLocaleTimeString();
+    const commandLog = `[${timestamp}] $ ${consoleInput}\n`;
+    
+    try {
+      const response = await fetch('/api/dev/console', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ command: consoleInput })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setConsoleOutput(prev => prev + commandLog + data.output + '\n\n');
+      } else {
+        setConsoleOutput(prev => prev + commandLog + `ERROR: ${data.message}\n\n`);
+      }
+      
+      setConsoleInput('');
+    } catch (error) {
+      setConsoleOutput(prev => prev + commandLog + `ERROR: ${error.message}\n\n`);
+    } finally {
+      setConsoleExecuting(false);
+    }
+  };
+
   const testSqlConnection = async (e) => {
     e.preventDefault();
     setSqlTesting(true);
     setSqlTestResult(null);
 
     try {
-      const response = await fetch('/api/dev/test-sql', {
+      const response = await fetch('/api/dev/sql/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,6 +208,11 @@ function DevMenu() {
 
       const data = await response.json();
       setSqlTestResult(data);
+      
+      if (data.success) {
+        setSqlConnected(true);
+        setSqlOutput(`Connected to database successfully!\nServer: ${data.server}\nDatabase: ${data.database}\n\nReady for queries...\n\n`);
+      }
     } catch (error) {
       console.error('Error testing SQL connection:', error);
       setSqlTestResult({
@@ -148,6 +221,60 @@ function DevMenu() {
       });
     } finally {
       setSqlTesting(false);
+    }
+  };
+
+  const executeSqlQuery = async (e) => {
+    e.preventDefault();
+    if (!sqlQuery.trim()) return;
+
+    setSqlExecuting(true);
+    const timestamp = new Date().toLocaleTimeString();
+    const queryLog = `[${timestamp}]\n${sqlQuery}\n\n`;
+    
+    try {
+      const response = await fetch('/api/dev/sql/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          query: sqlQuery
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        let output = queryLog;
+        if (data.rowCount !== undefined) {
+          output += `Rows affected: ${data.rowCount}\n`;
+        }
+        if (data.data && data.data.length > 0) {
+          output += `\nResults (${data.data.length} rows):\n`;
+          output += JSON.stringify(data.data, null, 2) + '\n';
+        }
+        output += '\n---\n\n';
+        setSqlOutput(prev => prev + output);
+      } else {
+        setSqlOutput(prev => prev + queryLog + `ERROR: ${data.message}\n\n---\n\n`);
+        
+        // If connection lost, reset to login screen
+        if (data.code === 'NO_CONNECTION') {
+          setSqlConnected(false);
+          setSqlTestResult({
+            success: false,
+            message: 'Connection lost. Please reconnect.'
+          });
+        }
+      }
+      
+      setSqlQuery('');
+    } catch (error) {
+      setSqlOutput(prev => prev + queryLog + `ERROR: ${error.message}\n\n---\n\n`);
+    } finally {
+      setSqlExecuting(false);
     }
   };
 
@@ -193,7 +320,7 @@ function DevMenu() {
       fontWeight: '500',
       borderBottom: '3px solid transparent',
       transition: 'all 0.2s',
-      color: '#666'  // Changed from white to gray
+      color: '#666'
     },
     activeTab: {
       borderBottom: '3px solid #007bff',
@@ -207,14 +334,13 @@ function DevMenu() {
       fontFamily: 'Consolas, Monaco, "Courier New", monospace',
       fontSize: '13px',
       lineHeight: '1.5',
-      height: '70vh',
+      height: 'calc(100vh - 400px)',
       overflowY: 'auto',
       overflowX: 'auto',
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
       boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-      position: 'relative',  // Added
-      // Remove any gradients or pseudo-elements that might be causing darkening
+      position: 'relative'
     },
     button: {
       padding: '8px 16px',
@@ -236,13 +362,6 @@ function DevMenu() {
     sqlButton: {
       backgroundColor: '#007bff',
       color: 'white'
-    },
-    info: {
-      backgroundColor: '#d1ecf1',
-      color: '#0c5460',
-      padding: '15px',
-      borderRadius: '4px',
-      marginBottom: '20px'
     },
     sqlTestContainer: {
       backgroundColor: '#f8f9fa',
@@ -278,6 +397,30 @@ function DevMenu() {
       backgroundColor: '#f8d7da',
       color: '#721c24',
       border: '1px solid #f5c6cb'
+    },
+    consoleForm: {
+      marginTop: '20px',
+      display: 'flex',
+      gap: '10px',
+      alignItems: 'center'
+    },
+    consoleInput: {
+      flex: 1,
+      padding: '12px',
+      marginBottom: '20px',
+      border: '1px solid #ced4da',
+      borderRadius: '4px',
+      fontSize: '14px',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace'
+    },
+    sqlQueryInput: {
+      flex: 1,
+      padding: '12px',
+      border: '1px solid #ced4da',
+      borderRadius: '4px',
+      fontSize: '14px',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      resize: 'vertical'
     }
   };
 
@@ -286,12 +429,6 @@ function DevMenu() {
       <div style={styles.header}>
         <h1 style={styles.title}>Developer Console</h1>
         <div style={styles.controls}>
-          <button
-            style={{ ...styles.button, ...styles.sqlButton }}
-            onClick={() => setShowSqlTest(!showSqlTest)}
-          >
-            {showSqlTest ? 'Hide' : 'Show'} SQL Test
-          </button>
           <label style={styles.checkbox}>
             <input
               type="checkbox"
@@ -306,62 +443,32 @@ function DevMenu() {
           >
             Refresh Now
           </button>
-          <button
-            style={{ ...styles.button, ...styles.clearButton }}
-            onClick={() => clearLog(activeTab)}
-          >
-            Clear {activeTab === 'backend' ? 'Backend' : 'Frontend'} Log
-          </button>
-        </div>
-      </div>
-
-      {showSqlTest && (
-        <div style={styles.sqlTestContainer}>
-          <h3>Test SQL Server Connection</h3>
-          <form style={styles.sqlForm} onSubmit={testSqlConnection}>
-            <input
-              style={styles.input}
-              type="text"
-              placeholder="SQL Username"
-              value={sqlUsername}
-              onChange={(e) => setSqlUsername(e.target.value)}
-              required
-            />
-            <input
-              style={styles.input}
-              type="password"
-              placeholder="SQL Password"
-              value={sqlPassword}
-              onChange={(e) => setSqlPassword(e.target.value)}
-              required
-            />
+          {(activeTab === 'backend' || activeTab === 'frontend') && (
             <button
-              style={{ ...styles.button, ...styles.sqlButton }}
-              type="submit"
-              disabled={sqlTesting}
+              style={{ ...styles.button, ...styles.clearButton }}
+              onClick={() => clearLog(activeTab)}
             >
-              {sqlTesting ? 'Testing...' : 'Test Connection'}
+              Clear {activeTab === 'backend' ? 'Backend' : 'Frontend'} Log
             </button>
-          </form>
-          
-          {sqlTestResult && (
-            <div style={{
-              ...styles.resultBox,
-              ...(sqlTestResult.success ? styles.successResult : styles.errorResult)
-            }}>
-              <strong>{sqlTestResult.success ? 'Success!' : 'Failed'}</strong>
-              <br />
-              {sqlTestResult.message}
-              {sqlTestResult.details && (
-                <>
-                  <br />
-                  <small>{sqlTestResult.details}</small>
-                </>
-              )}
-            </div>
+          )}
+          {activeTab === 'console' && (
+            <button
+              style={{ ...styles.button, ...styles.clearButton }}
+              onClick={() => setConsoleOutput('')}
+            >
+              Clear Console
+            </button>
+          )}
+          {activeTab === 'sql' && sqlConnected && (
+            <button
+              style={{ ...styles.button, ...styles.clearButton }}
+              onClick={() => setSqlOutput('')}
+            >
+              Clear Output
+            </button>
           )}
         </div>
-      )}
+      </div>
 
       <div style={styles.tabs}>
         <button
@@ -382,15 +489,141 @@ function DevMenu() {
         >
           Frontend Logs
         </button>
+        <button
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'console' ? styles.activeTab : {})
+          }}
+          onClick={() => setActiveTab('console')}
+        >
+          Console
+        </button>
+        <button
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'sql' ? styles.activeTab : {})
+          }}
+          onClick={() => setActiveTab('sql')}
+        >
+          SQL Console
+        </button>
       </div>
 
-      <div
-        ref={activeTab === 'backend' ? backendLogRef : frontendLogRef}
-        style={styles.logContainer}
-        dangerouslySetInnerHTML={{
-          __html: ansiToHtml(activeTab === 'backend' ? backendLogs : frontendLogs)
-        }}
-      />
+      {(activeTab === 'backend' || activeTab === 'frontend') && (
+        <div
+          ref={activeTab === 'backend' ? backendLogRef : frontendLogRef}
+          style={styles.logContainer}
+          dangerouslySetInnerHTML={{
+            __html: ansiToHtml(activeTab === 'backend' ? backendLogs : frontendLogs)
+          }}
+        />
+      )}
+
+      {activeTab === 'console' && (
+        <>
+          <div
+            ref={consoleLogRef}
+            style={styles.logContainer}
+          >
+            <pre style={{ margin: 0 }}>{consoleOutput || 'No output yet. Enter a command below...'}</pre>
+          </div>
+          <form onSubmit={executeConsoleCommand} style={styles.consoleForm}>
+            <input
+              style={styles.consoleInput}
+              type="text"
+              placeholder="Enter command (e.g., ls, pwd, echo 'Hello')"
+              value={consoleInput}
+              onChange={(e) => setConsoleInput(e.target.value)}
+              disabled={consoleExecuting}
+            />
+            <button
+              style={{ ...styles.button, ...styles.sqlButton }}
+              type="submit"
+              disabled={consoleExecuting}
+            >
+              {consoleExecuting ? 'Executing...' : 'Execute'}
+            </button>
+          </form>
+        </>
+      )}
+
+      {activeTab === 'sql' && (
+        <>
+          {!sqlConnected ? (
+            <div style={styles.sqlTestContainer}>
+              <h3>Connect to SQL Server</h3>
+              <form style={styles.sqlForm} onSubmit={testSqlConnection}>
+                <input
+                  style={styles.input}
+                  type="text"
+                  placeholder="SQL Username"
+                  value={sqlUsername}
+                  onChange={(e) => setSqlUsername(e.target.value)}
+                  required
+                />
+                <input
+                  style={styles.input}
+                  type="password"
+                  placeholder="SQL Password"
+                  value={sqlPassword}
+                  onChange={(e) => setSqlPassword(e.target.value)}
+                  required
+                />
+                <button
+                  style={{ ...styles.button, ...styles.sqlButton }}
+                  type="submit"
+                  disabled={sqlTesting}
+                >
+                  {sqlTesting ? 'Connecting...' : 'Connect'}
+                </button>
+              </form>
+              
+              {sqlTestResult && !sqlTestResult.success && (
+                <div style={{
+                  ...styles.resultBox,
+                  ...styles.errorResult
+                }}>
+                  <strong>Connection Failed</strong>
+                  <br />
+                  {sqlTestResult.message}
+                  {sqlTestResult.details && (
+                    <>
+                      <br />
+                      <small>{sqlTestResult.details}</small>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div
+                ref={sqlOutputRef}
+                style={styles.logContainer}
+              >
+                <pre style={{ margin: 0 }}>{sqlOutput}</pre>
+              </div>
+              <form onSubmit={executeSqlQuery} style={styles.consoleForm}>
+                <textarea
+                  style={styles.sqlQueryInput}
+                  placeholder="Enter SQL query (e.g., SELECT * FROM TableName)"
+                  value={sqlQuery}
+                  onChange={(e) => setSqlQuery(e.target.value)}
+                  disabled={sqlExecuting}
+                  rows={3}
+                />
+                <button
+                  style={{ ...styles.button, ...styles.sqlButton }}
+                  type="submit"
+                  disabled={sqlExecuting}
+                >
+                  {sqlExecuting ? 'Executing...' : 'Execute Query'}
+                </button>
+              </form>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
