@@ -1,22 +1,29 @@
 @echo off
+echo [%TIME%] [DEPLOY] Starting deployment script
+
 REM Get the directory where this batch file is located
 set SCRIPT_DIR=%~dp0
 cd /d "%SCRIPT_DIR%"
 
+echo [%TIME%] [DEPLOY] Working directory: %CD%
 git config --global --add safe.directory %CD%
+
+echo [%TIME%] [DEPLOY] Pulling latest changes from git...
 git pull origin main
+
+echo [%TIME%] [DEPLOY] Installing npm dependencies...
 call npm install
+
+echo [%TIME%] [DEPLOY] Building application...
 call npm run build
 
-echo Killing old processes...
+echo [%TIME%] [DEPLOY] Killing old node.exe processes...
 taskkill /F /IM node.exe 2>nul
-timeout /t 3
 
-echo Triggering Task Scheduler to start applications...
+echo [%TIME%] [DEPLOY] Waiting 3 seconds...
+timeout /t 3 /nobreak >nul
+
+echo [%TIME%] [DEPLOY] Triggering Task Scheduler to start applications...
 schtasks /run /tn "Run Livestock Site"
 
-@REM echo Rebooting system in 10 seconds...
-@REM echo Press Ctrl+C to cancel
-@REM timeout /t 10
-
-@REM shutdown /r /t 0
+echo [%TIME%] [DEPLOY] Deployment script completed
