@@ -8,9 +8,9 @@ git pull origin main
 call npm install
 call npm run build
 
-echo Killing old processes...
-taskkill /F /IM node.exe 2>nul
-timeout /t 3
+@REM echo Killing old processes...
+@REM taskkill /F /IM node.exe 2>nul
+@REM timeout /t 3
 
 echo Triggering Task Scheduler to start applications...
 schtasks /run /tn "Run Livestock Site"
