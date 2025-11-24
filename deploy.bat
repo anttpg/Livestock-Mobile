@@ -23,6 +23,9 @@ taskkill /F /IM node.exe 2>nul
 echo [%TIME%] [DEPLOY] Waiting 3 seconds...
 timeout /t 3 /nobreak >nul
 
+echo [%TIME%] [DEPLOY] Stopping any running "Run Livestock Site" task instances...
+SCHTASKS /End /TN "Run Livestock Site" 2>nul
+
 echo [%TIME%] [DEPLOY] Triggering Task Scheduler to start applications...
 schtasks /run /tn "Run Livestock Site"
 
