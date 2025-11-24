@@ -19,7 +19,7 @@ echo [%TIME%] [STARTUPLOGGER] Killing old node.exe processes...
 taskkill /F /IM node.exe 2>nul
 
 echo [%TIME%] [STARTUPLOGGER] Waiting 3 seconds...
-timeout /t 3 /nobreak >nul
+ping 127.0.0.1 -n 4 > nul
 
 echo [%TIME%] [STARTUPLOGGER] Killing processes on ports 3000, 7080, and 8080...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000') do (
@@ -36,24 +36,32 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080') do (
 )
 
 echo [%TIME%] [STARTUPLOGGER] Waiting 3 seconds...
-timeout /t 3 /nobreak
+ping 127.0.0.1 -n 4 > nul
 
 echo [%TIME%] [STARTUPLOGGER] Starting backend on port 3000...
 start "Backend" cmd /c "npm run backend"
 
 echo [%TIME%] [STARTUPLOGGER] Waiting 2 seconds...
-timeout /t 2 /nobreak
+ping 127.0.0.1 -n 4 > nul
 
 echo [%TIME%] [STARTUPLOGGER] Starting frontend on port 8080...
 start "Frontend" cmd /c "npm run frontend"
 
 echo [%TIME%] [STARTUPLOGGER] Waiting 2 seconds...
-timeout /t 2 /nobreak
+ping 127.0.0.1 -n 4 > nul
 
 echo [%TIME%] [STARTUPLOGGER] Starting log viewer on port 7080...
 start "Log Viewer" cmd /c "node logViewer.js"
 
 echo [%TIME%] [STARTUPLOGGER] Waiting 90 seconds for services to initialize...
-timeout /t 90 /nobreak
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
+ping 127.0.0.1 -n 4 > nul
 
 echo [%TIME%] [STARTUPLOGGER] Startup complete
