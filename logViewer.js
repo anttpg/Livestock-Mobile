@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 require('dotenv').config();
 
 const PORT = 7080;
@@ -41,6 +42,9 @@ const server = http.createServer((req, res) => {
             border-radius: 8px;
             overflow: hidden;
         }
+        .log-section.full-width {
+            grid-column: 1 / -1;
+        }
         .log-header { 
             background: #2d2d30; 
             padding: 10px 15px; 
@@ -59,12 +63,15 @@ const server = http.createServer((req, res) => {
         }
         .log-content { 
             padding: 15px; 
-            height: calc(100vh - 200px);
+            height: calc(50vh - 150px);
             overflow-y: auto;
             white-space: pre-wrap;
             word-wrap: break-word;
             font-size: 13px;
             line-height: 1.4;
+        }
+        .log-section.full-width .log-content {
+            height: 300px;
         }
         .log-content::-webkit-scrollbar { width: 10px; }
         .log-content::-webkit-scrollbar-track { background: #1e1e1e; }
@@ -73,14 +80,22 @@ const server = http.createServer((req, res) => {
         .error { color: #f48771; }
         .warning { color: #dcdcaa; }
         .info { color: #4fc1ff; }
+        .success { color: #89d185; }
         @media (max-width: 1200px) {
             .container { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <h1>Application Logs</h1>
+    <h1>Application Logs & Status</h1>
     <div class="container">
+        <div class="log-section full-width">
+            <div class="log-header">
+                <span class="log-title">Task Scheduler Status - "Run Livestock Site"</span>
+                <span class="last-updated" id="task-time"></span>
+            </div>
+            <div class="log-content" id="task-status">Loading...</div>
+        </div>
         <div class="log-section">
             <div class="log-header">
                 <span class="log-title">Backend (Port 3000)</span>
@@ -99,9 +114,10 @@ const server = http.createServer((req, res) => {
     <script>
         function highlightErrors(text) {
             return text
-                .replace(/(error|failed|exception)/gi, '<span class="error">$1</span>')
+                .replace(/(error|failed|exception|not found|cannot|bad gateway|502)/gi, '<span class="error">$1</span>')
                 .replace(/(warning|warn)/gi, '<span class="warning">$1</span>')
-                .replace(/(info|success|listening)/gi, '<span class="info">$1</span>');
+                .replace(/(info|listening|ready)/gi, '<span class="info">$1</span>')
+                .replace(/(success|running|enabled)/gi, '<span class="success">$1</span>');
         }
 
         async function fetchLogs() {
@@ -111,12 +127,15 @@ const server = http.createServer((req, res) => {
                 
                 const backendLog = document.getElementById('backend-log');
                 const frontendLog = document.getElementById('frontend-log');
+                const taskStatus = document.getElementById('task-status');
                 
                 backendLog.innerHTML = highlightErrors(data.backend || 'No logs yet...');
                 frontendLog.innerHTML = highlightErrors(data.frontend || 'No logs yet...');
+                taskStatus.innerHTML = highlightErrors(data.taskStatus || 'Checking...');
                 
                 document.getElementById('backend-time').textContent = new Date().toLocaleTimeString();
                 document.getElementById('frontend-time').textContent = new Date().toLocaleTimeString();
+                document.getElementById('task-time').textContent = new Date().toLocaleTimeString();
                 
                 // Auto-scroll to bottom
                 backendLog.scrollTop = backendLog.scrollHeight;
@@ -135,15 +154,46 @@ const server = http.createServer((req, res) => {
     `);
   } else if (req.url === '/logs') {
     // Serve log data as JSON
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    
     const backendLog = path.join(LOCAL_PATH, 'backend.log');
     const frontendLog = path.join(LOCAL_PATH, 'frontend.log');
     
     const backend = fs.existsSync(backendLog) ? fs.readFileSync(backendLog, 'utf8') : '';
     const frontend = fs.existsSync(frontendLog) ? fs.readFileSync(frontendLog, 'utf8') : '';
     
-    res.end(JSON.stringify({ backend, frontend }));
+    // Get task scheduler status and process info
+    exec('schtasks /query /tn "Run Livestock Site" /v /fo LIST', (error, stdout) => {
+      let taskInfo = '';
+      if (error) {
+        taskInfo = 'Task "Run Livestock Site" not found or error querying.\n\n';
+      } else {
+        taskInfo = stdout + '\n\n';
+      }
+      
+      // Check for running node processes
+      exec('netstat -ano | findstr :3000', (err1, stdout1) => {
+        const port3000 = stdout1 || 'Port 3000: NOT IN USE\n';
+        
+        exec('netstat -ano | findstr :8080', (err2, stdout2) => {
+          const port8080 = stdout2 || 'Port 8080: NOT IN USE\n';
+          
+          exec('tasklist /FI "IMAGENAME eq node.exe" /FO LIST', (err3, stdout3) => {
+            const nodeProcesses = stdout3 || 'No node.exe processes running\n';
+            
+            const taskStatus = 
+              ' TASK SCHEDULER STATUS \n' + 
+              taskInfo +
+              ' PORT USAGE \n' +
+              port3000 + 
+              port8080 + '\n' +
+              ' NODE.EXE PROCESSES \n' +
+              nodeProcesses;
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ backend, frontend, taskStatus }));
+          });
+        });
+      });
+    });
   } else {
     res.writeHead(404);
     res.end('Not Found');
