@@ -8,6 +8,11 @@ cd /d "%SCRIPT_DIR%"
 echo [%TIME%] [DEPLOY] Working directory: %CD%
 git config --global --add safe.directory %CD%
 
+
+echo [%TIME%] [DEPLOY] Removing package-lock.json if it exists...
+if exist package-lock.json del /f package-lock.json
+
+
 echo [%TIME%] [DEPLOY] Pulling latest changes from git...
 git pull origin main
 
