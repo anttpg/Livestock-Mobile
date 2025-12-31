@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export const userSessionManager = (isAuthenticated = false) => {
+export const useUserSessionManager = (isAuthenticated = false) => {
       const WARNING_THRESHOLD_MS = 60 * 1000; 
       const CHECK_INTERVAL_MS = 30 * 1000;
       const INITIAL_MONITORING_DELAY_MS = 58 * 60 * 1000; 

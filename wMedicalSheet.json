@@ -1,0 +1,39 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "treatment_medicine",
+            "name": "Medicine",
+            "dataPath": "Fillable/Medicine",
+            "editable": true,
+            "type": "select",
+            "selectSource": "Medicines/BrandName",
+            "savedPerInstance": true,
+            "instanceSource": "MedicalTable/TreatmentMedicineID"
+        },
+        {
+            "key": "treatment_date",
+            "name": "Treatment Date",
+            "dataPath": "Fillable/TreatmentDate",
+            "editable": true,
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "MedicalTable/TreatmentDate"
+        },
+        {
+            "key": "treatment_notes",
+            "name": "Notes",
+            "dataPath": "Fillable/TreatmentNotes",
+            "editable": true,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "MedicalTable/TreatmentNotes"
+        }
+    ]
+}

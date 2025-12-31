@@ -23,6 +23,7 @@ function DevMenu() {
   const [sqlQuery, setSqlQuery] = useState('');
   const [sqlOutput, setSqlOutput] = useState('');
   const [sqlExecuting, setSqlExecuting] = useState(false);
+  const [sqlBacking, setSqlBacking] = useState(false);
   const sqlOutputRef = useRef(null);
 
   useEffect(() => {
@@ -154,6 +155,22 @@ function DevMenu() {
     }
   };
 
+  const downloadLog = (type) => {
+    const content = type === 'backend' ? backendLogs : frontendLogs;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `${type}_log_${timestamp}.txt`;
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const executeConsoleCommand = async (e) => {
     e.preventDefault();
     if (!consoleInput.trim()) return;
@@ -224,6 +241,27 @@ function DevMenu() {
     }
   };
 
+  const disconnectSql = async () => {
+    try {
+      const response = await fetch('/api/dev/sql/disconnect', {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setSqlConnected(false);
+        setSqlTestResult(null);
+        setSqlOutput('');
+        setSqlUsername('');
+        setSqlPassword('');
+      }
+    } catch (error) {
+      console.error('Error disconnecting:', error);
+    }
+  };
+
   const executeSqlQuery = async (e) => {
     e.preventDefault();
     if (!sqlQuery.trim()) return;
@@ -275,6 +313,70 @@ function DevMenu() {
       setSqlOutput(prev => prev + queryLog + `ERROR: ${error.message}\n\n---\n\n`);
     } finally {
       setSqlExecuting(false);
+    }
+  };
+
+  const backupDatabase = async () => {
+    setSqlBacking(true);
+    const timestamp = new Date().toLocaleTimeString();
+    
+    try {
+      const response = await fetch('/api/dev/sql/backup', {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setSqlOutput(prev => prev + `[${timestamp}] Database backed up successfully!\n` +
+          `File: ${data.backupFileName}\n` +
+          `Location: ${data.backupPath}\n\n`);
+      } else {
+        setSqlOutput(prev => prev + `[${timestamp}] Backup failed: ${data.message}\n\n`);
+      }
+    } catch (error) {
+      setSqlOutput(prev => prev + `[${timestamp}] Backup error: ${error.message}\n\n`);
+    } finally {
+      setSqlBacking(false);
+    }
+  };
+
+  const backupAndDownload = async () => {
+    setSqlBacking(true);
+    const timestamp = new Date().toLocaleTimeString();
+    
+    try {
+      const response = await fetch('/api/dev/sql/download', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+        const filename = filenameMatch ? filenameMatch[1] : `sql_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.bak`;
+        
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setSqlOutput(prev => prev + `[${timestamp}] Database backed up and downloaded: ${filename}\n\n`);
+      } else {
+        const data = await response.json();
+        setSqlOutput(prev => prev + `[${timestamp}] Backup failed: ${data.message}\n\n`);
+      }
+    } catch (error) {
+      setSqlOutput(prev => prev + `[${timestamp}] Backup error: ${error.message}\n\n`);
+    } finally {
+      setSqlBacking(false);
     }
   };
 
@@ -363,6 +465,14 @@ function DevMenu() {
       backgroundColor: '#007bff',
       color: 'white'
     },
+    downloadButton: {
+      backgroundColor: '#17a2b8',
+      color: 'white'
+    },
+    warningButton: {
+      backgroundColor: '#ffc107',
+      color: '#000'
+    },
     sqlTestContainer: {
       backgroundColor: '#f8f9fa',
       padding: '20px',
@@ -421,6 +531,24 @@ function DevMenu() {
       fontSize: '14px',
       fontFamily: 'Consolas, Monaco, "Courier New", monospace',
       resize: 'vertical'
+    },
+    sqlHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '10px',
+      padding: '10px',
+      backgroundColor: '#f8f9fa',
+      borderRadius: '4px',
+      border: '1px solid #dee2e6'
+    },
+    sqlHeaderInfo: {
+      fontSize: '14px',
+      color: '#666'
+    },
+    sqlActions: {
+      display: 'flex',
+      gap: '10px'
     }
   };
 
@@ -444,12 +572,20 @@ function DevMenu() {
             Refresh Now
           </button>
           {(activeTab === 'backend' || activeTab === 'frontend') && (
-            <button
-              style={{ ...styles.button, ...styles.clearButton }}
-              onClick={() => clearLog(activeTab)}
-            >
-              Clear {activeTab === 'backend' ? 'Backend' : 'Frontend'} Log
-            </button>
+            <>
+              <button
+                style={{ ...styles.button, ...styles.downloadButton }}
+                onClick={() => downloadLog(activeTab)}
+              >
+                Download Log
+              </button>
+              <button
+                style={{ ...styles.button, ...styles.clearButton }}
+                onClick={() => clearLog(activeTab)}
+              >
+                Clear Log
+              </button>
+            </>
           )}
           {activeTab === 'console' && (
             <button
@@ -597,6 +733,34 @@ function DevMenu() {
             </div>
           ) : (
             <>
+              <div style={styles.sqlHeader}>
+                <div style={styles.sqlHeaderInfo}>
+                  Connected as <strong>{sqlUsername}</strong>
+                </div>
+                <div style={styles.sqlActions}>
+                  <button
+                    style={{ ...styles.button, ...styles.sqlButton }}
+                    onClick={backupDatabase}
+                    disabled={sqlBacking}
+                  >
+                    {sqlBacking ? 'Backing up...' : 'Backup Database'}
+                  </button>
+                  <button
+                    style={{ ...styles.button, ...styles.downloadButton }}
+                    onClick={backupAndDownload}
+                    disabled={sqlBacking}
+                  >
+                    {sqlBacking ? 'Backing up...' : 'Backup & Download'}
+                  </button>
+                  <button
+                    style={{ ...styles.button, ...styles.warningButton }}
+                    onClick={disconnectSql}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+              
               <div
                 ref={sqlOutputRef}
                 style={styles.logContainer}

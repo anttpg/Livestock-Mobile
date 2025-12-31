@@ -268,6 +268,9 @@ app.post('/api/users/pre-register',
 );
 
 
+
+
+
 // DEV ONLY
 
 // Get backend log file
@@ -336,13 +339,40 @@ app.post('/api/dev/sql/execute',
     }
 );
 
+// Backup SQL database (creates backup on server)
+app.post('/api/dev/sql/backup',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.backupSqlDatabase(req, res);
+    }
+);
+
+// Backup and download SQL database
+app.get('/api/dev/sql/download',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.getSqlDatabase(req, res);
+    }
+);
+
+// Close dev SQL connection
+app.post('/api/dev/sql/disconnect',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => {
+        return apiWrapper.closeDevSqlConnection(req, res);
+    }
+);
 
 
 
 
 
 
-// Get cow data
+
+// cow data
 app.get('/api/cow/:tag', 
     requireAuth(),
     createValidationMiddleware('getCowData'),
@@ -350,6 +380,15 @@ app.get('/api/cow/:tag',
         return apiWrapper.getCowData(req, res);
     }
 );
+
+app.put('/api/cow/:cowTag',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.updateCow(req, res);
+    }
+);
+
 
 // Add observation
 app.post('/api/add-observation',
@@ -362,13 +401,7 @@ app.post('/api/add-observation',
 
 
 
-// Get all medical data for a cow
-app.get('/api/cow/:tag/medical',
-  createValidationMiddleware('getCowData'),
-  async (req, res) => {
-    return apiWrapper.getCowMedicalRecords(req, res);
-  }
-);
+
 
 
 
@@ -377,6 +410,14 @@ app.post('/api/medical/add-record',
   createValidationMiddleware('createMedicalRecord'),
   async (req, res) => {
     return apiWrapper.createMedicalRecord(req, res);
+  }
+);
+
+// Get all medical data for a cow
+app.get('/api/cow/:tag/medical',
+  createValidationMiddleware('getCowData'),
+  async (req, res) => {
+    return apiWrapper.getCowMedicalRecords(req, res);
   }
 );
 
@@ -409,11 +450,21 @@ app.get('/api/medical/medicines',
 );
 
 app.post('/api/medical/medicines',
-  createValidationMiddleware('addMedicine'),
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.addMedicine(req, res);
   }
 );
+
+app.put('/api/medical/medicines/:ID',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateMedicine(req, res);
+  }
+);
+
+
+
 
 app.post('/api/medical/:recordId/upload-image',
     upload.single('image'), // Your existing multer middleware
@@ -679,10 +730,21 @@ app.put('/api/users/:username/preferences',
   }
 );
 
+
+
 // Get form dropdown data
 app.get('/api/form-dropdown-data', async (req, res) => {
   return apiWrapper.getFormDropdownData(req, res);
 });
+
+app.post('/api/form-dropdown-data',
+  createValidationMiddleware('', useGenericValidation=true),
+  async (req, res) => {
+    return apiWrapper.addFormDropdownData(req, res);
+  }
+);
+
+
 
 // Get nth cow image (headshot or body) - returns specific image by position
 app.get('/api/cow/:tag/image/:imageType/:n',
@@ -843,6 +905,64 @@ app.delete('/api/sheets/delete/:sheetId',
     return apiWrapper.deleteSheet(req, res);
   }
 );
+
+
+// Get all instances across all sheets
+app.get('/api/sheets/instances/all', async (req, res) => {
+  return apiWrapper.getAllInstances(req, res);
+});
+
+// Get all instances for a specific sheet
+app.get('/api/sheets/:sheetId/instances', async (req, res) => {
+  return apiWrapper.getSheetInstances(req, res);
+});
+
+// Load a specific instance with all data
+app.get('/api/sheets/instances/:instanceId', async (req, res) => {
+  return apiWrapper.loadSheetInstance(req, res);
+});
+
+// Create a new instance
+app.post('/api/sheets/:sheetId/instances/create',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.createSheetInstance(req, res);
+  }
+);
+
+// Try to load instance by ID, or create new one if not found
+app.post('/api/sheets/instances/try-load',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.tryLoadSheetInstance(req, res);
+  }
+);
+
+// Update a single cell in an instance
+app.put('/api/sheets/instances/:instanceId/cell',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateSheetInstanceCell(req, res);
+  }
+);
+
+// Batch update multiple cells in an instance
+app.put('/api/sheets/instances/:instanceId/cells',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.batchUpdateSheetInstanceCells(req, res);
+  }
+);
+
+// Delete an instance
+app.delete('/api/sheets/instances/:instanceId', async (req, res) => {
+  return apiWrapper.deleteSheetInstance(req, res);
+});
+
+
+
+
+
 
 
 app.get('/api/extend-session', (req, res) => {

@@ -1,3 +1,43 @@
+
+FUTURE DBOPERATION OPTIMIZATIONS
+
+-All of the breeding operations...
+-make getAllFeedTypes use the type getters/setters from before
+-make getHerdFeedStatus find herd location its own function.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 BIG IDEA GOALS
 -Importing / exporting event data & fieldsheets... should be made easy
 -Fix page switching / general tab bug.

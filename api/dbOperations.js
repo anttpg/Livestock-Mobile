@@ -1,11 +1,11 @@
+/* eslint-disable no-case-declarations */
 const { sql, pool } = require('./db');
 
-/**
- * Database operations class with comprehensive cattle management functions
- * Input is already validated by API wrapper - no need for branded types
- */
 
+// Shorthand to get active animals
 const STATUS_ACTIVE = "(Status IS NULL OR Status IN ('Current', 'Target Sale', 'Undefined', 'CULL LIST, Current'))";
+
+
 
 class DatabaseOperations {
     constructor() {
@@ -27,48 +27,406 @@ class DatabaseOperations {
     }
 
 
+
+    /**
+     * Get dropdown options for forms
+     */
+    async getFormDropdownData() {
+        await this.ensureConnection();
+
+        try {
+            const queries = {
+                breeds: `SELECT Breed FROM Breed ORDER BY Breed`,
+                sexes: `SELECT Sex FROM Sex ORDER BY Sex`,
+                animalClasses: `SELECT AnimalClass FROM AnimalClass ORDER BY AnimalClass`,
+                goatTypes: `SELECT Type FROM GoatTypes ORDER BY Type`,
+
+                temperaments: `SELECT Temperament FROM Temperament ORDER BY Temperament`,
+                statuses: `SELECT Status FROM Status ORDER BY Status`,
+                regCerts: `SELECT RegCertStatus FROM RegCert ORDER BY RegCertStatus`,
+
+                herds: `SELECT HerdName FROM Herds ORDER BY HerdName`,
+                pastureFeedOptions: `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`,
+                pastureFeedUnits: `SELECT FeedUnit FROM FeedUnits ORDER BY FeedUnit`,
+
+                dewormerClasses: `SELECT DewormerClass FROM DewormerClass ORDER BY DewormerClass`,
+                medicineClasses: `SELECT MedicineClass FROM MedicineClass ORDER BY MedicineClass`,
+                MedicineApplicationMethods: `SELECT MedicineApplicationMethod FROM MedicineApplicationMethods ORDER BY MedicineApplicationMethod`,
+                medicines: `SELECT BrandName FROM Medicines ORDER BY BrandName`,
+
+                pregTestResults: `SELECT Result FROM PregTestResult ORDER BY Result`,
+            };
+
+            const results = {};
+            for (const [key, query] of Object.entries(queries)) {
+                const result = await this.pool.request().query(query);
+                results[key] = result.recordset.map(r => Object.values(r)[0]);
+            }
+
+            return results;
+        } catch (error) {
+            console.error('Error fetching dropdown data:', error);
+            throw new Error(`Failed to fetch dropdown data: ${error.message}`);
+        }
+    }
+
+    /**
+     * Add a new option to a dropdown option
+     */
+    async addFormDropdownData(params) {
+        await this.ensureConnection();
+
+        const { table, value } = params;
+
+        const allowedTables = {
+            Breed: 'Breed',
+            AnimalClass: 'AnimalClass',
+            GoatTypes: 'Type',
+            Temperament: 'Temperament',
+            PastureFeedOptions: 'Feed',
+            FeedUnits: 'FeedUnit',
+            DewormerClass: 'DewormerClass',
+            MedicineClass: 'MedicineClass',
+            MedicineApplicationMethods: 'MedicineApplicationMethod'
+        };
+
+        // Validate table
+        if (!allowedTables[table]) {
+            throw new Error(`Invalid table specified: Tried to add "${value}" to table "${table}". Allowed tables: ${Object.keys(allowedTables).join(', ')}`);
+        }
+
+        if (!value || value.trim() === '') {
+            throw new Error(`Value cannot be empty for table "${table}"`);
+        }
+
+        const column = allowedTables[table];
+
+        try {
+            // Insert new value (Fails if already exists)
+            const insertQuery = `INSERT INTO ${table} (${column}) VALUES (@value)`;
+            await this.pool.request()
+                .input('value', value.trim())
+                .query(insertQuery);
+
+            return { success: true, message: `Successfully added "${value}" to ${table}` };
+        } catch (error) {
+            console.error('Error adding dropdown data:', error);
+            throw new Error(`Failed to add dropdown data to table "${table}" with value "${value}": ${error.message}`);
+        }
+    }
+
+
+
+    /**
+     * Add new cow with all fields for AddAnimal form
+     * @param {Object} params - All CowTable fields
+     */
+    async addCow(params) {
+        const {
+            cowTag, dateOfBirth, description, dam, sire, sex, status,
+            currentHerd, breed, temperament, regCert, regCertNumber,
+            birthweight, birthweightClass, targetPrice, origin
+        } = params;
+
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            request.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
+            request.input('description', sql.NVarChar, description || null);
+            request.input('dam', sql.NVarChar, dam || null);
+            request.input('sire', sql.NVarChar, sire || null);
+            request.input('sex', sql.NVarChar, sex || null);
+            request.input('status', sql.NVarChar, status || 'Current');
+            request.input('currentHerd', sql.NVarChar, currentHerd || null);
+            request.input('breed', sql.NVarChar, breed || null);
+            request.input('temperament', sql.NVarChar, temperament || null);
+            request.input('regCert', sql.NVarChar, regCert || null);
+            request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
+            request.input('birthweight', sql.NVarChar, birthweight || null);
+            request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
+            request.input('targetPrice', sql.Money, targetPrice || null);
+            request.input('origin', sql.NVarChar, origin || null);
+
+            const query = `
+                INSERT INTO CowTable (
+                    CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
+                    Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
+                    Birthweight, BirthweightClass, TargetPrice, SaleRecordID, Origin
+                ) VALUES (
+                    @cowTag, @dateOfBirth, @description, @dam, @sire,
+                    @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
+                    @birthweight, @birthweightClass, @targetPrice, NULL, @origin
+                )`;
+
+            const result = await request.query(query);
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                message: 'Cow added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding cow:', error);
+            if (error.number === 2627) {
+                throw new Error('Cow with this tag already exists');
+            }
+            throw new Error(`Failed to add cow: ${error.message}`);
+        }
+    }
+
+    /**
+     * Add cow with calf-specific handling
+     * Enhanced to handle twins and calving records
+     */
+    async addCowWithCalfHandling(params) {
+        const {
+            // Basic cow data
+            cowTag, dateOfBirth, description, dam, sire, sex, status,
+            currentHerd, breed, temperament, regCert, regCertNumber,
+            birthweight, birthweightClass, targetPrice, origin,
+            // Calf-specific
+            isNewCalf, breedingYear, createCalvingRecord, calvingNotes,
+            // Twins
+            twins, twinData
+        } = params;
+
+        await this.ensureConnection();
+
+        try {
+            const transaction = this.pool.transaction();
+            await transaction.begin();
+
+            try {
+                // Add primary calf
+                const request = new sql.Request(transaction);
+                request.input('cowTag', sql.NVarChar, cowTag);
+                request.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
+                request.input('description', sql.NVarChar, description || null);
+                request.input('dam', sql.NVarChar, dam || null);
+                request.input('sire', sql.NVarChar, sire || null);
+                request.input('sex', sql.NVarChar, sex || null);
+                request.input('status', sql.NVarChar, status || 'Current');
+                request.input('currentHerd', sql.NVarChar, currentHerd || null);
+                request.input('breed', sql.NVarChar, breed || null);
+                request.input('temperament', sql.NVarChar, temperament || null);
+                request.input('regCert', sql.NVarChar, regCert || null);
+                request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
+                request.input('birthweight', sql.NVarChar, birthweight || null);
+                request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
+                request.input('targetPrice', sql.Money, targetPrice || null);
+                request.input('origin', sql.NVarChar, origin || null);
+
+                const insertQuery = `
+                    INSERT INTO CowTable (
+                        CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
+                        Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
+                        Birthweight, BirthweightClass, TargetPrice, Origin
+                    ) VALUES (
+                        @cowTag, @dateOfBirth, @description, @dam, @sire,
+                        @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
+                        @birthweight, @birthweightClass, @targetPrice, @origin
+                    )`;
+                await request.query(insertQuery);
+
+                let calvingRecordCreated = false;
+                let twinCalvingRecordCreated = false;
+
+                // Create calving record if requested
+                if (createCalvingRecord && dam && breedingYear) {
+                    const breedingRecordId = await this.findBreedingRecordForDam(dam, breedingYear);
+                    
+                    if (breedingRecordId) {
+                        const calvingRequest = new sql.Request(transaction);
+                        calvingRequest.input('breedingRecordId', sql.Int, breedingRecordId);
+                        calvingRequest.input('isTagged', sql.Bit, true);
+                        calvingRequest.input('calfTag', sql.NVarChar, cowTag);
+                        calvingRequest.input('damTag', sql.NVarChar, dam);
+                        calvingRequest.input('birthDate', sql.DateTime, dateOfBirth || new Date());
+                        calvingRequest.input('calfSex', sql.NVarChar, sex);
+                        calvingRequest.input('notes', sql.NVarChar(sql.MAX), calvingNotes || null);
+                        calvingRequest.input('birthOrder', sql.Int, 1);
+                        calvingRequest.input('calfDied', sql.Bit, false);
+                        calvingRequest.input('damDied', sql.Bit, false);
+
+                        const calvingQuery = `
+                            INSERT INTO CalvingRecords (
+                                BreedingRecordID, IsTagged, CalfTag, DamTag, BirthDate, 
+                                CalfSex, CalvingNotes, BirthOrder, CalfDiedAtBirth, DamDiedAtBirth
+                            ) VALUES (
+                                @breedingRecordId, @isTagged, @calfTag, @damTag, @birthDate,
+                                @calfSex, @notes, @birthOrder, @calfDied, @damDied
+                            )`;
+                        await calvingRequest.query(calvingQuery);
+                        calvingRecordCreated = true;
+
+                        // Handle twin if provided
+                        if (twins && twinData && twinData.cowTag) {
+                            // Add twin cow
+                            const twinCowRequest = new sql.Request(transaction);
+                            twinCowRequest.input('cowTag', sql.NVarChar, twinData.cowTag);
+                            twinCowRequest.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
+                            twinCowRequest.input('description', sql.NVarChar, twinData.description || null);
+                            twinCowRequest.input('dam', sql.NVarChar, dam);
+                            twinCowRequest.input('sire', sql.NVarChar, sire);
+                            twinCowRequest.input('sex', sql.NVarChar, twinData.sex || sex);
+                            twinCowRequest.input('status', sql.NVarChar, status || 'Current');
+                            twinCowRequest.input('currentHerd', sql.NVarChar, currentHerd || null);
+                            twinCowRequest.input('breed', sql.NVarChar, breed || null);
+                            twinCowRequest.input('temperament', sql.NVarChar, temperament || null);
+                            twinCowRequest.input('regCert', sql.NVarChar, regCert || null);
+
+                            await twinCowRequest.query(insertQuery.replace(/@cowTag/g, '@cowTag')
+                                .replace(/@description/g, '@description')
+                                .replace(/@sex/g, '@sex'));
+
+                            // Create twin calving record
+                            const twinCalvingRequest = new sql.Request(transaction);
+                            twinCalvingRequest.input('breedingRecordId', sql.Int, breedingRecordId);
+                            twinCalvingRequest.input('isTagged', sql.Bit, true);
+                            twinCalvingRequest.input('calfTag', sql.NVarChar, twinData.cowTag);
+                            twinCalvingRequest.input('damTag', sql.NVarChar, dam);
+                            twinCalvingRequest.input('birthDate', sql.DateTime, dateOfBirth || new Date());
+                            twinCalvingRequest.input('calfSex', sql.NVarChar, twinData.sex || sex);
+                            twinCalvingRequest.input('notes', sql.NVarChar(sql.MAX), twinData.calvingNotes || null);
+                            twinCalvingRequest.input('birthOrder', sql.Int, 2);
+                            twinCalvingRequest.input('calfDied', sql.Bit, false);
+                            twinCalvingRequest.input('damDied', sql.Bit, false);
+
+                            await twinCalvingRequest.query(calvingQuery);
+                            twinCalvingRecordCreated = true;
+                        }
+                    }
+                }
+
+                await transaction.commit();
+
+                return {
+                    success: true,
+                    cowTag,
+                    twinTag: twins ? twinData?.cowTag : null,
+                    calvingRecordCreated,
+                    twinCalvingRecordCreated,
+                    message: 'Animal(s) added successfully'
+                };
+            } catch (error) {
+                await transaction.rollback();
+                throw error;
+            }
+        } catch (error) {
+            console.error('Error adding cow with calf handling:', error);
+            throw error;
+        }
+    }
     
 
 
     /**
-     * Fetch cow data including notes and offspring
-     * @param {Object} params - { cowTag }
+     * Get all cow table data for a specific cow
+     * @param {string} cowTag - The cow's tag identifier
+     * @returns {Promise<Object|null>}
      */
-    async fetchCowData(params) {
-        const { cowTag } = params;
+    async getCowTableData(cowTag) {
         await this.ensureConnection();
-
+        
         try {
-            // Cow basic data with current location
-            const cowDataRequest = this.pool.request();
-            cowDataRequest.input('cowTag', sql.NVarChar, cowTag);
-            const cowDataQuery = `
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            const query = `
                 SELECT 
-                    c.CowTag, c.DateOfBirth, c.CurrentWeight, c.Description, c.Temperament,
-                    c.[Dam (Mother)] AS Dam, c.[Sire (Father)] AS Sire, c.Sex, c.Status,
-                    c.CurrentHerd, h.CurrentPasture AS PastureName
+                    c.*,
+                    c.[Dam (Mother)] AS Dam,
+                    c.[Sire (Father)] AS Sire,
+                    h.CurrentPasture AS PastureName,
+                    CASE 
+                        WHEN c.Status IS NULL OR c.Status IN ('Current', 'Target Sale', 'Undefined', 'CULL LIST, Current')
+                        THEN CAST(1 AS BIT)
+                        ELSE CAST(0 AS BIT)
+                    END AS IsActive
                 FROM 
                     CowTable c
                     LEFT JOIN Herds h ON c.CurrentHerd = h.HerdName
                 WHERE 
                     c.CowTag = @cowTag`;
-            const cowData = await cowDataRequest.query(cowDataQuery);
+            
+            const result = await request.query(query);
+            return result.recordset[0] || null;
+        } catch (error) {
+            console.error('Error fetching cow table data:', error);
+            throw new Error(`Failed to fetch cow table data: ${error.message}`);
+        }
+    }
 
-            // Most recent weight record
-            const weightRequest = this.pool.request();
-            weightRequest.input('cowTag', sql.NVarChar, cowTag);
-            const weightQuery = `
-                SELECT TOP 1 Weight, TimeRecorded AS WeightDate,
-                    CONVERT(varchar, TimeRecorded, 120) AS FormattedDate
-                FROM WeightRecords 
-                WHERE CowTag = @cowTag
-                ORDER BY TimeRecorded DESC`;
-            const weightData = await weightRequest.query(weightQuery);
+    /**
+     * Update cow table data
+     * @param {Object} params - { cowTag, updates: {field: value, ...} }
+     * @returns {Promise<{success: boolean}>}
+     */
+    async updateCowTableData(params) {
+        const { cowTag, updates } = params;
+        await this.ensureConnection();
 
-            // Notes/Observations
-            const notesRequest = this.pool.request();
-            notesRequest.input('cowTag', sql.NVarChar, cowTag);
-            const notesQuery = `
+        try {
+            // Build SET updates object
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            const setClauses = [];
+            for (const [field, value] of Object.entries(updates)) {
+                const paramName = field.replace(/[^a-zA-Z0-9]/g, '_'); // Sanitize param name
+                
+                // Validate types
+                if (['Castrated'].includes(field)) {
+                    request.input(paramName, sql.Bit, value);
+                } else if (['DateOfBirth', 'DateOfDeath', 'WeaningDate'].includes(field)) {
+                    request.input(paramName, sql.DateTime2, value ? new Date(value) : null);
+                } else if (['TargetPrice', 'SalePrice', 'PurchasePrice'].includes(field)) {
+                    request.input(paramName, sql.Money, value);
+                } else if (['SaleRecordID', 'PurchaseRecordID', 'WeightAtSale'].includes(field)) {
+                    request.input(paramName, sql.Int, value);
+                } else {
+                    request.input(paramName, sql.NVarChar, value);
+                }
+                
+                setClauses.push(`[${field}] = @${paramName}`);
+            }
+
+            if (setClauses.length === 0) {
+                return { success: true }; // Nothing to update
+            }
+
+            const query = `
+                UPDATE CowTable 
+                SET ${setClauses.join(', ')}
+                WHERE CowTag = @cowTag`;
+
+            const result = await request.query(query);
+
+            if (result.rowsAffected[0] === 0) {
+                throw new Error('Cow not found');
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating cow table data:', error);
+            throw new Error(`Failed to update cow table data: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get notes for a cow
+     * @param {string} cowTag - The cow's tag identifier
+     * @returns {Promise<Array>}
+     */
+    async getNotes(cowTag) {
+        await this.ensureConnection();
+        
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            const query = `
                 SELECT 
                     Note, DateOfEntry,
                     CONVERT(varchar, DateOfEntry, 120) AS FormattedDate
@@ -77,12 +435,91 @@ class DatabaseOperations {
                 WHERE 
                     CowTag = @cowTag
                 ORDER BY DateOfEntry DESC`;
-            const notes = await notesRequest.query(notesQuery);
+            
+            const result = await request.query(query);
+            return result.recordset;
+        } catch (error) {
+            console.error('Error fetching notes:', error);
+            throw new Error(`Failed to fetch notes: ${error.message}`);
+        }
+    }
 
-            // Enhanced Offspring query with additional details
-            const calvesRequest = this.pool.request();
-            calvesRequest.input('cowTag', sql.NVarChar, cowTag);
-            const calvesQuery = `
+    /**
+     * Add a new note
+     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
+     * @returns {Promise<{success: boolean}>}
+     */
+    async addNote(params) {
+        const { cowTag, note, dateOfEntry } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('note', sql.NVarChar, note);
+            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
+            request.input('cowTag', sql.NVarChar, cowTag);
+
+            const query = `
+                INSERT INTO Notes (Note, DateOfEntry, CowTag)
+                VALUES (@note, @dateOfEntry, @cowTag)`;
+
+            const result = await request.query(query);
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                message: 'Observation added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding observation:', error);
+            throw new Error(`Failed to add observation: ${error.message}`);
+        }
+    }
+
+    /**
+     * Update an existing note
+     * @param {Object} params - { noteId, note }
+     * @returns {Promise<{success: boolean}>}
+     */
+    async updateNote(params) {
+        const { noteId, note } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('noteId', sql.Int, noteId);
+            request.input('note', sql.NVarChar(sql.MAX), note);
+
+            const query = `
+                UPDATE Notes 
+                SET Note = @note
+                WHERE ID = @noteId`;
+
+            const result = await request.query(query);
+
+            if (result.rowsAffected[0] === 0) {
+                throw new Error('Note not found');
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating note:', error);
+            throw new Error(`Failed to update note: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get offspring/calves for a cow
+     * @param {string} cowTag - The cow's tag identifier
+     * @returns {Promise<Array>}
+     */
+    async getOffspring(cowTag) {
+        await this.ensureConnection();
+        
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            const query = `
                 SELECT DISTINCT
                     c.CowTag AS CalfTag, 
                     c.DateOfBirth AS DOB,
@@ -103,17 +540,155 @@ class DatabaseOperations {
                 WHERE 
                     c.[Dam (Mother)] = @cowTag OR c.[Sire (Father)] = @cowTag
                 ORDER BY c.DateOfBirth DESC`;
-            const calves = await calvesRequest.query(calvesQuery);
+            
+            const result = await request.query(query);
+            return result.recordset;
+        } catch (error) {
+            console.error('Error fetching offspring:', error);
+            throw new Error(`Failed to fetch offspring: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Create a new weight record
+     * @param {Object} params - { cowTag, weight, date (optional), eventId (optional), notes (optional) }
+     * @returns {Promise<{success: boolean, recordId: number}>}
+     */
+    async createWeightRecord(params) {
+        const { cowTag, weight, date = null, eventId = null, notes = null } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            request.input('weight', sql.Int, parseInt(weight));
+            request.input('timeRecorded', sql.DateTime, date ? new Date(date) : new Date());
+            request.input('eventId', sql.Int, eventId);
+            request.input('notes', sql.Text, notes);
+
+            const query = `
+                INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, EventID, Notes)
+                OUTPUT INSERTED.ID
+                VALUES (@cowTag, @weight, @timeRecorded, @eventId, @notes)`;
+
+            const result = await request.query(query);
 
             return {
-                cowData: cowData.recordset,
-                currentWeight: weightData.recordset[0] || null,
-                notes: notes.recordset,
-                calves: calves.recordset
+                success: true,
+                recordId: result.recordset[0].ID
             };
         } catch (error) {
-            console.error('Error fetching cow data:', error);
-            throw new Error(`Failed to fetch cow data: ${error.message}`);
+            console.error('Error creating weight record:', error);
+            throw new Error(`Failed to create weight record: ${error.message}`);
+        }
+    }
+
+    /**
+     * Update an existing weight record
+     * @param {Object} params - { recordId, weight, date (optional) }
+     * @returns {Promise<{success: boolean}>}
+     */
+    async updateWeightRecord(params) {
+        const { recordId, weight, date = null } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('recordId', sql.Int, recordId);
+            request.input('weight', sql.Int, parseInt(weight));
+            request.input('timeRecorded', sql.DateTime, date ? new Date(date) : new Date());
+
+            const query = `
+                UPDATE WeightRecords 
+                SET Weight = @weight, TimeRecorded = @timeRecorded
+                WHERE ID = @recordId`;
+
+            const result = await request.query(query);
+
+            if (result.rowsAffected[0] === 0) {
+                throw new Error('Weight record not found');
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating weight record:', error);
+            throw new Error(`Failed to update weight record: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get the most recent weight for a cow
+     * @param {string} cowTag - The cow's tag identifier
+     * @returns {Promise<{weight: number|null, date: Date|null, formattedDate: string|null}>}
+     */
+    async getCurrentWeight(cowTag) {
+        await this.ensureConnection();
+        
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            const query = `
+                SELECT TOP 1 
+                    Weight, 
+                    TimeRecorded AS WeightDate,
+                    CONVERT(varchar, TimeRecorded, 120) AS FormattedDate
+                FROM WeightRecords 
+                WHERE CowTag = @cowTag
+                ORDER BY TimeRecorded DESC`;
+            
+            const result = await request.query(query);
+            
+            if (result.recordset.length === 0) {
+                return { weight: null, date: null, formattedDate: null };
+            }
+            
+            return {
+                weight: result.recordset[0].Weight,
+                date: result.recordset[0].WeightDate,
+                formattedDate: result.recordset[0].FormattedDate
+            };
+        } catch (error) {
+            console.error('Error fetching current weight:', error);
+            throw new Error(`Failed to fetch current weight: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get a specific weight record by its ID
+     * @param {number} recordId - The weight record ID
+     * @returns {Promise<{weight: number|null, date: Date|null, cowTag: string|null}>}
+     */
+    async getWeightByRecordId(recordId) {
+        await this.ensureConnection();
+        
+        try {
+            const request = this.pool.request();
+            request.input('recordId', sql.Int, recordId);
+            
+            const query = `
+                SELECT 
+                    Weight, 
+                    TimeRecorded AS WeightDate,
+                    CowTag
+                FROM WeightRecords 
+                WHERE ID = @recordId`;
+            
+            const result = await request.query(query);
+            
+            if (result.recordset.length === 0) {
+                return { weight: null, date: null, cowTag: null };
+            }
+            
+            return {
+                weight: result.recordset[0].Weight,
+                date: result.recordset[0].WeightDate,
+                cowTag: result.recordset[0].CowTag
+            };
+        } catch (error) {
+            console.error('Error fetching weight by record ID:', error);
+            throw new Error(`Failed to fetch weight by record ID: ${error.message}`);
         }
     }
 
@@ -134,23 +709,23 @@ class DatabaseOperations {
                 WITH ProgenyData AS (
                     -- Count progeny for this cow if it's used as a sire
                     SELECT 
-                        br.PrimaryBull as SireTag,
+                        br.PrimaryBulls as SireTag,
                         COUNT(DISTINCT cr.CalfTag) as ProgenyCount
                     FROM BreedingRecords br
                     INNER JOIN CalvingRecords cr ON br.ID = cr.BreedingRecordID
-                    WHERE br.PrimaryBull = @cowTag
-                    GROUP BY br.PrimaryBull
+                    WHERE br.PrimaryBulls = @cowTag
+                    GROUP BY br.PrimaryBulls
                     
                     UNION ALL
                     
                     -- Also count cleanup bull progeny
                     SELECT 
-                        br.CleanupBull as SireTag,
+                        br.CleanupBulls as SireTag,
                         COUNT(DISTINCT cr.CalfTag) as ProgenyCount
                     FROM BreedingRecords br
                     INNER JOIN CalvingRecords cr ON br.ID = cr.BreedingRecordID
-                    WHERE br.CleanupBull = @cowTag
-                    GROUP BY br.CleanupBull
+                    WHERE br.CleanupBulls = @cowTag
+                    GROUP BY br.CleanupBulls
                 ),
                 EPDProgression AS (
                     SELECT 
@@ -262,53 +837,55 @@ class DatabaseOperations {
             request.input('cowTag', sql.NVarChar, cowTag);
 
             // Issues query - include ALL issues, resolved and unresolved
-            // JOIN with Medicines table to get ApplicationMethod and IsImmunization
+            // JOIN with Medicines table to get ApplicationMethod and derive IsImmunization from MedicineClass
             const issuesQuery = `
                 SELECT 
-                    mt.RecordID, mt.EventID, mt.CowTag,
+                    mt.ID, mt.EventID, mt.CowTag,
                     mt.IssueDescription, mt.IssueObservedBy, mt.IssueObservationDate,
                     mt.IssueResolved, mt.IssueResolutionNote, mt.IssueResolutionDate, mt.IssueSerious,
-                    mt.TreatmentMedicine, mt.TreatmentDate, mt.TreatmentResponse, 
+                    m.ID as TreatmentMedicine, 
+                    mt.TreatmentDate, mt.TreatmentResponse, 
                     m.ApplicationMethod as TreatmentMethod,
-                    m.IsImmunization as TreatmentIsImmunization,
+                    CASE WHEN m.MedicineClass = 'Vaccine' THEN 1 ELSE 0 END as IsImmunization,
                     mt.TreatmentIsActive,
                     mt.VetName, mt.VetComments, mt.Note
                 FROM MedicalTable mt
-                LEFT JOIN Medicines m ON mt.TreatmentMedicine = m.Medicine
+                LEFT JOIN Medicines m ON mt.TreatmentMedicineID = m.ID
                 WHERE mt.CowTag = @cowTag AND mt.Issue = 1
                 ORDER BY mt.IssueObservationDate DESC, mt.IssueSerious DESC`;
 
-            // Treatments query - for immunizations and active treatments
-            // JOIN with Medicines table to get ApplicationMethod and IsImmunization
+            // Treatments query
+            // JOIN with Medicines table to get ApplicationMethod and derive IsImmunization from MedicineClass
             const treatmentsQuery = `
                 SELECT 
-                    mt.RecordID, mt.EventID, mt.CowTag,
-                    mt.TreatmentMedicine, mt.TreatmentDate, mt.TreatmentResponse, 
+                    mt.ID, mt.EventID, mt.CowTag,
+                    m.ID as TreatmentMedicine, 
+                    mt.TreatmentDate, mt.TreatmentResponse, 
                     m.ApplicationMethod as TreatmentMethod,
-                    m.IsImmunization as TreatmentIsImmunization,
+                    CASE WHEN m.MedicineClass = 'Vaccine' THEN 1 ELSE 0 END as IsImmunization,
                     mt.TreatmentIsActive,
                     mt.VetName, mt.VetComments, mt.Note
                 FROM MedicalTable mt
-                LEFT JOIN Medicines m ON mt.TreatmentMedicine = m.Medicine
+                LEFT JOIN Medicines m ON mt.TreatmentMedicineID = m.ID
                 WHERE mt.CowTag = @cowTag AND mt.Treatment = 1
                 ORDER BY mt.TreatmentDate DESC`;
 
-            // Maintenance records query - unchanged
+            // Maintenance records query 
             const maintenanceQuery = `
                 SELECT 
-                    RecordID, EventID, CowTag, Note
+                    ID, EventID, CowTag, Note
                 FROM MedicalTable 
                 WHERE CowTag = @cowTag AND Maintenance = 1
-                ORDER BY RecordID DESC`;
+                ORDER BY ID DESC`;
 
-            // Vet visit query - unchanged
+            // Vet visit query
             const vetQuery = `
                 SELECT 
-                    RecordID, EventID, CowTag,
+                    ID, EventID, CowTag,
                     VetName, VetComments, Note
                 FROM MedicalTable 
                 WHERE CowTag = @cowTag AND Vet = 1
-                ORDER BY RecordID DESC`;
+                ORDER BY ID DESC`;
 
             const [issuesResult, treatmentsResult, maintenanceResult, vetResult] = await Promise.all([
                 request.query(issuesQuery),
@@ -320,7 +897,7 @@ class DatabaseOperations {
             return {
                 success: true,
                 medicalRecords: {
-                    issues: issuesResult.recordset, // Now includes resolved issues with proper medicine data
+                    issues: issuesResult.recordset,
                     treatments: treatmentsResult.recordset,
                     maintenance: maintenanceResult.recordset,
                     vetVisits: vetResult.recordset
@@ -334,33 +911,173 @@ class DatabaseOperations {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    //              MEDICAL RECORDS //////////////////////////////////////////////////////////////////////////////////////////
+
     /**
-     * Add observation/note for a cow
-     * @param {Object} params - { cowTag, note, dateOfEntry }
+     * Get all medicines, medicineClasses, and dewormerClasses
      */
-    async addObservation(params) {
-        const { cowTag, note, dateOfEntry } = params;
+    async getMedicines() {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('note', sql.NVarChar, note);
-            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
-            request.input('cowTag', sql.NVarChar, cowTag);
+            
+            // Get all medicines
+            const medicinesQuery = `SELECT * FROM Medicines ORDER BY ID ASC`;
+            const medicinesResult = await request.query(medicinesQuery);
+            
+            // Get MedicineClass lookup
+            const medicineClassQuery = `SELECT MedicineClass FROM MedicineClass ORDER BY MedicineClass ASC`;
+            const medicineClassResult = await request.query(medicineClassQuery);
+            
+            // Get DewormerClass lookup
+            const dewormerClassQuery = `SELECT DewormerClass FROM DewormerClass ORDER BY DewormerClass ASC`;
+            const dewormerClassResult = await request.query(dewormerClassQuery);
+            
+            return {
+                success: true,
+                medicines: medicinesResult.recordset,
+                medicineClasses: medicineClassResult.recordset,
+                dewormerClasses: dewormerClassResult.recordset
+            };
+        } catch (error) {
+            console.error('Error fetching medicines:', error);
+            throw new Error(`Failed to fetch medicines: ${error.message}`);
+        }
+    }
+
+    /**
+     * Add a new medicine
+     */
+    async addMedicine(params) {
+        const { 
+            medicineClass,
+            dewormerClass,
+            shorthand,
+            genericName,
+            brandName,
+            manufacturer,
+            applicationMethod,
+            mixRecipe
+        } = params;
+        
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            // Convert empty strings to null for foreign key fields
+            request.input('medicineClass', sql.NVarChar, medicineClass || null);
+            request.input('dewormerClass', sql.NVarChar, dewormerClass || null);
+            request.input('shorthand', sql.NVarChar, shorthand);
+            request.input('genericName', sql.NVarChar, genericName);
+            request.input('brandName', sql.NVarChar, brandName || null);
+            request.input('manufacturer', sql.NVarChar, manufacturer || null);
+            request.input('applicationMethod', sql.NVarChar, applicationMethod || null);
+            request.input('mixRecipe', sql.NVarChar, mixRecipe || null);
 
             const query = `
-                INSERT INTO Notes (Note, DateOfEntry, CowTag)
-                VALUES (@note, @dateOfEntry, @cowTag)`;
+                INSERT INTO Medicines (
+                    MedicineClass, DewormerClass, Shorthand, 
+                    GenericName, BrandName, Manufacturer, ApplicationMethod, MixRecipe
+                )
+                VALUES (
+                    @medicineClass, @dewormerClass, @shorthand,
+                    @genericName, @brandName, @manufacturer, @applicationMethod, @mixRecipe
+                )`;
 
             const result = await request.query(query);
+            
             return {
                 success: true,
                 rowsAffected: result.rowsAffected[0],
-                message: 'Observation added successfully'
+                message: 'Medicine added successfully'
             };
         } catch (error) {
-            console.error('Error adding observation:', error);
-            throw new Error(`Failed to add observation: ${error.message}`);
+            console.error('Error adding medicine:', error);
+            throw new Error(`Failed to add medicine: ${error.message}`);
+        }
+    }
+
+    /**
+     * Update an existing medicine by MedicineID
+     */
+    async updateMedicine(params) {
+        const { 
+            medicineID,
+            medicineClass,
+            dewormerClass,
+            shorthand,
+            genericName,
+            brandName,
+            manufacturer,
+            applicationMethod,
+            mixRecipe
+        } = params;
+        
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('medicineID', sql.Int, medicineID);
+            
+            // Convert empty strings to null for foreign key fields and optional fields
+            request.input('medicineClass', sql.NVarChar, medicineClass || null);
+            request.input('dewormerClass', sql.NVarChar, dewormerClass || null);
+            request.input('shorthand', sql.NVarChar, shorthand);
+            request.input('genericName', sql.NVarChar, genericName);
+            request.input('brandName', sql.NVarChar, brandName || null);
+            request.input('manufacturer', sql.NVarChar, manufacturer || null);
+            request.input('applicationMethod', sql.NVarChar, applicationMethod || null);
+            request.input('mixRecipe', sql.NVarChar, mixRecipe || null);
+
+            const query = `
+                UPDATE Medicines 
+                SET 
+                    MedicineClass = @medicineClass,
+                    DewormerClass = @dewormerClass,
+                    Shorthand = @shorthand,
+                    GenericName = @genericName,
+                    BrandName = @brandName,
+                    Manufacturer = @manufacturer,
+                    ApplicationMethod = @applicationMethod,
+                    MixRecipe = @mixRecipe
+                WHERE ID = @medicineID`;
+
+            const result = await request.query(query);
+            
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                message: result.rowsAffected[0] > 0 ? 'Medicine updated successfully' : 'Medicine not found'
+            };
+        } catch (error) {
+            console.error('Error updating medicine:', error);
+            throw new Error(`Failed to update medicine: ${error.message}`);
         }
     }
 
@@ -373,8 +1090,7 @@ class DatabaseOperations {
             // Issue fields
             issueDescription, issueObservedBy, issueObservationDate, issueSerious,
             // Treatment fields  
-            treatmentMedicine, treatmentDate, treatmentResponse, treatmentMethod,
-            treatmentIsImmunization, treatmentIsActive,
+            treatmentMedicineID, treatmentDate, treatmentResponse, treatmentIsActive,
             // Vet fields
             vetName, vetComments,
             // General
@@ -400,11 +1116,11 @@ class DatabaseOperations {
             request.input('issueObservedBy', sql.NVarChar, issueObservedBy || null);
             request.input('issueObservationDate', sql.DateTime, issueObservationDate || null);
             request.input('issueSerious', sql.Bit, issueSerious || false);
-            request.input('issueResolved', sql.Bit, false); // New issues start unresolved
+            request.input('issueResolved', sql.Bit, false);
 
-            // Treatment fields - FIXED: Set to NULL if empty string to avoid FK constraint violation
-            const validMedicine = treatmentMedicine && treatmentMedicine.trim() !== '' ? treatmentMedicine : null;
-            request.input('treatmentMedicine', sql.NVarChar, validMedicine);
+            // Treatment fields
+            const validMedicineID = treatmentMedicineID && treatmentMedicineID.trim() !== '' ? treatmentMedicineID : null;
+            request.input('treatmentMedicineID', sql.NVarChar, validMedicineID);
             request.input('treatmentDate', sql.DateTime, treatmentDate || null);
             request.input('treatmentResponse', sql.NVarChar(sql.MAX), treatmentResponse || null);
             request.input('treatmentIsActive', sql.Bit, treatmentIsActive || false);
@@ -417,23 +1133,21 @@ class DatabaseOperations {
                 INSERT INTO MedicalTable (
                     CowTag, EventID, Note, Maintenance, Issue, Treatment, Vet,
                     IssueDescription, IssueObservedBy, IssueObservationDate, IssueSerious, IssueResolved,
-                    TreatmentMedicine, TreatmentDate, TreatmentResponse,
-                    TreatmentIsActive,
+                    TreatmentMedicineID, TreatmentDate, TreatmentResponse, TreatmentIsActive,
                     VetName, VetComments
                 )
-                OUTPUT INSERTED.RecordID
+                OUTPUT INSERTED.ID
                 VALUES (
                     @cowTag, @eventID, @note, @maintenance, @issue, @treatment, @vet,
                     @issueDescription, @issueObservedBy, @issueObservationDate, @issueSerious, @issueResolved,
-                    @treatmentMedicine, @treatmentDate, @treatmentResponse,
-                    @treatmentIsActive,
+                    @treatmentMedicineID, @treatmentDate, @treatmentResponse, @treatmentIsActive,
                     @vetName, @vetComments
                 )`;
 
             const result = await request.query(query);
             return {
                 success: true,
-                recordID: result.recordset[0]?.RecordID,
+                recordID: result.recordset[0]?.ID,
                 rowsAffected: result.rowsAffected[0],
                 message: 'Medical record created successfully'
             };
@@ -442,6 +1156,7 @@ class DatabaseOperations {
             throw new Error(`Failed to create medical record: ${error.message}`);
         }
     }
+
 
     async getMedicalRecordDetails(params) {
         const { recordID } = params;
@@ -453,18 +1168,17 @@ class DatabaseOperations {
 
             const query = `
                 SELECT 
-                    mt.RecordID, mt.EventID, mt.CowTag, mt.Note,
+                    mt.ID, mt.EventID, mt.CowTag, mt.Note,
                     mt.Maintenance, mt.Issue, mt.Treatment, mt.Vet,
                     mt.IssueDescription, mt.IssueObservedBy, mt.IssueObservationDate, 
                     mt.IssueResolved, mt.IssueResolutionNote, mt.IssueResolutionDate, mt.IssueSerious,
-                    mt.TreatmentMedicine, mt.TreatmentDate, mt.TreatmentResponse, 
-                    m.ApplicationMethod as TreatmentMethod,
-                    m.IsImmunization as TreatmentIsImmunization,
-                    mt.TreatmentIsActive,
+                    mt.TreatmentMedicineID, 
+                    m.BrandName as TreatmentMedicine,
+                    mt.TreatmentDate, mt.TreatmentResponse, mt.TreatmentIsActive,
                     mt.VetName, mt.VetComments
                 FROM MedicalTable mt
-                LEFT JOIN Medicines m ON mt.TreatmentMedicine = m.Medicine
-                WHERE mt.RecordID = @recordID`;
+                LEFT JOIN Medicines m ON mt.TreatmentMedicineID = m.ID
+                WHERE mt.ID = @recordID`;
 
             const result = await request.query(query);
             if (result.recordset.length === 0) {
@@ -478,167 +1192,51 @@ class DatabaseOperations {
         }
     }
 
+    /**
+     * Update a medical record for a cow
+     */
     async updateMedicalRecord(params) {
         const { recordID, ...updateFields } = params;
         await this.ensureConnection();
 
         try {
-            // Extract and validate the data first, separate from update logic
-            const data = {
-                issueDescription: null,
-                issueObservedBy: null,
-                issueObservationDate: null,
-                issueSerious: false,
-                treatmentMedicine: null,
-                treatmentDate: null,
-                treatmentResponse: null,
-                treatmentIsActive: false,
-                vetName: null,
-                vetComments: null,
-                note: null
-            };
-
-            // Process each field individually with explicit validation
-            if ('IssueDescription' in updateFields) {
-                const value = updateFields.IssueDescription;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.issueDescription = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('IssueObservedBy' in updateFields) {
-                const value = updateFields.IssueObservedBy;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.issueObservedBy = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('IssueObservationDate' in updateFields) {
-                const value = updateFields.IssueObservationDate;
-                if (value instanceof Date || (typeof value === 'string' && value.trim() !== '')) {
-                    data.issueObservationDate = new Date(value);
-                }
-                // else stays null
-            }
-
-            if ('IssueSerious' in updateFields) {
-                data.issueSerious = Boolean(updateFields.IssueSerious);
-            }
-
-            if ('TreatmentMedicine' in updateFields) {
-                const value = updateFields.TreatmentMedicine;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.treatmentMedicine = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('TreatmentDate' in updateFields) {
-                const value = updateFields.TreatmentDate;
-                if (value instanceof Date || (typeof value === 'string' && value.trim() !== '')) {
-                    data.treatmentDate = new Date(value);
-                }
-                // else stays null
-            }
-
-            if ('TreatmentResponse' in updateFields) {
-                const value = updateFields.TreatmentResponse;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.treatmentResponse = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('TreatmentIsActive' in updateFields) {
-                data.treatmentIsActive = Boolean(updateFields.TreatmentIsActive);
-            }
-
-            if ('VetName' in updateFields) {
-                const value = updateFields.VetName;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.vetName = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('VetComments' in updateFields) {
-                const value = updateFields.VetComments;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.vetComments = value.trim();
-                }
-                // else stays null
-            }
-
-            if ('Note' in updateFields) {
-                const value = updateFields.Note;
-                if (typeof value === 'string' && value.trim() !== '') {
-                    data.note = value.trim();
-                }
-                // else stays null
-            }
-
-            // Check if we have any fields to update
-            const fieldsToUpdate = Object.keys(updateFields);
-            if (fieldsToUpdate.length === 0) {
+            if (Object.keys(updateFields).length === 0) {
                 throw new Error('No fields provided for update');
             }
 
-            console.log('Processed data for update:', data);
-            console.log('Fields requested for update:', fieldsToUpdate);
+            // Helper to process date fields
+            const processDate = (value) => 
+                value instanceof Date || (typeof value === 'string' && value.trim() !== '') 
+                    ? new Date(value) : null;
 
-            // Now execute the hardcoded SQL update
+            // Map of field names to their processed values and SQL types
+            const fieldMap = {
+                IssueDescription: { value: updateFields.IssueDescription, type: sql.NText },
+                IssueObservedBy: { value: updateFields.IssueObservedBy, type: sql.NVarChar },
+                IssueObservationDate: { value: processDate(updateFields.IssueObservationDate), type: sql.DateTime },
+                IssueSerious: { value: updateFields.IssueSerious, type: sql.Bit },
+                TreatmentMedicineID: { value: updateFields.TreatmentMedicineID, type: sql.NVarChar },
+                TreatmentDate: { value: processDate(updateFields.TreatmentDate), type: sql.DateTime },
+                TreatmentResponse: { value: updateFields.TreatmentResponse, type: sql.NText },
+                TreatmentIsActive: { value: updateFields.TreatmentIsActive, type: sql.Bit },
+                VetName: { value: updateFields.VetName, type: sql.NVarChar },
+                VetComments: { value: updateFields.VetComments, type: sql.NText },
+                Note: { value: updateFields.Note, type: sql.NText }
+            };
+
             const request = this.pool.request();
             request.input('recordID', sql.Int, recordID);
-            request.input('issueDescription', sql.NText, data.issueDescription);
-            request.input('issueObservedBy', sql.NVarChar, data.issueObservedBy);
-            request.input('issueObservationDate', sql.DateTime, data.issueObservationDate);
-            request.input('issueSerious', sql.Bit, data.issueSerious);
-            request.input('treatmentMedicine', sql.NVarChar, data.treatmentMedicine);
-            request.input('treatmentDate', sql.DateTime, data.treatmentDate);
-            request.input('treatmentResponse', sql.NText, data.treatmentResponse);
-            request.input('treatmentIsActive', sql.Bit, data.treatmentIsActive);
-            request.input('vetName', sql.NVarChar, data.vetName);
-            request.input('vetComments', sql.NText, data.vetComments);
-            request.input('note', sql.NText, data.note);
 
-            // Build the update query based on which fields were provided
             const updateClauses = [];
-
-            if ('IssueDescription' in updateFields) {
-                updateClauses.push('IssueDescription = @issueDescription');
-            }
-            if ('IssueObservedBy' in updateFields) {
-                updateClauses.push('IssueObservedBy = @issueObservedBy');
-            }
-            if ('IssueObservationDate' in updateFields) {
-                updateClauses.push('IssueObservationDate = @issueObservationDate');
-            }
-            if ('IssueSerious' in updateFields) {
-                updateClauses.push('IssueSerious = @issueSerious');
-            }
-            if ('TreatmentMedicine' in updateFields) {
-                updateClauses.push('TreatmentMedicine = @treatmentMedicine');
-            }
-            if ('TreatmentDate' in updateFields) {
-                updateClauses.push('TreatmentDate = @treatmentDate');
-            }
-            if ('TreatmentResponse' in updateFields) {
-                updateClauses.push('TreatmentResponse = @treatmentResponse');
-            }
-            if ('TreatmentIsActive' in updateFields) {
-                updateClauses.push('TreatmentIsActive = @treatmentIsActive');
-            }
-            if ('VetName' in updateFields) {
-                updateClauses.push('VetName = @vetName');
-            }
-            if ('VetComments' in updateFields) {
-                updateClauses.push('VetComments = @vetComments');
-            }
-            if ('Note' in updateFields) {
-                updateClauses.push('Note = @note');
-            }
+            
+            // Only add fields that were actually provided in updateFields
+            Object.entries(fieldMap).forEach(([fieldName, { value, type }]) => {
+                if (fieldName in updateFields) {
+                    const paramName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
+                    request.input(paramName, type, value);
+                    updateClauses.push(`${fieldName} = @${paramName}`);
+                }
+            });
 
             if (updateClauses.length === 0) {
                 throw new Error('No valid update clauses generated');
@@ -647,9 +1245,7 @@ class DatabaseOperations {
             const query = `
                 UPDATE MedicalTable 
                 SET ${updateClauses.join(', ')}
-                WHERE RecordID = @recordID`;
-
-            console.log('Final SQL query:', query);
+                WHERE ID = @recordID`;
 
             const result = await request.query(query);
             if (result.rowsAffected[0] === 0) {
@@ -667,6 +1263,11 @@ class DatabaseOperations {
         }
     }
 
+    /**
+     * Mark an issue as resolved
+     * @param {*} params 
+     * @returns 
+     */
     async resolveIssue(params) {
         const { recordID, resolutionNote, resolutionDate } = params;
         await this.ensureConnection();
@@ -682,7 +1283,7 @@ class DatabaseOperations {
                 SET IssueResolved = 1, 
                     IssueResolutionNote = @resolutionNote,
                     IssueResolutionDate = @resolutionDate
-                WHERE RecordID = @recordID AND Issue = 1`;
+                WHERE ID = @recordID AND Issue = 1`;
 
             const result = await request.query(query);
             if (result.rowsAffected[0] === 0) {
@@ -699,100 +1300,397 @@ class DatabaseOperations {
         }
     }
 
-    /**
-     * Get all medicines 
-     */
-    async getMedicines() {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //              BREEDING PLAN  //////////////////////////////////////////////////////////////////////////////////////////
+
+    async getBreedingPlans() {
+        await this.ensureConnection();
+
+        try {
+            const query = `
+            SELECT ID, PlanName, PlanYear, Notes, IsActive, PregSheetInstanceID, BreedingSheetInstanceID, CalvingSheetInstanceID
+            FROM BreedingPlan 
+            ORDER BY PlanYear DESC, PlanName`;
+            const result = await this.pool.request().query(query);
+            return { plans: result.recordset };
+        } catch (error) {
+            console.error('Error fetching breeding plans:', error);
+            throw error;
+        }
+    }
+
+    async getBreedingPlanOverview(params) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            
+            const planId = params.planId || params;
+            request.input('planId', sql.Int, planId);
+
+            // Get unassigned animals (active cows without breeding records for this plan)
+            const unassignedQuery = `
+            SELECT c.CowTag, c.CurrentHerd
+            FROM CowTable c
+            LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @planId
+            WHERE ${STATUS_ACTIVE}
+              AND br.ID IS NULL
+            ORDER BY c.CowTag`;
+            const unassignedResult = await request.query(unassignedQuery);
+
+            // Get pregnant count
+            const pregnantQuery = `
+            SELECT COUNT(DISTINCT pc.CowTag) as PregnantCount
+            FROM PregancyCheck pc
+            INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
+            WHERE br.PlanID = @planId AND pc.IsPregnant = 1`;
+            const pregnantResult = await request.query(pregnantQuery);
+
+            // Get calves count for this year
+            const plan = await this.getBreedingPlan(planId);
+            const calvesQuery = `
+            SELECT COUNT(*) as CalvesCount
+            FROM CalvingRecords
+            WHERE YEAR(BirthDate) = ${plan.PlanYear}`;
+            const calvesResult = await this.pool.request().query(calvesQuery);
+
+            // Calculate pregnancy rate
+            const totalBreedingQuery = `
+            SELECT COUNT(DISTINCT CowTag) as TotalBred
+            FROM BreedingRecords
+            WHERE PlanID = @planId`;
+            const totalBreedingResult = await request.query(totalBreedingQuery);
+
+            const pregnantCount = pregnantResult.recordset[0].PregnantCount || 0;
+            const totalBred = totalBreedingResult.recordset[0].TotalBred || 0;
+            const pregnancyRate = totalBred > 0 ? Math.round((pregnantCount / totalBred) * 100) : 0;
+
+            return {
+                unassignedCount: unassignedResult.recordset.length,
+                unassignedAnimals: unassignedResult.recordset,
+                pregnantCount: pregnantCount,
+                pregnancyRate: pregnancyRate,
+                calvesCount: calvesResult.recordset[0].CalvesCount || 0,
+                calvingSeason: this.getCalvingSeason(plan.PlanYear)
+            };
+        } catch (error) {
+            console.error('Error fetching breeding plan overview:', error);
+            throw error;
+        }
+    }
+
+    async getBreedingPlan(planId) {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('planId', sql.Int, planId);
+
+            const query = `SELECT * FROM BreedingPlan WHERE ID = @planId`;
+            const result = await request.query(query);
+
+            return result.recordset[0] || null;
+        } catch (error) {
+            console.error('Error fetching breeding plan:', error);
+            throw error;
+        }
+    }
+
+    getCalvingSeason(year) {
+        const currentMonth = new Date().getMonth() + 1; // 1-12
+
+        if (currentMonth >= 1 && currentMonth <= 4) {
+            return `Spring ${year}`;
+        } else if (currentMonth >= 5 && currentMonth <= 8) {
+            return `Summer ${year}`;
+        } else {
+            return `Fall ${year}`;
+        }
+    }
+
+
+    /**
+     * Get breeding animal status categorized by age and breeding records
+     */
+    async getBreedingAnimalStatus() {
+        await this.ensureConnection();
+
+        try {
+            // Get current breeding plan year
+            const currentPlanQuery = `
+                SELECT TOP 1 ID, PlanYear 
+                FROM BreedingPlan 
+                WHERE IsActive = 1 
+                ORDER BY PlanYear DESC`;
+            const planResult = await this.pool.request().query(currentPlanQuery);
+            const currentPlanId = planResult.recordset[0]?.ID;
+            const currentYear = planResult.recordset[0]?.PlanYear || new Date().getFullYear();
+
+
+            const request = this.pool.request();
+            request.input('currentPlanId', sql.Int, currentPlanId);
+
+            // Main query to categorize all active animals
             const query = `
                 SELECT 
-                    Medicine,
-                    ApplicationMethod,
-                    IsImmunization
-                FROM Medicines 
-                ORDER BY Medicine ASC`;
+                    c.CowTag,
+                    c.Sex,
+                    c.DateOfBirth,
+                    c.Description,
+                    c.CurrentHerd,
+                    c.Castrated,
+                    c.Status,
+                    DATEDIFF(month, c.DateOfBirth, GETDATE()) AS AgeInMonths,
+                    CASE WHEN wr.ID IS NOT NULL THEN 1 ELSE 0 END AS HasWeaningRecord,
+                    CASE WHEN br.ID IS NOT NULL THEN 1 ELSE 0 END AS HasCurrentBreedingRecord,
+                    CASE 
+                        -- Bulls: Male and not castrated (Castrated = 0 or NULL)
+                        WHEN (c.Sex = 'Bull' OR (c.Sex = 'Male' AND (c.Castrated IS NULL OR c.Castrated = 0))) THEN 'bull'
+                        
+                        -- Female categorization
+                        WHEN c.Sex = 'Female' THEN
+                            CASE 
+                                -- Calves: Female, < 12 months, no weaning record
+                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) < 12 AND wr.ID IS NULL THEN 'calf'
+                                
+                                -- Yearlings: Female, < 24 months, AND (> 12 months OR has weaning record)
+                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) < 24 
+                                    AND (DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 12 OR wr.ID IS NOT NULL) THEN 'yearling'
+                                
+                                -- Assigned cows: Female, >= 24 months, has breeding record for current plan
+                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 24 AND br.ID IS NOT NULL THEN 'assigned-cow'
+                                
+                                -- Unassigned cows: Female, >= 24 months, no breeding record for current plan
+                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 24 AND br.ID IS NULL THEN 'unassigned-cow'
+                                
+                                ELSE 'unknown-female'
+                            END
+                        ELSE 'other'
+                    END AS Category
+                FROM CowTable c
+                LEFT JOIN WeaningRecords wr ON c.CowTag = wr.CowTag
+                LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @currentPlanId
+                WHERE ${STATUS_ACTIVE}
+                ORDER BY c.CowTag`;
 
             const result = await request.query(query);
             
+            
+            // Group results by category
+            const categorized = {
+                bulls: [],
+                calfs: [],
+                yearlings: [],
+                'assigned-cow': [],
+                'unassigned-cows': []
+            };
+
+            result.recordset.forEach(animal => {
+                const category = animal.Category;
+
+                if (category === 'bull') {
+                    categorized.bulls.push(animal);
+                } else if (category === 'calf') {
+                    categorized.calfs.push(animal);
+                } else if (category === 'yearling') {
+                    categorized.yearlings.push(animal);
+                } else if (category === 'assigned-cow') {
+                    categorized['assigned-cow'].push(animal);
+                } else if (category === 'unassigned-cow') {
+                    categorized['unassigned-cows'].push(animal);
+                }
+            });
+
+            // console.log('Categorized results:', {
+            //     bulls: categorized.bulls.length,
+            //     calfs: categorized.calfs.length,
+            //     yearlings: categorized.yearlings.length,
+            //     'assigned-cow': categorized['assigned-cow'].length,
+            //     'unassigned-cows': categorized['unassigned-cows'].length
+            // });
+
             return {
-                success: true,
-                medicines: result.recordset
+                currentPlanYear: currentYear,
+                currentPlanId: currentPlanId,
+                bulls: categorized.bulls,
+                calfs: categorized.calfs,
+                yearlings: categorized.yearlings,
+                'assigned-cow': categorized['assigned-cow'],
+                'unassigned-cows': categorized['unassigned-cows']
             };
         } catch (error) {
-            console.error('Error fetching medicines:', error);
-            throw new Error(`Failed to fetch medicines: ${error.message}`);
+            console.error('Error fetching breeding animal status:', error);
+            throw error;
         }
     }
 
-    /**
-     * Add a new medicine
-     */
-    async addMedicine(params) {
-        const { medicine, applicationMethod, isImmunization } = params;
+    async findBreedingRecordForDam(damTag, breedingYear) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('medicine', sql.NVarChar, medicine);
-            request.input('applicationMethod', sql.NVarChar, applicationMethod);
-            request.input('isImmunization', sql.Bit, isImmunization);
+            request.input('damTag', sql.NVarChar, damTag);
+            request.input('breedingYear', sql.Int, breedingYear);
+            // console.log(`Binding damTag: [${damTag}] length: ${damTag.length}`);
+            // console.log(`Binding breedingYear: [${breedingYear}]`);
 
             const query = `
-                INSERT INTO Medicines (Medicine, ApplicationMethod, IsImmunization)
-                VALUES (@medicine, @applicationMethod, @isImmunization)`;
-
-            const result = await request.query(query);
+            SELECT TOP 1 br.ID
+            FROM BreedingRecords br
+            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+            WHERE br.CowTag = @damTag AND bp.PlanYear = @breedingYear
+            ORDER BY br.ExposureStartDate DESC`;
             
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Medicine added successfully'
-            };
+            const result = await request.query(query);
+            // console.log("findBreedingRecordForDam returned:", { result });
+            return result.recordset[0]?.ID || null;
         } catch (error) {
-            console.error('Error adding medicine:', error);
-            throw new Error(`Failed to add medicine: ${error.message}`);
+            console.error('Error finding breeding record:', error);
+            return null;
         }
     }
 
+    async assignBreedingRecords(params) {
+        const { planId, primaryBull, cowTags, exposureStartDate, exposureEndDate, cleanupBull, pasture } = params;
+        await this.ensureConnection();
 
-    /**
-     * Update cow weight
-     * @param {Object} params - { cowTag, weight }
-     */
-    async updateCowWeight(params) {
-        const { cowTag, weight } = params;
+        try {
+            const results = [];
+
+            for (const cowTag of cowTags) {
+                const request = this.pool.request();
+                request.input('planId', sql.Int, planId);
+                request.input('cowTag', sql.NVarChar, cowTag);
+                request.input('primaryBull', sql.NVarChar, primaryBull);
+                request.input('cleanupBull', sql.NVarChar, cleanupBull || null);
+                request.input('exposureStartDate', sql.DateTime, new Date(exposureStartDate));
+                request.input('exposureEndDate', sql.DateTime, new Date(exposureEndDate));
+                request.input('pasture', sql.NVarChar, pasture || null);
+                request.input('isAI', sql.Bit, false); // Default to natural breeding
+
+                const query = `
+                    INSERT INTO BreedingRecords (
+                        PlanID, CowTag, PrimaryBulls, CleanupBulls, IsAI, 
+                        ExposureStartDate, ExposureEndDate, Pasture
+                    ) VALUES (
+                        @planId, @cowTag, @primaryBull, @cleanupBull, @isAI,
+                        @exposureStartDate, @exposureEndDate, @pasture
+                    )`;
+
+                await request.query(query);
+                results.push({ cowTag, success: true });
+            }
+
+            return { success: true, results, assignedCount: results.length };
+        } catch (error) {
+            console.error('Error assigning breeding records:', error);
+            throw error;
+        }
+    }
+
+    async updateBreedingStatus(cowTag, value, breedingYear) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
             request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('weight', sql.Float, weight);
+            request.input('breedingYear', sql.Int, breedingYear);
+            request.input('isPregnant', sql.Bit, value === 'Pregnant');
 
-            const query = `
-                UPDATE CowTable 
-                SET CurrentWeight = @weight
-                WHERE CowTag = @cowTag`;
+            // Find breeding record for the specific plan year
+            const breedingQuery = `
+            SELECT TOP 1 br.ID 
+            FROM BreedingRecords br
+            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+            WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear
+            ORDER BY br.ExposureStartDate DESC`;
+            
+            const breedingResult = await request.query(breedingQuery);
 
-            const result = await request.query(query);
-
-            if (result.rowsAffected[0] === 0) {
-                throw new Error('Cow not found');
+            if (breedingResult.recordset.length === 0) {
+                throw new Error(`No breeding record found for ${cowTag} in year ${breedingYear}`);
             }
 
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Weight updated successfully'
-            };
+            const breedingRecordId = breedingResult.recordset[0].ID;
+
+            if (value === 'Pregnant' || value === 'Open') {
+                // Update or insert pregnancy check without EventID
+                const mergeRequest = this.pool.request();
+                mergeRequest.input('cowTag', sql.NVarChar, cowTag);
+                mergeRequest.input('breedingRecordId', sql.Int, breedingRecordId);
+                mergeRequest.input('isPregnant', sql.Bit, value === 'Pregnant');
+
+                const mergeQuery = `
+                MERGE PregancyCheck AS target
+                USING (SELECT @cowTag AS CowTag, @breedingRecordId AS BreedingRecordID) AS source
+                ON (target.CowTag = source.CowTag AND target.BreedingRecordID = source.BreedingRecordID)
+                WHEN MATCHED THEN
+                    UPDATE SET IsPregnant = @isPregnant, PregCheckDate = GETDATE()
+                WHEN NOT MATCHED THEN
+                    INSERT (CowTag, BreedingRecordID, IsPregnant, PregCheckDate, EventID)
+                    VALUES (@cowTag, @breedingRecordId, @isPregnant, GETDATE(), NULL);`;
+
+                await mergeRequest.query(mergeQuery);
+            }
+
+            return { success: true };
         } catch (error) {
-            console.error('Error updating cow weight:', error);
-            throw new Error(`Failed to update cow weight: ${error.message}`);
+            console.error('Error updating breeding status:', error);
+            throw error;
         }
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //              BREEDING RECORDS  //////////////////////////////////////////////////////////////////////////////////////////
 
     /**
      * Get breeding candidates for pregnancy check
@@ -811,8 +1709,8 @@ class DatabaseOperations {
             const query = `
             SELECT DISTINCT 
                 c.CowTag,
-                br.PrimaryBull,
-                br.CleanupBull,
+                br.PrimaryBulls,
+                br.CleanupBulls,
                 br.ExposureStartDate,
                 br.ExposureEndDate,
                 CASE WHEN pc.ID IS NULL THEN 0 ELSE 1 END AS HasPregCheck
@@ -854,21 +1752,16 @@ class DatabaseOperations {
                 if (brResult.recordset.length === 0) continue;
                 const breedingRecordId = brResult.recordset[0].ID;
 
-                // Handle weight properly - create WeightRecord if weight provided
+                // Create WeightRecord if weight provided
                 let weightRecordId = null;
                 if (record.weight) {
-                    const weightRequest = this.pool.request();
-                    weightRequest.input('cowTag', sql.NVarChar, record.cowTag);
-                    weightRequest.input('weight', sql.Int, parseInt(record.weight));
-                    weightRequest.input('timeRecorded', sql.DateTime, new Date(date));
-                    weightRequest.input('eventId', sql.Int, eventId);
-
-                    const weightQuery = `
-                    INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, EventID)
-                    OUTPUT INSERTED.ID
-                    VALUES (@cowTag, @weight, @timeRecorded, @eventId)`;
-                    const weightResult = await weightRequest.query(weightQuery);
-                    weightRecordId = weightResult.recordset[0].ID;
+                    const result = await this.createWeightRecord({
+                        cowTag: record.cowTag,
+                        weight: record.weight,
+                        date: date,
+                        eventId: eventId
+                    });
+                    weightRecordId = result.recordId;
                 }
 
                 const pcRequest = this.pool.request();
@@ -916,7 +1809,7 @@ class DatabaseOperations {
             const query = `
             SELECT 
                 c.CowTag,
-                COALESCE(br.PrimaryBull, br.CleanupBull) AS Bull,
+                COALESCE(br.PrimaryBulls, br.CleanupBulls) AS Bull,
                 CASE 
                     WHEN pc.IsPregnant = 1 THEN 'Pregnant'
                     WHEN pc.IsPregnant = 0 THEN 'Open'
@@ -1256,151 +2149,8 @@ class DatabaseOperations {
         }
     }
 
-    /**
-     * Add cow with calf-specific handling
-     * Enhanced to handle twins and calving records
-     */
-    async addCowWithCalfHandling(params) {
-        const {
-            // Basic cow data
-            cowTag, dateOfBirth, description, dam, sire, sex, status,
-            currentHerd, breed, temperament, regCert, regCertNumber,
-            birthweight, birthweightClass, targetPrice, origin,
-            // Calf-specific
-            isNewCalf, breedingYear, createCalvingRecord, calvingNotes,
-            // Twins
-            twins, twinData
-        } = params;
 
-        await this.ensureConnection();
 
-        try {
-            const transaction = this.pool.transaction();
-            await transaction.begin();
-
-            try {
-                // Add primary calf
-                const request = new sql.Request(transaction);
-                request.input('cowTag', sql.NVarChar, cowTag);
-                request.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
-                request.input('description', sql.NVarChar, description || null);
-                request.input('dam', sql.NVarChar, dam || null);
-                request.input('sire', sql.NVarChar, sire || null);
-                request.input('sex', sql.NVarChar, sex || null);
-                request.input('status', sql.NVarChar, status || 'Current');
-                request.input('currentHerd', sql.NVarChar, currentHerd || null);
-                request.input('breed', sql.NVarChar, breed || null);
-                request.input('temperament', sql.NVarChar, temperament || null);
-                request.input('regCert', sql.NVarChar, regCert || null);
-                request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
-                request.input('birthweight', sql.NVarChar, birthweight || null);
-                request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
-                request.input('targetPrice', sql.Money, targetPrice || null);
-                request.input('origin', sql.NVarChar, origin || null);
-
-                const insertQuery = `
-                    INSERT INTO CowTable (
-                        CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
-                        Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
-                        Birthweight, BirthweightClass, TargetPrice, Origin
-                    ) VALUES (
-                        @cowTag, @dateOfBirth, @description, @dam, @sire,
-                        @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
-                        @birthweight, @birthweightClass, @targetPrice, @origin
-                    )`;
-                await request.query(insertQuery);
-
-                let calvingRecordCreated = false;
-                let twinCalvingRecordCreated = false;
-
-                // Create calving record if requested
-                if (createCalvingRecord && dam && breedingYear) {
-                    const breedingRecordId = await this.findBreedingRecordForDam(dam, breedingYear);
-                    
-                    if (breedingRecordId) {
-                        const calvingRequest = new sql.Request(transaction);
-                        calvingRequest.input('breedingRecordId', sql.Int, breedingRecordId);
-                        calvingRequest.input('isTagged', sql.Bit, true);
-                        calvingRequest.input('calfTag', sql.NVarChar, cowTag);
-                        calvingRequest.input('damTag', sql.NVarChar, dam);
-                        calvingRequest.input('birthDate', sql.DateTime, dateOfBirth || new Date());
-                        calvingRequest.input('calfSex', sql.NVarChar, sex);
-                        calvingRequest.input('notes', sql.NVarChar(sql.MAX), calvingNotes || null);
-                        calvingRequest.input('birthOrder', sql.Int, 1);
-                        calvingRequest.input('calfDied', sql.Bit, false);
-                        calvingRequest.input('damDied', sql.Bit, false);
-
-                        const calvingQuery = `
-                            INSERT INTO CalvingRecords (
-                                BreedingRecordID, IsTagged, CalfTag, DamTag, BirthDate, 
-                                CalfSex, CalvingNotes, BirthOrder, CalfDiedAtBirth, DamDiedAtBirth
-                            ) VALUES (
-                                @breedingRecordId, @isTagged, @calfTag, @damTag, @birthDate,
-                                @calfSex, @notes, @birthOrder, @calfDied, @damDied
-                            )`;
-                        await calvingRequest.query(calvingQuery);
-                        calvingRecordCreated = true;
-
-                        // Handle twin if provided
-                        if (twins && twinData && twinData.cowTag) {
-                            // Add twin cow
-                            const twinCowRequest = new sql.Request(transaction);
-                            twinCowRequest.input('cowTag', sql.NVarChar, twinData.cowTag);
-                            twinCowRequest.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
-                            twinCowRequest.input('description', sql.NVarChar, twinData.description || null);
-                            twinCowRequest.input('dam', sql.NVarChar, dam);
-                            twinCowRequest.input('sire', sql.NVarChar, sire);
-                            twinCowRequest.input('sex', sql.NVarChar, twinData.sex || sex);
-                            twinCowRequest.input('status', sql.NVarChar, status || 'Current');
-                            twinCowRequest.input('currentHerd', sql.NVarChar, currentHerd || null);
-                            twinCowRequest.input('breed', sql.NVarChar, breed || null);
-                            twinCowRequest.input('temperament', sql.NVarChar, temperament || null);
-                            twinCowRequest.input('regCert', sql.NVarChar, regCert || null);
-
-                            await twinCowRequest.query(insertQuery.replace(/@cowTag/g, '@cowTag')
-                                .replace(/@description/g, '@description')
-                                .replace(/@sex/g, '@sex'));
-
-                            // Create twin calving record
-                            const twinCalvingRequest = new sql.Request(transaction);
-                            twinCalvingRequest.input('breedingRecordId', sql.Int, breedingRecordId);
-                            twinCalvingRequest.input('isTagged', sql.Bit, true);
-                            twinCalvingRequest.input('calfTag', sql.NVarChar, twinData.cowTag);
-                            twinCalvingRequest.input('damTag', sql.NVarChar, dam);
-                            twinCalvingRequest.input('birthDate', sql.DateTime, dateOfBirth || new Date());
-                            twinCalvingRequest.input('calfSex', sql.NVarChar, twinData.sex || sex);
-                            twinCalvingRequest.input('notes', sql.NVarChar(sql.MAX), twinData.calvingNotes || null);
-                            twinCalvingRequest.input('birthOrder', sql.Int, 2);
-                            twinCalvingRequest.input('calfDied', sql.Bit, false);
-                            twinCalvingRequest.input('damDied', sql.Bit, false);
-
-                            await twinCalvingRequest.query(calvingQuery);
-                            twinCalvingRecordCreated = true;
-                        }
-                    }
-                }
-
-                await transaction.commit();
-
-                return {
-                    success: true,
-                    cowTag,
-                    twinTag: twins ? twinData?.cowTag : null,
-                    calvingRecordCreated,
-                    twinCalvingRecordCreated,
-                    message: 'Animal(s) added successfully'
-                };
-            } catch (error) {
-                await transaction.rollback();
-                throw error;
-            }
-        } catch (error) {
-            console.error('Error adding cow with calf handling:', error);
-            throw error;
-        }
-    }
-    
-    
     /**
      * Record batch weights
      * @param {Object} params - { date, records: [{ cowTag, weight, notes }] }
@@ -1444,94 +2194,11 @@ class DatabaseOperations {
         }
     }
 
-    /**
-     * Get dropdown options for forms
-     */
-    async getFormDropdownData() {
-        await this.ensureConnection();
 
-        try {
-            const queries = {
-                breeds: `SELECT Breed FROM Breed ORDER BY Breed`,
-                temperaments: `SELECT Temperament FROM Temperament ORDER BY Temperament`,
-                statuses: `SELECT Status FROM Status ORDER BY Status`,
-                sexes: `SELECT Sex FROM Sex ORDER BY Sex`,
-                regCerts: `SELECT RegCertStatus FROM RegCert ORDER BY RegCertStatus`
-            };
 
-            const results = {};
-            for (const [key, query] of Object.entries(queries)) {
-                const result = await this.pool.request().query(query);
-                results[key] = result.recordset.map(r => Object.values(r)[0]);
-            }
-
-            return results;
-        } catch (error) {
-            console.error('Error fetching dropdown data:', error);
-            throw new Error(`Failed to fetch dropdown data: ${error.message}`);
-        }
-    }
 
     /**
-     * Add new cow with all fields for AddAnimal form
-     * @param {Object} params - All CowTable fields
-     */
-    async addCow(params) {
-        const {
-            cowTag, dateOfBirth, description, dam, sire, sex, status,
-            currentHerd, breed, temperament, regCert, regCertNumber,
-            birthweight, birthweightClass, targetPrice, origin
-        } = params;
-
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('dateOfBirth', sql.DateTime, dateOfBirth || null);
-            request.input('description', sql.NVarChar, description || null);
-            request.input('dam', sql.NVarChar, dam || null);
-            request.input('sire', sql.NVarChar, sire || null);
-            request.input('sex', sql.NVarChar, sex || null);
-            request.input('status', sql.NVarChar, status || 'Current');
-            request.input('currentHerd', sql.NVarChar, currentHerd || null);
-            request.input('breed', sql.NVarChar, breed || null);
-            request.input('temperament', sql.NVarChar, temperament || null);
-            request.input('regCert', sql.NVarChar, regCert || null);
-            request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
-            request.input('birthweight', sql.NVarChar, birthweight || null);
-            request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
-            request.input('targetPrice', sql.Money, targetPrice || null);
-            request.input('origin', sql.NVarChar, origin || null);
-
-            const query = `
-                INSERT INTO CowTable (
-                    CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
-                    Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
-                    Birthweight, BirthweightClass, TargetPrice, SaleRecordID, Origin
-                ) VALUES (
-                    @cowTag, @dateOfBirth, @description, @dam, @sire,
-                    @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
-                    @birthweight, @birthweightClass, @targetPrice, NULL, @origin
-                )`;
-
-            const result = await request.query(query);
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Cow added successfully'
-            };
-        } catch (error) {
-            console.error('Error adding cow:', error);
-            if (error.number === 2627) {
-                throw new Error('Cow with this tag already exists');
-            }
-            throw new Error(`Failed to add cow: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all cows (with pagination)
+     * Get all cows
      * @param {Object} params - { page, limit, search }
      */
     async getAllCows(params) {
@@ -1547,7 +2214,7 @@ class DatabaseOperations {
 
             const query = `
                 SELECT 
-                    CowTag, DateOfBirth, CurrentWeight, Description,
+                    CowTag, DateOfBirth, {CurrentWeight:GetCurrentWeight}, Description,
                     [Dam (Mother)] AS Dam, [Sire (Father)] AS Sire,
                     CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
                 FROM CowTable
@@ -1582,6 +2249,78 @@ class DatabaseOperations {
         }
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //                  HERD MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Set a cow's herd
+     */
+    async setHerd(params) {
+        const { cowTag, herdName } = params;
+        await this.ensureConnection();
+
+        try {
+            // Update cow's herd
+            const result = await this.pool.request()
+                .input('cowTag', sql.NVarChar, cowTag)
+                .input('herdName', sql.NVarChar, herdName)
+                .query('UPDATE CowTable SET CurrentHerd = @herdName WHERE CowTag = @cowTag');
+
+            if (result.rowsAffected[0] === 0) {
+                throw new Error('Cow or Herd not found');
+            }
+
+            // Record in HerdMembershipHistory
+            const historyRequest = this.pool.request();
+            historyRequest.input('herdName', sql.NVarChar, herdName);
+            historyRequest.input('cowTag', sql.NVarChar, cowTag);
+            historyRequest.input('dateJoined', sql.DateTime, new Date());
+            const historyQuery = `
+                INSERT INTO HerdMembershipHistory (HerdName, CowTag, DateJoined)
+                VALUES (@herdName, @cowTag, @dateJoined)`;
+            await historyRequest.query(historyQuery);
+
+            return { success: true, message: 'Herd updated successfully' };
+        } catch (error) {
+            console.error('Error setting herd:', error);
+            throw new Error(`Failed to set herd: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get all herd names
+     */
     async getAllHerds() {
         await this.ensureConnection();
 
@@ -1593,30 +2332,6 @@ class DatabaseOperations {
             console.error('Error fetching herds:', error);
             throw new Error(`Failed to fetch herds: ${error.message}`);
         }
-    }
-
-    async setHerd(params) {
-        const { cowTag, herdName } = params;
-        // Validate herd exists first
-        const herdCheck = await this.pool.request()
-            .input('herdName', sql.NVarChar, herdName)
-            .query('SELECT COUNT(*) as Count FROM Herds WHERE HerdName = @herdName');
-
-        if (herdCheck.recordset[0].Count === 0) {
-            throw new Error(`Herd '${herdName}' does not exist`);
-        }
-
-        // Update cow's herd
-        const result = await this.pool.request()
-            .input('cowTag', sql.NVarChar, cowTag)
-            .input('herdName', sql.NVarChar, herdName)
-            .query('UPDATE CowTable SET CurrentHerd = @herdName WHERE CowTag = @cowTag');
-
-        if (result.rowsAffected[0] === 0) {
-            throw new Error('Cow not found');
-        }
-
-        return { success: true, message: 'Herd updated successfully' };
     }
 
     /**
@@ -1853,476 +2568,6 @@ class DatabaseOperations {
      * @param {Object} params - { herdName, feedType, activityType, wasEmpty?, username }
      */
     async recordFeedActivity(params) {
-        const { herdName, feedType, activityType, wasEmpty, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // Get herd's current pasture
-            const herdRequest = this.pool.request();
-            herdRequest.input('herdName', sql.NVarChar, herdName);
-            const herdQuery = `SELECT CurrentPasture FROM Herds WHERE HerdName = @herdName`;
-            const herdResult = await herdRequest.query(herdQuery);
-
-            if (herdResult.recordset.length === 0) {
-                throw new Error(`Herd '${herdName}' not found`);
-            }
-
-            const pastureName = herdResult.recordset[0].CurrentPasture;
-            if (!pastureName) {
-                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
-            }
-
-            const now = new Date();
-
-            // If this is a refill activity, create two records
-            if (activityType === "refilled") {
-                // First record: empty/not empty status
-                const statusRequest = this.pool.request();
-                statusRequest.input('pasture', sql.NVarChar, pastureName);
-                statusRequest.input('dateCompleted', sql.DateTime, now);
-                statusRequest.input('username', sql.NVarChar, username);
-                statusRequest.input('feedType', sql.NVarChar, feedType);
-                statusRequest.input('wasRefilled', sql.Bit, false);
-                statusRequest.input('wasEmpty', sql.Bit, wasEmpty);
-
-                const statusQuery = `
-                    INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty)
-                    VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty)`;
-                await statusRequest.query(statusQuery);
-
-                // Second record: refill action
-                const refillRequest = this.pool.request();
-                refillRequest.input('pasture', sql.NVarChar, pastureName);
-                refillRequest.input('dateCompleted', sql.DateTime, now);
-                refillRequest.input('username', sql.NVarChar, username);
-                refillRequest.input('feedType', sql.NVarChar, feedType);
-                refillRequest.input('wasRefilled', sql.Bit, true);
-                refillRequest.input('wasEmpty', sql.Bit, false);
-
-                const refillQuery = `
-                    INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty)
-                    VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty)`;
-                await refillRequest.query(refillQuery);
-
-            } else {
-                // Single record for check activities
-                const isEmpty = activityType === "checked_empty";
-
-                const request = this.pool.request();
-                request.input('pasture', sql.NVarChar, pastureName);
-                request.input('dateCompleted', sql.DateTime, now);
-                request.input('username', sql.NVarChar, username);
-                request.input('feedType', sql.NVarChar, feedType);
-                request.input('wasRefilled', sql.Bit, false);
-                request.input('wasEmpty', sql.Bit, isEmpty);
-
-                const query = `
-                    INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty)
-                    VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty)`;
-                await request.query(query);
-            }
-
-            return {
-                success: true,
-                message: 'Feed activity recorded successfully'
-            };
-        } catch (error) {
-            console.error('Error recording feed activity:', error);
-            throw new Error(`Failed to record feed activity: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all animals in a specific herd
-     * @param {Object} params - { herdName }
-     */
-    async getHerdAnimals(params) {
-        const { herdName } = params;
-        await this.ensureConnection();
-
-        try {
-            // Get cows
-            const cowsRequest = this.pool.request();
-            cowsRequest.input('herdName', sql.NVarChar, herdName);
-            const cowsQuery = `
-                SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
-                    CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
-                FROM CowTable 
-                WHERE CurrentHerd = @herdName
-                ORDER BY CowTag`;
-            const cowsResult = await cowsRequest.query(cowsQuery);
-
-            // Get goats  
-            const goatsRequest = this.pool.request();
-            goatsRequest.input('herdName', sql.NVarChar, herdName);
-            const goatsQuery = `
-                SELECT GoatTag AS CowTag, NULL AS DOB, NULL AS Sex, NULL AS Status, NULL AS Description,
-                    NULL AS FormattedDOB
-                FROM Goats 
-                WHERE Herd = @herdName
-                ORDER BY GoatTag`;
-            const goatsResult = await goatsRequest.query(goatsQuery);
-
-            // Combine results
-            const animals = [
-                ...cowsResult.recordset,
-                ...goatsResult.recordset
-            ];
-
-            return { animals };
-        } catch (error) {
-            console.error('Error fetching herd animals:', error);
-            throw new Error(`Failed to fetch herd animals: ${error.message}`);
-        }
-    }
-
-    /**
-     * Move herd to a new pasture
-     * @param {Object} params - { herdName, newPastureName, username }
-     */
-    async moveHerdToPasture(params) {
-        const { herdName, newPastureName, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // Verify herd exists
-            const herdCheckRequest = this.pool.request();
-            herdCheckRequest.input('herdName', sql.NVarChar, herdName);
-            const herdCheckQuery = `SELECT COUNT(*) as Count FROM Herds WHERE HerdName = @herdName`;
-            const herdCheckResult = await herdCheckRequest.query(herdCheckQuery);
-
-            if (herdCheckResult.recordset[0].Count === 0) {
-                throw new Error(`Herd '${herdName}' not found`);
-            }
-
-            // Verify pasture exists
-            const pastureCheckRequest = this.pool.request();
-            pastureCheckRequest.input('pastureName', sql.NVarChar, newPastureName);
-            const pastureCheckQuery = `SELECT COUNT(*) as Count FROM Pastures WHERE PastureName = @pastureName`;
-            const pastureCheckResult = await pastureCheckRequest.query(pastureCheckQuery);
-
-            if (pastureCheckResult.recordset[0].Count === 0) {
-                throw new Error(`Pasture '${newPastureName}' not found`);
-            }
-
-            // Update herd's current pasture
-            const updateRequest = this.pool.request();
-            updateRequest.input('herdName', sql.NVarChar, herdName);
-            updateRequest.input('newPasture', sql.NVarChar, newPastureName);
-            const updateQuery = `UPDATE Herds SET CurrentPasture = @newPasture WHERE HerdName = @herdName`;
-            await updateRequest.query(updateQuery);
-
-            // Record the movement
-            const movementRequest = this.pool.request();
-            movementRequest.input('dateRecorded', sql.DateTime, new Date());
-            movementRequest.input('herd', sql.NVarChar, herdName);
-            movementRequest.input('newPasture', sql.NVarChar, newPastureName);
-            const movementQuery = `
-                INSERT INTO HerdMovementRecords (DateRecorded, Herd, NewPasture)
-                VALUES (@dateRecorded, @herd, @newPasture)`;
-            await movementRequest.query(movementQuery);
-
-            return {
-                success: true,
-                message: 'Herd moved successfully'
-            };
-        } catch (error) {
-            console.error('Error moving herd:', error);
-            throw new Error(`Failed to move herd: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all available pastures
-     */
-    async getAllPastures() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
-            const result = await this.pool.request().query(query);
-            return {
-                pastures: result.recordset.map(row => row.PastureName)
-            };
-        } catch (error) {
-            console.error('Error fetching pastures:', error);
-            throw new Error(`Failed to fetch pastures: ${error.message}`);
-        }
-    }
-
-    async setHerd(params) {
-        const { cowTag, herdName } = params;
-        await this.ensureConnection();
-
-        try {
-            // Validate herd exists first
-            const herdCheck = await this.pool.request()
-                .input('herdName', sql.NVarChar, herdName)
-                .query('SELECT COUNT(*) as Count FROM Herds WHERE HerdName = @herdName');
-
-            if (herdCheck.recordset[0].Count === 0) {
-                throw new Error(`Herd '${herdName}' does not exist`);
-            }
-
-            // Update cow's herd
-            const result = await this.pool.request()
-                .input('cowTag', sql.NVarChar, cowTag)
-                .input('herdName', sql.NVarChar, herdName)
-                .query('UPDATE CowTable SET CurrentHerd = @herdName WHERE CowTag = @cowTag');
-
-            if (result.rowsAffected[0] === 0) {
-                throw new Error('Cow not found');
-            }
-
-            // Record in HerdMembershipHistory
-            const historyRequest = this.pool.request();
-            historyRequest.input('herdName', sql.NVarChar, herdName);
-            historyRequest.input('cowTag', sql.NVarChar, cowTag);
-            historyRequest.input('dateJoined', sql.DateTime, new Date());
-            const historyQuery = `
-                INSERT INTO HerdMembershipHistory (HerdName, CowTag, DateJoined)
-                VALUES (@herdName, @cowTag, @dateJoined)`;
-            await historyRequest.query(historyQuery);
-
-            return { success: true, message: 'Herd updated successfully' };
-        } catch (error) {
-            console.error('Error setting herd:', error);
-            throw new Error(`Failed to set herd: ${error.message}`);
-        }
-    }
-
-    async getHerdEvents(params) {
-        const { herdName } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('herdName', sql.NVarChar, herdName);
-
-            const query = `
-            SELECT 'movement' AS eventType, DateRecorded AS dateRecorded, 
-                   CONCAT('Herd moved to ', NewPasture) AS description, NULL AS notes, NULL AS username
-            FROM HerdMovementRecords 
-            WHERE Herd = @herdName
-            
-            UNION ALL
-            
-            SELECT 'membership' AS eventType, DateJoined AS dateRecorded,
-                   CONCAT('Added ', CowTag, ' to herd') AS description, NULL AS notes, NULL AS username
-            FROM HerdMembershipHistory
-            WHERE HerdName = @herdName
-            
-            ORDER BY dateRecorded DESC`;
-
-            const result = await request.query(query);
-            return { events: result.recordset };
-        } catch (error) {
-            console.error('Error fetching herd events:', error);
-            throw error;
-        }
-    }
-
-    async addHerdEvent(params) {
-        const { herdName, eventType, description, notes, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // For now, just add to Events table with generic entry
-            const request = this.pool.request();
-            request.input('eventDate', sql.DateTime, new Date());
-            request.input('description', sql.NVarChar, `${herdName}: ${description}`);
-
-            const query = `INSERT INTO Events (EventDate, Description) VALUES (@eventDate, @description)`;
-            const result = await request.query(query);
-
-            return { success: true, rowsAffected: result.rowsAffected[0] };
-        } catch (error) {
-            console.error('Error adding herd event:', error);
-            throw error;
-        }
-    }
-
-    async getPastureMaintenanceEvents(params) {
-        const { pastureName } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('pastureName', sql.NVarChar, pastureName);
-
-            const query = `
-            SELECT DateCompleted, TargetOfMainenance, ActionPerformed, 
-                   NeedsFollowUp, Username, FollowingUpOnID
-            FROM PastureMaintenanceRecords 
-            WHERE Pasture = @pastureName
-            ORDER BY DateCompleted DESC`;
-
-            const result = await request.query(query);
-            return { maintenanceRecords: result.recordset };
-        } catch (error) {
-            console.error('Error fetching pasture maintenance events:', error);
-            throw error;
-        }
-    }
-
-    async addPastureMaintenanceEvent(params) {
-        const { pastureName, targetOfMaintenance, actionPerformed, needsFollowUp, username } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('pasture', sql.NVarChar, pastureName);
-            request.input('dateCompleted', sql.DateTime, new Date());
-            request.input('username', sql.NVarChar, username);
-            request.input('targetOfMaintenance', sql.NVarChar, targetOfMaintenance);
-            request.input('actionPerformed', sql.NVarChar(sql.MAX), actionPerformed);
-            request.input('needsFollowUp', sql.Bit, needsFollowUp);
-
-            const query = `
-            INSERT INTO PastureMaintenanceRecords 
-            (Pasture, DateCompleted, Username, TargetOfMainenance, ActionPerformed, NeedsFollowUp)
-            VALUES (@pasture, @dateCompleted, @username, @targetOfMaintenance, @actionPerformed, @needsFollowUp)`;
-
-            const result = await request.query(query);
-            return { success: true, rowsAffected: result.rowsAffected[0] };
-        } catch (error) {
-            console.error('Error adding pasture maintenance event:', error);
-            throw error;
-        }
-    }
-
-    async createHerd(params) {
-        const { herdName, cows, currentPasture } = params;
-        await this.ensureConnection();
-
-        try {
-            // Create herd
-            const herdRequest = this.pool.request();
-            herdRequest.input('herdName', sql.NVarChar, herdName);
-            herdRequest.input('currentPasture', sql.NVarChar, currentPasture);
-
-            const herdQuery = `INSERT INTO Herds (HerdName, CurrentPasture) VALUES (@herdName, @currentPasture)`;
-            await herdRequest.query(herdQuery);
-
-            // Move cows to new herd
-            if (cows && cows.length > 0) {
-                for (const cowTag of cows) {
-                    await this.setHerd({ cowTag, herdName });
-                }
-            }
-
-            return { success: true, herdName };
-        } catch (error) {
-            console.error('Error creating herd:', error);
-            throw error;
-        }
-    }
-
-    async batchMoveCows(params) {
-        const { cowTags, targetHerd, sourceHerd } = params;
-        await this.ensureConnection();
-
-        try {
-            const results = [];
-            for (const cowTag of cowTags) {
-                const result = await this.setHerd({ cowTag, herdName: targetHerd });
-                results.push(result);
-            }
-
-            return { success: true, movedCount: results.length };
-        } catch (error) {
-            console.error('Error batch moving cows:', error);
-            throw error;
-        }
-    }
-
-    async getCowsByHerd() {
-        await this.ensureConnection();
-
-        try {
-            const query = `
-            SELECT CowTag, DateOfBirth, CurrentHerd, Sex, Status, Description
-            FROM CowTable 
-            WHERE CowTag IS NOT NULL
-            ORDER BY CurrentHerd, CowTag`;
-
-            const result = await this.pool.request().query(query);
-            return { cows: result.recordset };
-        } catch (error) {
-            console.error('Error fetching cows by herd:', error);
-            throw error;
-        }
-    }
-
-    async getUserPreferences(params) {
-        const { username } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('username', sql.NVarChar, username);
-
-            const query = `SELECT Preferences FROM Users WHERE Username = @username`;
-            const result = await request.query(query);
-
-            let preferences;
-
-            if (result.recordset.length === 0 || !result.recordset[0].Preferences) {
-                // No preferences exist - create default with all feeds
-                const allFeedsResult = await this.getAllFeedTypes();
-                const defaultPreferences = {
-                    shownFeeds: allFeedsResult.feedTypes
-                };
-
-                // Save the defaults to database
-                await this.updateUserPreferences({ username, preferences: defaultPreferences });
-
-                return { preferences: defaultPreferences };
-            }
-
-            const preferencesJson = result.recordset[0].Preferences;
-            preferences = JSON.parse(preferencesJson);
-
-            // If shownFeeds is empty, populate with all available feeds
-            if (!preferences.shownFeeds || preferences.shownFeeds.length === 0) {
-                const allFeedsResult = await this.getAllFeedTypes();
-                preferences.shownFeeds = allFeedsResult.feedTypes;
-
-                // Save the updated preferences
-                await this.updateUserPreferences({ username, preferences });
-            }
-
-            return { preferences };
-        } catch (error) {
-            console.error('Error fetching user preferences:', error);
-            throw error;
-        }
-    }
-
-    async updateUserPreferences(params) {
-        const { username, preferences } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('username', sql.NVarChar, username);
-            request.input('preferences', sql.NVarChar(sql.MAX), JSON.stringify(preferences));
-
-            const query = `
-            IF EXISTS (SELECT 1 FROM Users WHERE Username = @username)
-              UPDATE Users SET Preferences = @preferences WHERE Username = @username
-            ELSE
-              INSERT INTO Users (Username, Preferences) VALUES (@username, @preferences)`;
-
-            const result = await request.query(query);
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating user preferences:', error);
-            throw error;
-        }
-    }
-
-    async recordFeedActivity(params) {
         const { herdName, feedType, activityType, wasEmpty, levelAtRefill, username } = params;
         await this.ensureConnection();
 
@@ -2417,6 +2662,272 @@ class DatabaseOperations {
 
 
 
+    /**
+     * Get all animals in a specific herd. Default excludes inactive animals
+     * @param {Object} params - { herdName, getInactive=false, cattleOnly=false }
+     */
+    async getHerdAnimals(params) {
+        const { herdName, cattleOnly = false } = params;
+        await this.ensureConnection();
+
+        try {
+            // Get cows
+            const cowsRequest = this.pool.request();
+            
+            let cowsQuery;
+            if (herdName && herdName !== 'All active') {
+                cowsRequest.input('herdName', sql.NVarChar, herdName);
+                cowsQuery = `
+                    SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
+                        CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
+                    FROM CowTable 
+                    WHERE CurrentHerd = @herdName
+                    AND CowTag IS NOT NULL
+                    AND ${STATUS_ACTIVE}
+                    ORDER BY CowTag`;
+            } else {
+                cowsQuery = `
+                    SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
+                        CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
+                    FROM CowTable 
+                    WHERE CowTag IS NOT NULL
+                    AND ${STATUS_ACTIVE}
+                    ORDER BY CowTag`;
+            }
+            
+            const cowsResult = await cowsRequest.query(cowsQuery);
+
+            // If cattleOnly, just return cow tags
+            if (cattleOnly) {
+                return cowsResult.recordset.map(r => r.CowTag);
+            }
+
+            // Get goats if not cattleOnly
+            const goatsRequest = this.pool.request();
+            let goatsQuery;
+            
+            if (herdName && herdName !== 'All active') {
+                goatsRequest.input('herdName', sql.NVarChar, herdName);
+                goatsQuery = `
+                    SELECT GoatTag AS CowTag, NULL AS DOB, NULL AS Sex, NULL AS Status, NULL AS Description,
+                        NULL AS FormattedDOB
+                    FROM Goats 
+                    WHERE Herd = @herdName
+                    ORDER BY GoatTag`;
+            } else {
+                goatsQuery = `
+                    SELECT GoatTag AS CowTag, NULL AS DOB, NULL AS Sex, NULL AS Status, NULL AS Description,
+                        NULL AS FormattedDOB
+                    FROM Goats 
+                    ORDER BY GoatTag`;
+            }
+            
+            const goatsResult = await goatsRequest.query(goatsQuery);
+
+            // Combine results
+            const animals = [
+                ...cowsResult.recordset,
+                ...goatsResult.recordset
+            ];
+
+            return { animals };
+        } catch (error) {
+            console.error('Error fetching herd animals:', error);
+            throw new Error(`Failed to fetch herd animals: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Move herd to a new pasture
+     * @param {Object} params - { herdName, newPastureName, username }
+     */
+    async moveHerdToPasture(params) {
+        const { herdName, newPastureName, username } = params;
+        await this.ensureConnection();
+
+        try {
+            // Verify herd exists
+            const herdCheckRequest = this.pool.request();
+            herdCheckRequest.input('herdName', sql.NVarChar, herdName);
+            const herdCheckQuery = `SELECT COUNT(*) as Count FROM Herds WHERE HerdName = @herdName`;
+            const herdCheckResult = await herdCheckRequest.query(herdCheckQuery);
+
+            if (herdCheckResult.recordset[0].Count === 0) {
+                throw new Error(`Herd '${herdName}' not found`);
+            }
+
+            // Verify pasture exists
+            const pastureCheckRequest = this.pool.request();
+            pastureCheckRequest.input('pastureName', sql.NVarChar, newPastureName);
+            const pastureCheckQuery = `SELECT COUNT(*) as Count FROM Pastures WHERE PastureName = @pastureName`;
+            const pastureCheckResult = await pastureCheckRequest.query(pastureCheckQuery);
+
+            if (pastureCheckResult.recordset[0].Count === 0) {
+                throw new Error(`Pasture '${newPastureName}' not found`);
+            }
+
+            // Update herd's current pasture
+            const updateRequest = this.pool.request();
+            updateRequest.input('herdName', sql.NVarChar, herdName);
+            updateRequest.input('newPasture', sql.NVarChar, newPastureName);
+            const updateQuery = `UPDATE Herds SET CurrentPasture = @newPasture WHERE HerdName = @herdName`;
+            await updateRequest.query(updateQuery);
+
+            // Record the movement
+            const movementRequest = this.pool.request();
+            movementRequest.input('dateRecorded', sql.DateTime, new Date());
+            movementRequest.input('herd', sql.NVarChar, herdName);
+            movementRequest.input('newPasture', sql.NVarChar, newPastureName);
+            const movementQuery = `
+                INSERT INTO HerdMovementRecords (DateRecorded, Herd, NewPasture)
+                VALUES (@dateRecorded, @herd, @newPasture)`;
+            await movementRequest.query(movementQuery);
+
+            return {
+                success: true,
+                message: 'Herd moved successfully'
+            };
+        } catch (error) {
+            console.error('Error moving herd:', error);
+            throw new Error(`Failed to move herd: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get all available pastures
+     */
+    async getAllPastures() {
+        await this.ensureConnection();
+
+        try {
+            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
+            const result = await this.pool.request().query(query);
+            return {
+                pastures: result.recordset.map(row => row.PastureName)
+            };
+        } catch (error) {
+            console.error('Error fetching pastures:', error);
+            throw new Error(`Failed to fetch pastures: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get events related to a herd
+     */
+    async getHerdEvents(params) {
+        const { herdName } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('herdName', sql.NVarChar, herdName);
+
+            const query = `
+            SELECT 'movement' AS eventType, DateRecorded AS dateRecorded, 
+                   CONCAT('Herd moved to ', NewPasture) AS description, NULL AS notes, NULL AS username
+            FROM HerdMovementRecords 
+            WHERE Herd = @herdName
+            
+            UNION ALL
+            
+            SELECT 'membership' AS eventType, DateJoined AS dateRecorded,
+                   CONCAT('Added ', CowTag, ' to herd') AS description, NULL AS notes, NULL AS username
+            FROM HerdMembershipHistory
+            WHERE HerdName = @herdName
+            
+            ORDER BY dateRecorded DESC`;
+
+            const result = await request.query(query);
+            return { events: result.recordset };
+        } catch (error) {
+            console.error('Error fetching herd events:', error);
+            throw error;
+        }
+    }
+
+    async addHerdEvent(params) {
+        const { herdName, eventType, description, notes, username } = params;
+        await this.ensureConnection();
+
+        try {
+            // For now, just add to Events table with generic entry
+            const request = this.pool.request();
+            request.input('eventDate', sql.DateTime, new Date());
+            request.input('description', sql.NVarChar, `${herdName}: ${description}`);
+
+            const query = `INSERT INTO Events (EventDate, Description) VALUES (@eventDate, @description)`;
+            const result = await request.query(query);
+
+            return { success: true, rowsAffected: result.rowsAffected[0] };
+        } catch (error) {
+            console.error('Error adding herd event:', error);
+            throw error;
+        }
+    }
+
+    async createHerd(params) {
+        const { herdName, cows, currentPasture } = params;
+        await this.ensureConnection();
+
+        try {
+            // Create herd
+            const herdRequest = this.pool.request();
+            herdRequest.input('herdName', sql.NVarChar, herdName);
+            herdRequest.input('currentPasture', sql.NVarChar, currentPasture);
+
+            const herdQuery = `INSERT INTO Herds (HerdName, CurrentPasture) VALUES (@herdName, @currentPasture)`;
+            await herdRequest.query(herdQuery);
+
+            // Move cows to new herd
+            if (cows && cows.length > 0) {
+                for (const cowTag of cows) {
+                    await this.setHerd({ cowTag, herdName });
+                }
+            }
+
+            return { success: true, herdName };
+        } catch (error) {
+            console.error('Error creating herd:', error);
+            throw error;
+        }
+    }
+
+    async batchMoveCows(params) {
+        const { cowTags, targetHerd, sourceHerd } = params;
+        await this.ensureConnection();
+
+        try {
+            const results = [];
+            for (const cowTag of cowTags) {
+                const result = await this.setHerd({ cowTag, herdName: targetHerd });
+                results.push(result);
+            }
+
+            return { success: true, movedCount: results.length };
+        } catch (error) {
+            console.error('Error batch moving cows:', error);
+            throw error;
+        }
+    }
+
+    async getCowsByHerd() {
+        await this.ensureConnection();
+
+        try {
+            const query = `
+            SELECT CowTag, DateOfBirth, CurrentHerd, Sex, Status, Description
+            FROM CowTable 
+            WHERE CowTag IS NOT NULL
+            ORDER BY CurrentHerd, CowTag`;
+
+            const result = await this.pool.request().query(query);
+            return { cows: result.recordset };
+        } catch (error) {
+            console.error('Error fetching cows by herd:', error);
+            throw error;
+        }
+    }
 
 
 
@@ -2442,18 +2953,676 @@ class DatabaseOperations {
 
 
 
+
+
+    //                   PASTURE MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
+
+    async getPastureMaintenanceEvents(params) {
+        const { pastureName } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('pastureName', sql.NVarChar, pastureName);
+
+            const query = `
+            SELECT DateCompleted, TargetOfMainenance, ActionPerformed, 
+                   NeedsFollowUp, Username, FollowingUpOnID
+            FROM PastureMaintenanceRecords 
+            WHERE Pasture = @pastureName
+            ORDER BY DateCompleted DESC`;
+
+            const result = await request.query(query);
+            return { maintenanceRecords: result.recordset };
+        } catch (error) {
+            console.error('Error fetching pasture maintenance events:', error);
+            throw error;
+        }
+    }
+
+    async addPastureMaintenanceEvent(params) {
+        const { pastureName, targetOfMaintenance, actionPerformed, needsFollowUp, username } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('pasture', sql.NVarChar, pastureName);
+            request.input('dateCompleted', sql.DateTime, new Date());
+            request.input('username', sql.NVarChar, username);
+            request.input('targetOfMaintenance', sql.NVarChar, targetOfMaintenance);
+            request.input('actionPerformed', sql.NVarChar(sql.MAX), actionPerformed);
+            request.input('needsFollowUp', sql.Bit, needsFollowUp);
+
+            const query = `
+            INSERT INTO PastureMaintenanceRecords 
+            (Pasture, DateCompleted, Username, TargetOfMainenance, ActionPerformed, NeedsFollowUp)
+            VALUES (@pasture, @dateCompleted, @username, @targetOfMaintenance, @actionPerformed, @needsFollowUp)`;
+
+            const result = await request.query(query);
+            return { success: true, rowsAffected: result.rowsAffected[0] };
+        } catch (error) {
+            console.error('Error adding pasture maintenance event:', error);
+            throw error;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //                   USER MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
+
+    async getUserPreferences(params) {
+        const { username } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('username', sql.NVarChar, username);
+
+            const query = `SELECT Preferences FROM Users WHERE Username = @username`;
+            const result = await request.query(query);
+
+            let preferences;
+
+            if (result.recordset.length === 0 || !result.recordset[0].Preferences) {
+                // No preferences exist - create default with all feeds
+                const allFeedsResult = await this.getAllFeedTypes();
+                const defaultPreferences = {
+                    shownFeeds: allFeedsResult.feedTypes
+                };
+
+                // Save the defaults to database
+                await this.updateUserPreferences({ username, preferences: defaultPreferences });
+
+                return { preferences: defaultPreferences };
+            }
+
+            const preferencesJson = result.recordset[0].Preferences;
+            preferences = JSON.parse(preferencesJson);
+
+            // If shownFeeds is empty, populate with all available feeds
+            if (!preferences.shownFeeds || preferences.shownFeeds.length === 0) {
+                const allFeedsResult = await this.getAllFeedTypes();
+                preferences.shownFeeds = allFeedsResult.feedTypes;
+
+                // Save the updated preferences
+                await this.updateUserPreferences({ username, preferences });
+            }
+
+            return { preferences };
+        } catch (error) {
+            console.error('Error fetching user preferences:', error);
+            throw error;
+        }
+    }
+
+    async updateUserPreferences(params) {
+        const { username, preferences } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('username', sql.NVarChar, username);
+            request.input('preferences', sql.NVarChar(sql.MAX), JSON.stringify(preferences));
+
+            const query = `
+            IF EXISTS (SELECT 1 FROM Users WHERE Username = @username)
+              UPDATE Users SET Preferences = @preferences WHERE Username = @username
+            ELSE
+              INSERT INTO Users (Username, Preferences) VALUES (@username, @preferences)`;
+
+            const result = await request.query(query);
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating user preferences:', error);
+            throw error;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // FIELDSHEETS   //////////////////////////////////////////////////////////////////////////////////////////
+
+    /*
+    
+        Each sheet column is defined by the following properties:
+            "key": 
+            "name": 
+            "dataPath": 
+            "type": 
+            "editable":             (Defaults to false if not given)
+            "savedPerInstance":     (Defaults to false if not given)
+            "instanceSource":       (Optional)
+
+        The three categories of data columns are;
+            Static
+            Fillable
+            Calculated
+
+        Static columns cannot be edited, and are the direct value of some record 
+            (CowTable/DamTag)
+        Calculated columns need a bit of processing 
+            (CowTable/DOB -> Age)
+        Fillable columns are obvious
+
+
+
+        A sheetInstance is used to preserve older data for future reading / editing
+            "savedPerInstance":
+            "instanceSource":
+        
+        "instanceSource" Tells a sheetInstance where to find its data.
+        
+        If "instanceSource": "copy", then upon load, the sheet makes a copy of that column.
+        If "instanceSource": "record", then upon load, the sheet queries the related record.
+
+        Columns of type 'copy' MAY NOT BE EDITABLE, as the copy is not stored in a sql row (its stored directly in the json.)
+    */
 
 
 
     /**
-     * SHEET MANAGEMENT FUNCTIONS
+     * Creates a new sheet instance, copying current state
      */
+    async createSheetInstance(params) {
+        const { sheetId, herdName, breedingYear, createdBy } = params;
+        await this.ensureConnection();
 
-    async getSheetDefinition(params) {
+        try {
+            // Get sheet template
+            const sheetDef = await this.getSheetTemplate({ sheetId });
+            const columnConfig = JSON.parse(sheetDef.columns);
+
+            // Get cattle able to be listed based on sheet type (PregCheck vs Weigh in...)
+            const cowList = await this.getCowListForSheet(herdName, sheetDef.name, breedingYear);
+
+            // Build columnData for each cow
+            const columnData = {};
+            
+            for (const cowTag of cowList) {
+                columnData[cowTag] = {};
+                
+                for (const column of columnConfig.columns) {
+                    if (column.savedPerInstance) {
+                        const cellData = await this.captureInstanceCell(
+                            cowTag, 
+                            column, 
+                            breedingYear
+                        );
+                        columnData[cowTag][column.key] = cellData;
+                    }
+                }
+            }
+
+            // Insert instance into database
+            const request = this.pool.request();
+            request.input('sheetId', sql.Int, sheetId);
+            request.input('dateCreated', sql.DateTime, new Date());
+            request.input('columnData', sql.NVarChar(sql.MAX), JSON.stringify(columnData));
+            request.input('rowData', sql.NVarChar(sql.MAX), JSON.stringify(cowList));
+            request.input('createdBy', sql.NVarChar, createdBy);
+            request.input('herdName', sql.NVarChar, herdName);
+            request.input('breedingYear', sql.Int, breedingYear);
+
+            const query = `
+                INSERT INTO SheetInstances (SheetID, DateCreated, ColumnData, RowData, CreatedBy, HerdName, BreedingYear)
+                OUTPUT INSERTED.ID
+                VALUES (@sheetId, @dateCreated, @columnData, @rowData, @createdBy, @herdName, @breedingYear)`;
+
+            const result = await request.query(query);
+            return { 
+                success: true, 
+                instanceId: result.recordset[0].ID 
+            };
+        } catch (error) {
+            console.error('Error creating sheet instance:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Captures the state of a single cell for instance storage
+     */
+    async captureInstanceCell(cowTag, column, breedingYear) {
+        const { dataPath, instanceSource } = column;
+        const result = await this.getColumnValueWithSource(cowTag, dataPath, breedingYear);
+
+        if (instanceSource === 'copy') {
+            // Copy the actual value
+            return { value: result.value };
+        } else {
+            // Get both value and record ID from the query
+            return { sourceRecordID: result.recordId };
+        }
+    }
+
+    /**
+     * Loads an existing sheet instance
+     */
+    async loadSheetInstance(params) {
+        const { instanceId } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('instanceId', sql.Int, instanceId);
+            
+            const query = `
+                SELECT si.*, s.SheetName, s.Columns 
+                FROM SheetInstances si
+                INNER JOIN Sheets s ON si.SheetID = s.ID
+                WHERE si.ID = @instanceId`;
+            
+            const result = await request.query(query);
+            
+            if (result.recordset.length === 0) {
+                throw new Error(`Sheet instance ${instanceId} not found`);
+            }
+
+            const instance = result.recordset[0];
+            const columnConfig = JSON.parse(instance.Columns);
+            const columnData = JSON.parse(instance.ColumnData);
+            const rowData = JSON.parse(instance.RowData);
+
+            // Build the data array for display
+            const sheetData = [];
+            
+            for (const cowTag of rowData) {
+                const rowObj = { CowTag: cowTag };
+                
+                for (const column of columnConfig.columns) {
+                    if (column.savedPerInstance) {
+                        // Get from instance data
+                        rowObj[column.key] = await this.getInstanceValue(
+                            columnData[cowTag]?.[column.key],
+                            column
+                        );
+                    } else {
+                        // Get current value (not saved in instance)
+                        rowObj[column.key] = await this.getColumnValue(
+                            cowTag, 
+                            column.dataPath, 
+                            instance.BreedingYear
+                        );
+                    }
+                }
+                
+                sheetData.push(rowObj);
+            }
+
+            return {
+                instanceId: instance.ID,
+                sheetId: instance.SheetID,
+                sheetName: instance.SheetName,
+                dateCreated: instance.DateCreated,
+                columns: columnConfig.columns,
+                data: sheetData,
+                metadata: {
+                    herdName: instance.HerdName,
+                    breedingYear: instance.BreedingYear,
+                    createdBy: instance.CreatedBy
+                }
+            };
+        } catch (error) {
+            console.error('Error loading sheet instance:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets value from instance data - either copied value or by querying source record
+     */
+    async getInstanceValue(cellData, column) {
+        if (!cellData) return '';
+
+        if ('value' in cellData) {
+            // Copied value
+            return cellData.value;
+        } else if ('sourceRecordID' in cellData) {
+            // Query from source record
+            if (cellData.sourceRecordID === null) {
+                return ''; // New fillable field, not yet populated
+            }
+            return await this.getValueFromSourceRecord(
+                cellData.sourceRecordID,
+                column.dataPath
+            );
+        }
+        
+        return '';
+    }
+
+
+    /**
+     * Queries a specific record by ID to get its value
+     */
+    async getValueFromSourceRecord(recordId, dataPath) {
+        const [tableName, fieldName] = dataPath.split('/');
+        
+        try {
+            // Handle CowTable which uses CowTag as primary key
+            if (tableName === 'CowTable') {
+                // recordId is actually the cowTag string
+                const result = await this.getCowTableValueWithSource(recordId, fieldName);
+                return result.value;
+            }
+
+            // TODO: GoatTable also uses GoatTag as primary key
+            if (tableName === 'GoatTable') {
+                throw new Error(
+                    `TODO: GoatTable uses Tag-based primary key (not ID). ` +
+                    `Current instanceSource design doesn't support this. ` +
+                    `Columns referencing GoatTable should use instanceSource='copy' instead.`
+                );
+            }
+            
+            // All other tables use numeric ID
+            const request = this.pool.request();
+            request.input('recordId', sql.Int, recordId);
+            
+            // Handle date formatting for specific fields
+            let query;
+            if (fieldName === 'TimeRecorded' || fieldName === 'TreatmentDate' || 
+                fieldName === 'PregCheckDate' || fieldName === 'BirthDate' || 
+                fieldName === 'WeaningDate') {
+                query = `SELECT FORMAT(${fieldName}, 'yyyy-MM-dd') AS FormattedDate FROM ${tableName} WHERE ID = @recordId`;
+                const result = await request.query(query);
+                return result.recordset[0]?.FormattedDate || '';
+            }
+            
+            // Handle special field for PregancyCheck
+            if (tableName === 'PregancyCheck' && fieldName === 'IsPregnant') {
+                query = `SELECT ${fieldName} FROM ${tableName} WHERE ID = @recordId`;
+                const result = await request.query(query);
+                const isPregnant = result.recordset[0]?.IsPregnant;
+                return isPregnant === 1 ? 'Pregnant' : (isPregnant === 0 ? 'Open' : '');
+            }
+            
+            // Handle WeightAtCheck which joins to WeightRecords
+            if (tableName === 'PregancyCheck' && fieldName === 'WeightAtCheck') {
+                query = `
+                    SELECT wr.Weight 
+                    FROM PregancyCheck pc
+                    LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
+                    WHERE pc.ID = @recordId`;
+                const result = await request.query(query);
+                return result.recordset[0]?.Weight || '';
+            }
+            
+            // Handle TreatmentMedicineID which stores the medicine name
+            if (tableName === 'MedicalTable' && fieldName === 'TreatmentMedicineID') {
+                query = `SELECT TreatmentMedicine FROM ${tableName} WHERE ID = @recordId`;
+                const result = await request.query(query);
+                return result.recordset[0]?.TreatmentMedicine || '';
+            }
+            
+            // Handle Notes field which might be called different things
+            if (fieldName === 'Notes' || fieldName === 'TreatmentNotes') {
+                const actualFieldName = tableName === 'MedicalTable' ? 'Notes' : fieldName;
+                query = `SELECT ${actualFieldName} FROM ${tableName} WHERE ID = @recordId`;
+                const result = await request.query(query);
+                return result.recordset[0]?.[actualFieldName] || '';
+            }
+            
+            // Standard query
+            query = `SELECT ${fieldName} FROM ${tableName} WHERE ID = @recordId`;
+            const result = await request.query(query);
+            
+            return result.recordset[0]?.[fieldName] || '';
+        } catch (error) {
+            console.error(`Error fetching from source record ${recordId}:`, error);
+            throw error;
+        }
+    }
+
+
+    /**
+     * Attempts to load instance, creates new one if not found
+     */
+    async tryLoadSheetInstance(params) {
+        const { instanceId, sheetId, herdName, breedingYear, createdBy } = params;
+        
+        if (instanceId) {
+            try {
+                return await this.loadSheetInstance({ instanceId });
+            } catch (error) {
+                if (error.message.includes('not found')) {
+                    // Fall through to create new instance
+                } else {
+                    throw error;
+                }
+            }
+        }
+        
+        // Create new instance
+        const createResult = await this.createSheetInstance({
+            sheetId,
+            herdName,
+            breedingYear,
+            createdBy
+        });
+        
+        return await this.loadSheetInstance({ instanceId: createResult.instanceId });
+    }
+
+    /**
+     * Updates a cell in a sheet instance
+     */
+    async updateSheetInstanceCell(params) {
+        const { instanceId, cowTag, columnKey, value, column } = params;
+        await this.ensureConnection();
+
+        try {
+            // Get current instance data
+            const request = this.pool.request();
+            request.input('instanceId', sql.Int, instanceId);
+            const result = await request.query(
+                'SELECT ColumnData, SheetID FROM SheetInstances WHERE ID = @instanceId'
+            );
+            
+            const columnData = JSON.parse(result.recordset[0].ColumnData);
+            
+            // Handle the update based on column type
+            if (column.editable && column.savedPerInstance) {
+                // Update instance data
+                if (!columnData[cowTag]) {
+                    columnData[cowTag] = {};
+                }
+                
+                if (column.instanceSource === 'copy') {
+                    columnData[cowTag][columnKey] = { value };
+                } else {
+                    // Create or update the actual record (throws on failure)
+                    const recordId = await this.createOrUpdateRecord(
+                        cowTag,
+                        column,
+                        value,
+                        columnData[cowTag]?.[columnKey]?.sourceRecordID
+                    );
+                    
+                    // Store only the record ID (value will be queried dynamically)
+                    columnData[cowTag][columnKey] = { sourceRecordID: recordId };
+                }
+            }
+            
+            // Save updated instance data
+            const updateRequest = this.pool.request();
+            updateRequest.input('instanceId', sql.Int, instanceId);
+            updateRequest.input('columnData', sql.NVarChar(sql.MAX), JSON.stringify(columnData));
+            
+            await updateRequest.query(
+                'UPDATE SheetInstances SET ColumnData = @columnData WHERE ID = @instanceId'
+            );
+            
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating sheet instance cell:', error);
+            throw error;
+        }
+    }
+
+
+    /**
+     * Creates or updates a record (e.g., WeightRecord) when fillable column is edited
+     */
+    async createOrUpdateRecord(cowTag, column, value, existingRecordId) {
+        const [source, fieldName] = column.dataPath.split('/');
+        const [tableName, tableField] = column.instanceSource.split('/');
+        
+        try {
+            switch (tableName) {
+                case 'WeightRecords':
+                    return await this.createOrUpdateWeightRecord(cowTag, tableField, value, existingRecordId);
+                
+                case 'PregancyCheck':
+                    return await this.createOrUpdatePregancyCheckField(cowTag, tableField, value, existingRecordId);
+                
+                case 'CowTable':
+                    // CowTable uses cowTag as "recordId", update directly
+                    return await this.updateCowTableField(cowTag, tableField, value);
+                
+                case 'WeaningRecords':
+                    return await this.createOrUpdateWeaningRecord(cowTag, value, existingRecordId);
+                
+                case 'CalvingRecords':
+                    return await this.updateCalvingRecordField(cowTag, tableField, value, existingRecordId);
+                
+                case 'MedicalTable':
+                    return await this.createOrUpdateMedicalRecord(cowTag, tableField, value, existingRecordId);
+                
+                default:
+                    throw new Error(`Unknown table for createOrUpdateRecord: ${tableName}`);
+            }
+        } catch (error) {
+            console.error(`Error in createOrUpdateRecord for ${tableName}:`, error);
+            throw error;
+        }
+    }
+
+
+
+    async batchUpdateSheetInstanceCells(params) {
+        const { instanceId, updates } = params; // Array of {cowTag, columnKey, value, column}
+        const results = [];
+        
+        for (const update of updates) {
+            try {
+                const result = await this.updateSheetInstanceCell({
+                    instanceId,
+                    cowTag: update.cowTag,
+                    columnKey: update.columnKey,
+                    value: update.value,
+                    column: update.column
+                });
+                results.push({ ...update, success: true, result });
+            } catch (error) {
+                results.push({ ...update, success: false, error: error.message });
+            }
+        }
+        
+        return { results, successCount: results.filter(r => r.success).length };
+    }
+
+    /**
+     * Lists all instances for a sheet
+     */
+    async getSheetInstances(sheetId) {
+        await this.ensureConnection();
+        
+        try {
+            const request = this.pool.request();
+            request.input('sheetId', sql.Int, sheetId);
+            
+            const query = `
+                SELECT ID, DateCreated, HerdName, BreedingYear, CreatedBy
+                FROM SheetInstances
+                WHERE SheetID = @sheetId
+                ORDER BY DateCreated DESC`;
+            
+            const result = await request.query(query);
+            return { instances: result.recordset };
+        } catch (error) {
+            console.error('Error fetching sheet instances:', error);
+            throw error;
+        }
+    }
+
+
+    async getAllSheetInstances() {
+        await this.ensureConnection();
+        
+        try {
+            const query = `
+                SELECT 
+                    si.ID as instanceId,
+                    si.SheetID as sheetId,
+                    s.SheetName as sheetName,
+                    si.DateCreated as dateCreated,
+                    si.HerdName as herdName,
+                    si.BreedingYear as breedingYear,
+                    si.CreatedBy as createdBy
+                FROM SheetInstances si
+                INNER JOIN Sheets s ON si.SheetID = s.ID
+                ORDER BY si.DateCreated DESC`;
+            
+            const result = await this.pool.request().query(query);
+            return { instances: result.recordset };
+        } catch (error) {
+            console.error('Error fetching all sheet instances:', error);
+            throw error;
+        }
+    }
+
+    async getSheetTemplate(params) {
         const { sheetId } = params;
         await this.ensureConnection();
+
         try {
             const numericSheetId = parseInt(sheetId);
+
             if (isNaN(numericSheetId)) {
                 throw new Error(`Invalid sheet ID: ${sheetId}`);
             }
@@ -2472,7 +3641,7 @@ class DatabaseOperations {
                 columns: result.recordset[0].Columns
             };
         } catch (error) {
-            console.log('getSheetDefinition received sheetId:', sheetId, 'type:', typeof sheetId);
+            console.log('getSheetTemplate received sheetId:', sheetId, 'type:', typeof sheetId);
             const numericSheetId = parseInt(sheetId);
             console.log('Converted to:', numericSheetId, 'isNaN:', isNaN(numericSheetId));
             console.error('Error fetching sheet definition:', error);
@@ -2480,8 +3649,7 @@ class DatabaseOperations {
         }
     }
 
-
-    async updateSheetInDB(params) {
+    async updateSheetTemplate(params) {
         const { sheetId, name, columns } = params;
         await this.ensureConnection();
 
@@ -2508,17 +3676,20 @@ class DatabaseOperations {
         }
     }
 
-    async deleteSheetFromDB(sheetId) {
+    /**
+     * Deletes the given sheet if it is not locked
+     */
+    async deleteSheetTemplate(sheetId) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
             request.input('sheetId', sql.Int, sheetId);
-            const query = `DELETE FROM Sheets WHERE ID = @sheetId`;
+            const query = `DELETE FROM Sheets WHERE ID = @sheetId AND Locked = 0`;
 
             const result = await request.query(query);
             if (result.rowsAffected[0] === 0) {
-                throw new Error('Sheet not found');
+                throw new Error('Sheet not found or is locked');
             }
 
             return { success: true, rowsAffected: result.rowsAffected[0] };
@@ -2528,7 +3699,7 @@ class DatabaseOperations {
         }
     }
 
-    async getAllSheetsFromDB() {
+    async getAllSheetTemplates() {
         await this.ensureConnection();
         try {
             const query = `SELECT ID, SheetName, CreatedBy, Locked, ParentSheet, Columns FROM Sheets ORDER BY Locked DESC, SheetName`;
@@ -2540,7 +3711,7 @@ class DatabaseOperations {
         }
     }
 
-    async createSheetInDB(params) {
+    async createSheetTemplate(params) {
         const { name, columns, createdBy, locked = false, parentSheetId = null } = params;
         await this.ensureConnection();
 
@@ -2563,241 +3734,6 @@ class DatabaseOperations {
             throw error;
         }
     }
-
-    // New calculated value functions
-    async getCalculatedValue(cowTag, fieldName) {
-        try {
-            switch (fieldName) {
-                case 'Age':
-                    const basicInfo = await this.getCowTableValue(cowTag, 'DateOfBirth');
-                    return this.calculateAge(basicInfo);
-
-                case 'AgeInMonths':
-                    const birthInfo = await this.getCowTableValue(cowTag, 'DateOfBirth');
-                    return this.calculateAgeInMonths(birthInfo);
-
-                case 'PregnancyMonths':
-                    const pregCheck = await this.getPregancyCheckValue(cowTag, 'IsPregnant');
-                    const pregDate = await this.getPregancyCheckValue(cowTag, 'PregCheckDate');
-                    return this.calculatePregnancyMonths(pregDate, pregCheck === 'Yes');
-
-                case 'OpenStatus':
-                    const isPregnant = await this.getPregancyCheckValue(cowTag, 'IsPregnant');
-                    return isPregnant === 'Yes' ? 'No' : 'Yes';
-
-                case 'CullStatus':
-                    const status = await this.getCowTableValue(cowTag, 'Status');
-                    return status === 'Cull' ? 'Yes' : 'No';
-
-                case 'BreedingStatus':
-                    return await this.calculateBreedingStatus(cowTag);
-
-                case 'WeaningStatus':
-                    return await this.calculateWeaningStatus(cowTag);
-
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error calculating value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    calculateAgeInMonths(dateOfBirth) {
-        try {
-            if (!dateOfBirth) return '';
-
-            let birthDate;
-            if (typeof dateOfBirth === 'string') {
-                birthDate = new Date(dateOfBirth);
-            } else if (dateOfBirth instanceof Date) {
-                birthDate = dateOfBirth;
-            } else {
-                return '';
-            }
-
-            if (isNaN(birthDate.getTime())) {
-                return '';
-            }
-
-            const today = new Date();
-            const timeDiff = today.getTime() - birthDate.getTime();
-            const monthsDiff = Math.floor(timeDiff / (1000 * 3600 * 24 * 30.44)); // Average days per month
-
-            return monthsDiff >= 0 ? monthsDiff.toString() : '0';
-        } catch (error) {
-            console.error('Error calculating age in months:', error);
-            return '';
-        }
-    }
-
-    async calculateBreedingStatus(cowTag) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            // Check for pregnancy check results first
-            const pregQuery = `
-            SELECT TOP 1 IsPregnant 
-            FROM PregancyCheck 
-            WHERE CowTag = @cowTag 
-            ORDER BY PregCheckDate DESC`;
-            const pregResult = await request.query(pregQuery);
-
-            if (pregResult.recordset.length > 0) {
-                return pregResult.recordset[0].IsPregnant ? 'Pregnant' : 'Open';
-            }
-
-            // If no pregnancy check, check for breeding records
-            const breedingQuery = `
-            SELECT TOP 1 ID 
-            FROM BreedingRecords 
-            WHERE CowTag = @cowTag 
-            ORDER BY ExposureStartDate DESC`;
-            const breedingResult = await request.query(breedingQuery);
-
-            if (breedingResult.recordset.length > 0) {
-                return 'Exposed';
-            }
-
-            return 'Unknown';
-        } catch (error) {
-            console.error('Error calculating breeding status:', error);
-            return 'Unknown';
-        }
-    }
-
-    async calculateWeaningStatus(cowTag) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            // Check for weaning records
-            const weaningQuery = `
-            SELECT TOP 1 ID 
-            FROM WeaningRecords 
-            WHERE CowTag = @cowTag`;
-            const weaningResult = await request.query(weaningQuery);
-
-            return weaningResult.recordset.length > 0 ? 'Weaned' : 'Unweaned';
-        } catch (error) {
-            console.error('Error calculating weaning status:', error);
-            return 'Unweaned';
-        }
-    }
-
-    // Breeding plan functions
-    async getBreedingPlans() {
-        await this.ensureConnection();
-
-        try {
-            const query = `
-            SELECT ID, PlanName, PlanYear, Notes, IsActive
-            FROM BreedingPlan 
-            ORDER BY PlanYear DESC, PlanName`;
-            const result = await this.pool.request().query(query);
-            return { plans: result.recordset };
-        } catch (error) {
-            console.error('Error fetching breeding plans:', error);
-            throw error;
-        }
-    }
-
-    async getBreedingPlanOverview(params) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            const planId = params.planId || params;
-            request.input('planId', sql.Int, planId);
-
-            // Get unassigned animals (active cows without breeding records for this plan)
-            const unassignedQuery = `
-            SELECT c.CowTag, c.CurrentHerd
-            FROM CowTable c
-            LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @planId
-            WHERE ${STATUS_ACTIVE}
-              AND br.ID IS NULL
-            ORDER BY c.CowTag`;
-            const unassignedResult = await request.query(unassignedQuery);
-
-            // Get pregnant count
-            const pregnantQuery = `
-            SELECT COUNT(DISTINCT pc.CowTag) as PregnantCount
-            FROM PregancyCheck pc
-            INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
-            WHERE br.PlanID = @planId AND pc.IsPregnant = 1`;
-            const pregnantResult = await request.query(pregnantQuery);
-
-            // Get calves count for this year
-            const plan = await this.getBreedingPlan(planId);
-            const calvesQuery = `
-            SELECT COUNT(*) as CalvesCount
-            FROM CalvingRecords
-            WHERE YEAR(BirthDate) = ${plan.PlanYear}`;
-            const calvesResult = await this.pool.request().query(calvesQuery);
-
-            // Calculate pregnancy rate
-            const totalBreedingQuery = `
-            SELECT COUNT(DISTINCT CowTag) as TotalBred
-            FROM BreedingRecords
-            WHERE PlanID = @planId`;
-            const totalBreedingResult = await request.query(totalBreedingQuery);
-
-            const pregnantCount = pregnantResult.recordset[0].PregnantCount || 0;
-            const totalBred = totalBreedingResult.recordset[0].TotalBred || 0;
-            const pregnancyRate = totalBred > 0 ? Math.round((pregnantCount / totalBred) * 100) : 0;
-
-            return {
-                unassignedCount: unassignedResult.recordset.length,
-                unassignedAnimals: unassignedResult.recordset,
-                pregnantCount: pregnantCount,
-                pregnancyRate: pregnancyRate,
-                calvesCount: calvesResult.recordset[0].CalvesCount || 0,
-                calvingSeason: this.getCalvingSeason(plan.PlanYear)
-            };
-        } catch (error) {
-            console.error('Error fetching breeding plan overview:', error);
-            throw error;
-        }
-    }
-
-    
-
-    async getBreedingPlan(planId) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('planId', sql.Int, planId);
-
-            const query = `SELECT * FROM BreedingPlan WHERE ID = @planId`;
-            const result = await request.query(query);
-
-            return result.recordset[0] || null;
-        } catch (error) {
-            console.error('Error fetching breeding plan:', error);
-            throw error;
-        }
-    }
-
-    getCalvingSeason(year) {
-        const currentMonth = new Date().getMonth() + 1; // 1-12
-
-        if (currentMonth >= 1 && currentMonth <= 4) {
-            return `Spring ${year}`;
-        } else if (currentMonth >= 5 && currentMonth <= 8) {
-            return `Summer ${year}`;
-        } else {
-            return `Fall ${year}`;
-        }
-    }
-
 
     async updateSheetCell(params) {
         const { handler, cowTag, value, breedingYear, breedingPlanId } = params;
@@ -2884,80 +3820,38 @@ class DatabaseOperations {
         
         return { results, successCount: results.filter(r => r.success).length };
     }
-    
 
-
-    async recordNewWeight(cowTag, value, eventId = null) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('weight', sql.Int, parseInt(value));
-            request.input('eventId', sql.Int, eventId);
-
-            // Insert new weight record
-            const insertQuery = `
-            INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, EventID)
-            OUTPUT INSERTED.ID
-            VALUES (@cowTag, @weight, GETDATE(), @eventId)`;
-
-            const result = await request.query(insertQuery);
-            const newWeightId = result.recordset[0].ID;
-
-            // Update cow's LastWeightRecord
-            const updateCowQuery = `
-            UPDATE CowTable 
-            SET LastWeightRecord = ${newWeightId}
-            WHERE CowTag = @cowTag`;
-
-            await request.query(updateCowQuery);
-
-            return { success: true };
-        } catch (error) {
-            console.error('Error recording new weight:', error);
-            throw error;
-        }
-    }
-
-
-    /**
-     * DYNAMIC DATA LOADING
-     */
     async getSheetDataDynamic(params) {
-        const { sheetId, herdName } = params;
+        const { sheetId, herdName, breedingYear, sheetName } = params;
 
         try {
             // 1. Get sheet definition
-            const sheetDef = await this.getSheetDefinition({ sheetId });
+            const sheetDef = await this.getSheetTemplate({ sheetId });
             const columnConfig = JSON.parse(sheetDef.columns);
 
-            // 2. Get cow list based on herd filter
-            const cowList = await this.getCowListForHerd(herdName);
+            // 2. Get cow list based on sheet type and filters
+            const cowList = await this.getCowListForSheet(herdName, sheetName, breedingYear);
 
             // 3. For each cow, get all column values
             const sheetData = [];
             for (const cowTag of cowList) {
-                const rowData = { CowTag: cowTag }; // Always include CowTag
+                const rowData = { CowTag: cowTag };
 
                 for (const column of columnConfig.columns) {
-                    rowData[column.key] = await this.getColumnValue(cowTag, column.dataPath);
+                    rowData[column.key] = await this.getColumnValue(cowTag, column.dataPath, breedingYear);
                 }
                 sheetData.push(rowData);
             }
 
-            // 4. Build column definitions for frontend
-            const columns = columnConfig.columns.map(col => ({
-                key: col.key,
-                name: col.name,
-                editable: col.dataPath.startsWith('Fillable/'), // Only fillable fields editable for now
-                type: col.type || 'text'
-            }));
+            const enhancedColumns = columnConfig.columns;
+
+            // 5. Get update handler
+            const updateHandlers = [];
 
             return {
-                columns: columns,
+                columns: enhancedColumns,
                 data: sheetData,
-                updateHandlers: {} // Empty for now - no setters implemented
+                updateHandlers: updateHandlers
             };
         } catch (error) {
             console.error('Error loading dynamic sheet data:', error);
@@ -2965,40 +3859,10 @@ class DatabaseOperations {
         }
     }
 
-    async getCowListForHerd(herdName) {
-        await this.ensureConnection();
 
-        try {
-            if (herdName && herdName !== 'All active') {
-                const request = this.pool.request();
-                request.input('herdName', sql.NVarChar, herdName);
-                const query = `
-                    SELECT CowTag 
-                    FROM CowTable 
-                    WHERE CurrentHerd = @herdName 
-                      AND CowTag IS NOT NULL 
-                      AND ${STATUS_ACTIVE}
-                    ORDER BY CowTag`;
-                const result = await request.query(query);
-                return result.recordset.map(r => r.CowTag);
-            } else {
-                // All active cows
-                const query = `
-                    SELECT CowTag 
-                    FROM CowTable 
-                    WHERE CowTag IS NOT NULL 
-                      AND ${STATUS_ACTIVE}
-                    ORDER BY CowTag`;
-                const result = await this.pool.request().query(query);
-                return result.recordset.map(r => r.CowTag);
-            }
-        } catch (error) {
-            console.error('Error fetching cow list for herd:', error);
-            throw error;
-        }
-    }
 
-    async getColumnValue(cowTag, dataPath) {
+    
+    async getColumnValue(cowTag, dataPath, breedingYear = null) {
         const [source, fieldName] = dataPath.split('/');
 
         try {
@@ -3010,15 +3874,15 @@ class DatabaseOperations {
                 case 'MedicalTable':
                     return await this.getMedicalTableValue(cowTag, fieldName);
                 case 'BreedingRecords':
-                    return await this.getBreedingRecordsValue(cowTag, fieldName);
+                    return await this.getBreedingRecordsValue(cowTag, fieldName, breedingYear);
                 case 'PregancyCheck':
-                    return await this.getPregancyCheckValue(cowTag, fieldName);
+                    return await this.getPregancyCheckValue(cowTag, fieldName, breedingYear);
                 case 'CalvingRecords':
                     return await this.getCalvingRecordsValue(cowTag, fieldName);
                 case 'Herds':
                     return await this.getHerdsValue(cowTag, fieldName);
                 case 'Calculated':
-                    return await this.getCalculatedValue(cowTag, fieldName);
+                    return await this.getCalculatedValue(cowTag, fieldName, breedingYear);
                 case 'Fillable':
                     return await this.getFillableValue(cowTag, fieldName);
                 default:
@@ -3029,6 +3893,233 @@ class DatabaseOperations {
             return '';
         }
     }
+
+
+    async getCowListForSheet(herdName, sheetName, breedingYear) {
+        await this.ensureConnection();
+
+        try {
+            let query = '';
+            const request = this.pool.request();
+
+            if (sheetName === 'PregCheck') {
+                // Only cows with breeding records for the current year
+                query = `
+                SELECT DISTINCT c.CowTag
+                FROM CowTable c
+                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
+                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                WHERE bp.PlanYear = @breedingYear
+                  AND ${STATUS_ACTIVE}
+                  ${herdName && herdName !== 'All active' ? 'AND c.CurrentHerd = @herdName' : ''}
+                ORDER BY c.CowTag`;
+
+                request.input('breedingYear', sql.Int, breedingYear);
+                if (herdName && herdName !== 'All active') {
+                    request.input('herdName', sql.NVarChar, herdName);
+                }
+            } else if (sheetName === 'CalvingTracker') {
+                // Only cows with breeding records for the current year
+                query = `
+                SELECT DISTINCT c.CowTag
+                FROM CowTable c
+                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
+                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                WHERE bp.PlanYear = @breedingYear
+                  AND ${STATUS_ACTIVE}
+                  ${herdName && herdName !== 'All active' ? 'AND c.CurrentHerd = @herdName' : ''}
+                ORDER BY c.CowTag`;
+
+                request.input('breedingYear', sql.Int, breedingYear);
+                if (herdName && herdName !== 'All active') {
+                    request.input('herdName', sql.NVarChar, herdName);
+                }
+            } else if (sheetName === 'Weanlings') {
+                // Only calves born in current and previous year
+                query = `
+                SELECT CowTag
+                FROM CowTable
+                WHERE YEAR(DateOfBirth) IN (@currentYear, @previousYear)
+                  AND ${STATUS_ACTIVE}
+                  ${herdName && herdName !== 'All active' ? 'AND CurrentHerd = @herdName' : ''}
+                ORDER BY CowTag`;
+
+                request.input('currentYear', sql.Int, breedingYear);
+                request.input('previousYear', sql.Int, breedingYear - 1);
+                if (herdName && herdName !== 'All active') {
+                    request.input('herdName', sql.NVarChar, herdName);
+                }
+            } else {
+                // Default behavior for other sheets
+                return await this.getHerdAnimals({ herdName, cattleOnly: true });
+            }
+
+            const result = await request.query(query);
+            return result.recordset.map(r => r.CowTag);
+        } catch (error) {
+            console.error('Error fetching cow list for sheet:', error);
+            throw error;
+        }
+    }
+
+
+
+
+
+
+
+
+    // calculated value fields
+    async getCalculatedValue(cowTag, fieldName, breedingYear = null) {
+        try {
+            switch (fieldName) {
+                case 'Age':
+                    const basicInfo = await this.getCowTableValue(cowTag, 'DateOfBirth');
+                    return this.calculateAge(basicInfo);
+
+                case 'AgeInMonths':
+                    const birthInfo = await this.getCowTableValue(cowTag, 'DateOfBirth');
+                    return this.calculateAgeInMonths(birthInfo);
+
+                case 'PregnancyMonths':
+                    const pregCheck = await this.getPregancyCheckValue(cowTag, 'IsPregnant', breedingYear);
+                    const pregDate = await this.getPregancyCheckValue(cowTag, 'PregCheckDate', breedingYear);
+                    return this.calculatePregnancyMonths(pregDate, pregCheck === 'Pregnant');
+
+                case 'OpenStatus':
+                    const isPregnant = await this.getPregancyCheckValue(cowTag, 'IsPregnant', breedingYear);
+                    return isPregnant === 'Pregnant' ? 'No' : 'Yes';
+
+                case 'CullStatus':
+                    const status = await this.getCowTableValue(cowTag, 'Status');
+                    return status === 'Cull' ? 'Yes' : 'No';
+
+                case 'BreedingStatus':
+                    return await this.calculateBreedingStatus(cowTag, breedingYear);
+
+                case 'WeaningStatus':
+                    return await this.calculateWeaningStatus(cowTag);
+
+                case 'ExpectedDeliveryDate':
+                    return await this.calculateExpectedDeliveryDate(cowTag, breedingYear);
+
+                default:
+                    return '';
+            }
+        } catch (error) {
+            console.error(`Error calculating value for ${fieldName}:`, error);
+            return '';
+        }
+    }
+
+    calculateAgeInMonths(dateOfBirth) {
+        try {
+            if (!dateOfBirth) return '';
+
+            let birthDate;
+            if (typeof dateOfBirth === 'string') {
+                birthDate = new Date(dateOfBirth);
+            } else if (dateOfBirth instanceof Date) {
+                birthDate = dateOfBirth;
+            } else {
+                return '';
+            }
+
+            if (isNaN(birthDate.getTime())) {
+                return '';
+            }
+
+            const today = new Date();
+            const timeDiff = today.getTime() - birthDate.getTime();
+            const monthsDiff = Math.floor(timeDiff / (1000 * 3600 * 24 * 30.44)); // Average days per month
+
+            return monthsDiff >= 0 ? monthsDiff.toString() : '0';
+        } catch (error) {
+            console.error('Error calculating age in months:', error);
+            return '';
+        }
+    }
+
+    async calculateBreedingStatus(cowTag, breedingYear = null) {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+
+            let pregQuery = `
+                SELECT TOP 1 IsPregnant 
+                FROM PregancyCheck pc`;
+            
+            if (breedingYear) {
+                request.input('breedingYear', sql.Int, breedingYear);
+                pregQuery += `
+                INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
+                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                WHERE pc.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
+            } else {
+                pregQuery += ` WHERE pc.CowTag = @cowTag`;
+            }
+            
+            pregQuery += ` ORDER BY PregCheckDate DESC`;
+            
+            const pregResult = await request.query(pregQuery);
+
+            if (pregResult.recordset.length > 0) {
+                return pregResult.recordset[0].IsPregnant ? 'Pregnant' : 'Open';
+            }
+
+            // Check for breeding records
+            let breedingQuery = `
+                SELECT TOP 1 br.ID 
+                FROM BreedingRecords br`;
+            
+            if (breedingYear) {
+                breedingQuery += `
+                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
+            } else {
+                breedingQuery += ` WHERE br.CowTag = @cowTag`;
+            }
+            
+            breedingQuery += ` ORDER BY ExposureStartDate DESC`;
+            
+            const breedingResult = await request.query(breedingQuery);
+
+            if (breedingResult.recordset.length > 0) {
+                return 'Exposed';
+            }
+
+            return 'Unknown';
+        } catch (error) {
+            console.error('Error calculating breeding status:', error);
+            return 'Unknown';
+        }
+    }
+
+    async calculateWeaningStatus(cowTag) {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+
+            // Check for weaning records
+            const weaningQuery = `
+            SELECT TOP 1 ID 
+            FROM WeaningRecords 
+            WHERE CowTag = @cowTag`;
+            const weaningResult = await request.query(weaningQuery);
+
+            return weaningResult.recordset.length > 0 ? 'Weaned' : 'Unweaned';
+        } catch (error) {
+            console.error('Error calculating weaning status:', error);
+            return 'Unweaned';
+        }
+    }
+
+
+
 
     /**
      * COLUMN VALUE GETTERS BY SOURCE
@@ -3049,7 +4140,7 @@ class DatabaseOperations {
                 'Sex': 'Sex',
                 'DateOfBirth': 'DateOfBirth',
                 'CurrentHerd': 'CurrentHerd',
-                'LastWeightRecord': 'LastWeightRecord',
+                'CurrentWeight': `TODO`,
                 'Description': 'Description',
                 'Breed': 'Breed',
                 'Temperament': 'Temperament',
@@ -3147,60 +4238,73 @@ class DatabaseOperations {
         }
     }
 
-    async getBreedingRecordsValue(cowTag, fieldName) {
+    async getBreedingRecordsValue(cowTag, fieldName, breedingYear = null) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
             request.input('cowTag', sql.NVarChar, cowTag);
 
+            let yearFilter = '';
+            if (breedingYear) {
+                request.input('breedingYear', sql.Int, breedingYear);
+                yearFilter = `
+                    INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                    WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
+            } else {
+                yearFilter = 'WHERE br.CowTag = @cowTag';
+            }
+
             switch (fieldName) {
-                case 'PrimaryBull':
+                case 'PrimaryBulls': {
                     const primaryQuery = `
-                        SELECT TOP 1 PrimaryBull
-                        FROM BreedingRecords 
-                        WHERE CowTag = @cowTag
+                        SELECT TOP 1 PrimaryBulls
+                        FROM BreedingRecords br
+                        ${yearFilter}
                         ORDER BY ExposureStartDate DESC`;
                     const primaryResult = await request.query(primaryQuery);
-                    return primaryResult.recordset[0]?.PrimaryBull || '';
+                    return primaryResult.recordset[0]?.PrimaryBulls || '';
+                }
 
-                case 'CleanupBull':
+                case 'CleanupBulls': {
                     const cleanupQuery = `
-                        SELECT TOP 1 CleanupBull
-                        FROM BreedingRecords 
-                        WHERE CowTag = @cowTag
+                        SELECT TOP 1 CleanupBulls
+                        FROM BreedingRecords br
+                        ${yearFilter}
                         ORDER BY ExposureStartDate DESC`;
                     const cleanupResult = await request.query(cleanupQuery);
-                    return cleanupResult.recordset[0]?.CleanupBull || '';
+                    return cleanupResult.recordset[0]?.CleanupBulls || '';
+                }
 
-                case 'CurrentBull':
+                case 'CurrentBull': {
                     const currentQuery = `
-                        SELECT TOP 1 PrimaryBull, ExposureStartDate, ExposureEndDate
-                        FROM BreedingRecords 
-                        WHERE CowTag = @cowTag AND GETDATE() BETWEEN ExposureStartDate AND ExposureEndDate
+                        SELECT TOP 1 PrimaryBulls, ExposureStartDate, ExposureEndDate
+                        FROM BreedingRecords br
+                        ${yearFilter} AND GETDATE() BETWEEN ExposureStartDate AND ExposureEndDate
                         ORDER BY ExposureStartDate DESC`;
                     const currentResult = await request.query(currentQuery);
-                    return currentResult.recordset[0]?.PrimaryBull || 'None';
+                    return currentResult.recordset[0]?.PrimaryBulls || 'None';
+                }
 
-                case 'ExposureStartDate':
-                    // Format exposure start date to mm/dd/yyyy
+                case 'ExposureStartDate': {
                     const startQuery = `
                         SELECT TOP 1 FORMAT(ExposureStartDate, 'MM/dd/yyyy') AS FormattedStartDate
-                        FROM BreedingRecords 
-                        WHERE CowTag = @cowTag
+                        FROM BreedingRecords br
+                        ${yearFilter}
                         ORDER BY ExposureStartDate DESC`;
                     const startResult = await request.query(startQuery);
                     return startResult.recordset[0]?.FormattedStartDate || '';
+                }
 
-                case 'ExposureEndDate':
-                    // Format exposure end date to mm/dd/yyyy
+                case 'ExposureEndDate': {
                     const endQuery = `
                         SELECT TOP 1 FORMAT(ExposureEndDate, 'MM/dd/yyyy') AS FormattedEndDate
-                        FROM BreedingRecords 
-                        WHERE CowTag = @cowTag
+                        FROM BreedingRecords br
+                        ${yearFilter}
                         ORDER BY ExposureStartDate DESC`;
                     const endResult = await request.query(endQuery);
                     return endResult.recordset[0]?.FormattedEndDate || '';
+                }
 
                 default:
                     return '';
@@ -3249,7 +4353,7 @@ class DatabaseOperations {
                     const dateResult = await request.query(dateQuery);
                     return dateResult.recordset[0]?.FormattedPregCheckDate || '';
 
-                case 'FetusSeX':
+                case 'FetusSex':
                     const sexQuery = `
                     SELECT TOP 1 FetusSex
                     FROM PregancyCheck pc
@@ -3291,53 +4395,6 @@ class DatabaseOperations {
             }
         } catch (error) {
             console.error(`Error fetching PregancyCheck value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    async getWeightRecordsValue(cowTag, fieldName) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            switch (fieldName) {
-                case 'CurrentWeight':
-                    // Get weight from LastWeightRecord ID
-                    const weightQuery = `
-                        SELECT w.Weight 
-                        FROM CowTable c
-                        INNER JOIN WeightRecords w ON c.LastWeightRecord = w.ID
-                        WHERE c.CowTag = @cowTag`;
-                    const weightResult = await request.query(weightQuery);
-                    return weightResult.recordset[0]?.Weight || '';
-
-                case 'LastWeightDate':
-                    // Get date from LastWeightRecord ID
-                    const dateQuery = `
-                        SELECT w.TimeRecorded 
-                        FROM CowTable c
-                        INNER JOIN WeightRecords w ON c.LastWeightRecord = w.ID
-                        WHERE c.CowTag = @cowTag`;
-                    const dateResult = await request.query(dateQuery);
-                    return dateResult.recordset[0]?.TimeRecorded || '';
-
-                case 'Latest':
-                    // Most recent weight regardless of LastWeightRecord field
-                    const latestQuery = `
-                        SELECT TOP 1 Weight
-                        FROM WeightRecords 
-                        WHERE CowTag = @cowTag
-                        ORDER BY TimeRecorded DESC`;
-                    const latestResult = await request.query(latestQuery);
-                    return latestResult.recordset[0]?.Weight || '';
-
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error fetching WeightRecords value for ${fieldName}:`, error);
             return '';
         }
     }
@@ -3409,6 +4466,680 @@ class DatabaseOperations {
         }
     }
 
+
+
+
+
+
+
+async getColumnValueWithSource(cowTag, dataPath, breedingYear) {
+    const [source, fieldName] = dataPath.split('/');
+
+    try {
+        switch (source) {
+            case 'CowTable':
+                return await this.getCowTableValueWithSource(cowTag, fieldName);
+            
+            case 'WeightRecords':
+                return await this.getWeightRecordsValueWithSource(cowTag, fieldName);
+            
+            case 'MedicalTable':
+                return await this.getMedicalTableValueWithSource(cowTag, fieldName);
+            
+            case 'BreedingRecords':
+                return await this.getBreedingRecordsValueWithSource(cowTag, fieldName, breedingYear);
+            
+            case 'PregancyCheck':
+                return await this.getPregancyCheckValueWithSource(cowTag, fieldName, breedingYear);
+            
+            case 'CalvingRecords':
+                return await this.getCalvingRecordsValueWithSource(cowTag, fieldName, breedingYear);
+            
+            case 'Herds':
+                // Herds don't have record IDs (lookup table)
+                const value = await this.getHerdsValue(cowTag, fieldName);
+                return { value, recordId: null };
+            
+            case 'Calculated':
+                // Calculated fields have no source records
+                const calcValue = await this.getCalculatedValue(cowTag, fieldName, breedingYear);
+                return { value: calcValue, recordId: null };
+            
+            case 'Fillable':
+                // Fillable fields start empty with no record
+                return { value: '', recordId: null };
+            
+            default:
+                return { value: '', recordId: null };
+        }
+    } catch (error) {
+        console.error(`Error getting column value with source for ${dataPath}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+
+
+async getCowTableValueWithSource(cowTag, fieldName) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        const columnMap = {
+            'CowTag': 'CowTag',
+            'Dam': '[Dam (Mother)]',
+            'Sire': '[Sire (Father)]',
+            'Sex': 'Sex',
+            'DateOfBirth': 'DateOfBirth',
+            'CurrentHerd': 'CurrentHerd',
+            'Description': 'Description',
+            'Breed': 'Breed',
+            'Temperament': 'Temperament',
+            'Status': 'Status',
+            'RegCert': 'RegCert',
+            'WeaningWeight': 'WeaningWeight',
+            'WeaningDate': 'WeaningDate',
+            'AnimalClass': 'AnimalClass'
+        };
+
+        const dbColumn = columnMap[fieldName] || fieldName;
+
+        if (fieldName === 'DateOfBirth' || fieldName === 'WeaningDate') {
+            const query = `SELECT FORMAT(${dbColumn}, 'MM/dd/yyyy') AS FormattedDate FROM CowTable WHERE CowTag = @cowTag`;
+            const result = await request.query(query);
+            return {
+                value: result.recordset[0] ? result.recordset[0]['FormattedDate'] : '',
+                recordId: cowTag // CowTag is the primary key
+            };
+        }
+
+        const query = `SELECT ${dbColumn} FROM CowTable WHERE CowTag = @cowTag`;
+        const result = await request.query(query);
+
+        let value = '';
+        if (fieldName === 'Dam') {
+            value = result.recordset[0] ? result.recordset[0]['Dam (Mother)'] : '';
+        } else if (fieldName === 'Sire') {
+            value = result.recordset[0] ? result.recordset[0]['Sire (Father)'] : '';
+        } else {
+            value = result.recordset[0] ? result.recordset[0][fieldName] : '';
+        }
+
+        return {
+            value,
+            recordId: cowTag // CowTag is the primary key
+        };
+    } catch (error) {
+        console.error(`Error fetching CowTable value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+async getWeightRecordsValueWithSource(cowTag, fieldName) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        let query;
+        if (fieldName === 'TimeRecorded') {
+            query = `
+                SELECT TOP 1 FORMAT(TimeRecorded, 'yyyy-MM-dd') AS FormattedDate, ID
+                FROM WeightRecords
+                WHERE CowTag = @cowTag
+                ORDER BY TimeRecorded DESC`;
+        } else {
+            query = `
+                SELECT TOP 1 ${fieldName}, ID
+                FROM WeightRecords
+                WHERE CowTag = @cowTag
+                ORDER BY TimeRecorded DESC`;
+        }
+
+        const result = await request.query(query);
+        
+        if (result.recordset.length > 0) {
+            return {
+                value: result.recordset[0][fieldName === 'TimeRecorded' ? 'FormattedDate' : fieldName] || '',
+                recordId: result.recordset[0].ID
+            };
+        }
+        
+        return { value: '', recordId: null };
+    } catch (error) {
+        console.error(`Error fetching WeightRecords value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+
+
+async getBreedingRecordsValueWithSource(cowTag, fieldName, breedingYear = null) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        let yearFilter = '';
+        if (breedingYear) {
+            request.input('breedingYear', sql.Int, breedingYear);
+            yearFilter = `
+                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+                WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
+        } else {
+            yearFilter = 'WHERE br.CowTag = @cowTag';
+        }
+
+        switch (fieldName) {
+            case 'PrimaryBulls': {
+                const query = `
+                    SELECT TOP 1 PrimaryBulls, br.ID
+                    FROM BreedingRecords br
+                    ${yearFilter}
+                    ORDER BY ExposureStartDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.PrimaryBulls || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'CleanupBulls': {
+                const query = `
+                    SELECT TOP 1 CleanupBulls, br.ID
+                    FROM BreedingRecords br
+                    ${yearFilter}
+                    ORDER BY ExposureStartDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.CleanupBulls || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'CurrentBull': {
+                const query = `
+                    SELECT TOP 1 PrimaryBulls, br.ID
+                    FROM BreedingRecords br
+                    ${yearFilter} AND GETDATE() BETWEEN ExposureStartDate AND ExposureEndDate
+                    ORDER BY ExposureStartDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.PrimaryBulls || 'None',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'ExposureStartDate':
+            case 'ExposureEndDate': {
+                const query = `
+                    SELECT TOP 1 FORMAT(${fieldName}, 'MM/dd/yyyy') AS FormattedDate, br.ID
+                    FROM BreedingRecords br
+                    ${yearFilter}
+                    ORDER BY ExposureStartDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.FormattedDate || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            default:
+                return { value: '', recordId: null };
+        }
+    } catch (error) {
+        console.error(`Error fetching BreedingRecords value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+
+
+
+async getPregancyCheckValueWithSource(cowTag, fieldName, breedingYear = null) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        let yearFilter = '';
+        if (breedingYear) {
+            request.input('breedingYear', sql.Int, breedingYear);
+            yearFilter = `
+            INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
+            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+            WHERE pc.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
+        } else {
+            yearFilter = 'WHERE pc.CowTag = @cowTag';
+        }
+
+        switch (fieldName) {
+            case 'IsPregnant': {
+                const query = `
+                    SELECT TOP 1 IsPregnant, pc.ID
+                    FROM PregancyCheck pc
+                    ${yearFilter}
+                    ORDER BY PregCheckDate DESC`;
+                const result = await request.query(query);
+                const isPregnant = result.recordset[0]?.IsPregnant;
+                return {
+                    value: isPregnant === 1 ? 'Pregnant' : (isPregnant === 0 ? 'Open' : ''),
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'PregCheckDate': {
+                const query = `
+                    SELECT TOP 1 FORMAT(PregCheckDate, 'yyyy-MM-dd') AS FormattedPregCheckDate, pc.ID
+                    FROM PregancyCheck pc
+                    ${yearFilter}
+                    ORDER BY PregCheckDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.FormattedPregCheckDate || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'FetusSex':
+            case 'Notes':
+            case 'MonthsPregnant': {
+                const query = `
+                    SELECT TOP 1 ${fieldName}, pc.ID
+                    FROM PregancyCheck pc
+                    ${yearFilter}
+                    ORDER BY PregCheckDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.[fieldName] || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'WeightAtCheck': {
+                const query = `
+                    SELECT TOP 1 wr.Weight, pc.ID
+                    FROM PregancyCheck pc
+                    LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
+                    ${yearFilter}
+                    ORDER BY PregCheckDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.Weight || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            default:
+                return { value: '', recordId: null };
+        }
+    } catch (error) {
+        console.error(`Error fetching PregancyCheck value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+
+
+async getCalvingRecordsValueWithSource(cowTag, fieldName, breedingYear = null) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        let yearFilter = '';
+        if (breedingYear) {
+            request.input('breedingYear', sql.Int, breedingYear);
+            yearFilter = `
+            INNER JOIN BreedingRecords br ON cr.BreedingRecordID = br.ID
+            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+            WHERE cr.DamTag = @cowTag AND bp.PlanYear = @breedingYear`;
+        } else {
+            yearFilter = 'WHERE cr.DamTag = @cowTag';
+        }
+
+        switch (fieldName) {
+            case 'CalfTag':
+            case 'CalfSex':
+            case 'CalvingNotes': {
+                const query = `
+                    SELECT TOP 1 ${fieldName}, cr.ID
+                    FROM CalvingRecords cr
+                    ${yearFilter}
+                    ORDER BY BirthDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.[fieldName] || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            case 'BirthDate': {
+                const query = `
+                    SELECT TOP 1 FORMAT(BirthDate, 'MM/dd/yyyy') AS FormattedBirthDate, cr.ID
+                    FROM CalvingRecords cr
+                    ${yearFilter}
+                    ORDER BY BirthDate DESC`;
+                const result = await request.query(query);
+                return {
+                    value: result.recordset[0]?.FormattedBirthDate || '',
+                    recordId: result.recordset[0]?.ID || null
+                };
+            }
+
+            default:
+                return { value: '', recordId: null };
+        }
+    } catch (error) {
+        console.error(`Error fetching CalvingRecords value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+async getMedicalTableValueWithSource(cowTag, fieldName) {
+    await this.ensureConnection();
+
+    try {
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+
+        // For fillable fields in Medical sheet, get most recent treatment
+        if (fieldName === 'TreatmentMedicineID' || fieldName === 'TreatmentDate' || fieldName === 'TreatmentNotes') {
+            const query = `
+                SELECT TOP 1 TreatmentMedicine, TreatmentDate, Notes, ID
+                FROM MedicalTable
+                WHERE CowTag = @cowTag
+                ORDER BY TreatmentDate DESC`;
+            const result = await request.query(query);
+            
+            if (result.recordset.length > 0) {
+                let value = '';
+                if (fieldName === 'TreatmentMedicineID') {
+                    value = result.recordset[0].TreatmentMedicine || '';
+                } else if (fieldName === 'TreatmentDate') {
+                    value = result.recordset[0].TreatmentDate 
+                        ? result.recordset[0].TreatmentDate.toISOString().split('T')[0] 
+                        : '';
+                } else if (fieldName === 'TreatmentNotes') {
+                    value = result.recordset[0].Notes || '';
+                }
+                
+                return {
+                    value,
+                    recordId: result.recordset[0].ID
+                };
+            }
+            
+            return { value: '', recordId: null };
+        }
+
+        // For display-only aggregated fields (not used in instances)
+        const value = await this.getMedicalTableValue(cowTag, fieldName);
+        return { value, recordId: null };
+
+    } catch (error) {
+        console.error(`Error fetching MedicalTable value for ${fieldName}:`, error);
+        return { value: '', recordId: null };
+    }
+}
+
+
+
+
+
+
+async createOrUpdateWeightRecord(cowTag, fieldName, value, existingRecordId) {
+    await this.ensureConnection();
+    
+    if (existingRecordId) {
+        // Update existing record
+        const request = this.pool.request();
+        request.input('recordId', sql.Int, existingRecordId);
+        request.input('value', fieldName === 'Weight' ? sql.Int : sql.DateTime, value);
+        
+        const query = `UPDATE WeightRecords SET ${fieldName} = @value WHERE ID = @recordId`;
+        await request.query(query);
+        return existingRecordId;
+    } else {
+        // Create new record
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+        
+        if (fieldName === 'Weight') {
+            request.input('weight', sql.Int, value);
+            request.input('timeRecorded', sql.DateTime, new Date());
+        } else if (fieldName === 'TimeRecorded') {
+            request.input('timeRecorded', sql.DateTime, value);
+            request.input('weight', sql.Int, null);
+        } else if (fieldName === 'Notes') {
+            request.input('notes', sql.NVarChar(sql.MAX), value);
+            request.input('timeRecorded', sql.DateTime, new Date());
+        }
+        
+        const query = `
+            INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, Notes)
+            OUTPUT INSERTED.ID
+            VALUES (@cowTag, @weight, @timeRecorded, @notes)`;
+        
+        const result = await request.query(query);
+        return result.recordset[0].ID;
+    }
+}
+
+async createOrUpdatePregancyCheckField(cowTag, fieldName, value, existingRecordId) {
+    await this.ensureConnection();
+    
+    if (!existingRecordId) {
+        throw new Error('Cannot create PregancyCheck record from individual field - record must exist first');
+    }
+    
+    const request = this.pool.request();
+    request.input('recordId', sql.Int, existingRecordId);
+    
+    let sqlType, sqlValue;
+    switch (fieldName) {
+        case 'PregCheckDate':
+            sqlType = sql.Date;
+            sqlValue = value;
+            break;
+        case 'IsPregnant':
+            sqlType = sql.Bit;
+            sqlValue = value === 'Pregnant' ? 1 : 0;
+            break;
+        case 'FetusSex':
+            sqlType = sql.NVarChar;
+            sqlValue = value;
+            break;
+        case 'WeightAtCheck':
+            sqlType = sql.Int;
+            sqlValue = value;
+            break;
+        case 'Notes':
+            sqlType = sql.Text;
+            sqlValue = value;
+            break;
+        default:
+            throw new Error(`Unknown PregancyCheck field: ${fieldName}`);
+    }
+    
+    request.input('value', sqlType, sqlValue);
+    const query = `UPDATE PregancyCheck SET ${fieldName} = @value WHERE ID = @recordId`;
+    await request.query(query);
+    return existingRecordId;
+}
+
+async updateCowTableField(cowTag, fieldName, value) {
+    await this.ensureConnection();
+    
+    const request = this.pool.request();
+    request.input('cowTag', sql.NVarChar, cowTag);
+    
+    let sqlType;
+    switch (fieldName) {
+        case 'AnimalClass':
+            sqlType = sql.NVarChar;
+            break;
+        case 'WeaningWeight':
+            sqlType = sql.Int;
+            break;
+        case 'WeaningDate':
+            sqlType = sql.Date;
+            break;
+        default:
+            throw new Error(`Unknown CowTable field: ${fieldName}`);
+    }
+    
+    request.input('value', sqlType, value);
+    const query = `UPDATE CowTable SET ${fieldName} = @value WHERE CowTag = @cowTag`;
+    await request.query(query);
+    
+    // Return cowTag as the "recordId" since CowTag is the primary key
+    return cowTag;
+}
+
+async createOrUpdateWeaningRecord(cowTag, notes, existingRecordId) {
+    await this.ensureConnection();
+    
+    if (existingRecordId) {
+        // Update existing record
+        const request = this.pool.request();
+        request.input('recordId', sql.Int, existingRecordId);
+        request.input('notes', sql.NVarChar(sql.MAX), notes);
+        
+        const query = `UPDATE WeaningRecords SET Notes = @notes WHERE ID = @recordId`;
+        await request.query(query);
+        return existingRecordId;
+    } else {
+        // Create new record
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+        request.input('notes', sql.NVarChar(sql.MAX), notes);
+        request.input('weaningDate', sql.DateTime, new Date());
+        
+        const query = `
+            INSERT INTO WeaningRecords (CowTag, WeaningDate, Notes)
+            OUTPUT INSERTED.ID
+            VALUES (@cowTag, @weaningDate, @notes)`;
+        
+        const result = await request.query(query);
+        return result.recordset[0].ID;
+    }
+}
+
+async updateCalvingRecordField(cowTag, fieldName, value, existingRecordId) {
+    await this.ensureConnection();
+    
+    if (!existingRecordId) {
+        throw new Error('Cannot update CalvingRecord - record must exist first');
+    }
+    
+    const request = this.pool.request();
+    request.input('recordId', sql.Int, existingRecordId);
+    
+    let sqlType;
+    switch (fieldName) {
+        case 'CalvingNotes':
+            sqlType = sql.NVarChar(sql.MAX);
+            break;
+        default:
+            throw new Error(`Unknown or non-editable CalvingRecords field: ${fieldName}`);
+    }
+    
+    request.input('value', sqlType, value);
+    const query = `UPDATE CalvingRecords SET ${fieldName} = @value WHERE ID = @recordId`;
+    await request.query(query);
+    return existingRecordId;
+}
+
+async createOrUpdateMedicalRecord(cowTag, fieldName, value, existingRecordId) {
+    await this.ensureConnection();
+    
+    if (existingRecordId) {
+        // Update existing record
+        const request = this.pool.request();
+        request.input('recordId', sql.Int, existingRecordId);
+        
+        let actualFieldName = fieldName;
+        let sqlType;
+        
+        switch (fieldName) {
+            case 'TreatmentMedicineID':
+                actualFieldName = 'TreatmentMedicine';
+                sqlType = sql.NVarChar;
+                break;
+            case 'TreatmentDate':
+                sqlType = sql.Date;
+                break;
+            case 'TreatmentNotes':
+                actualFieldName = 'Notes';
+                sqlType = sql.NVarChar(sql.MAX);
+                break;
+            default:
+                throw new Error(`Unknown MedicalTable field: ${fieldName}`);
+        }
+        
+        request.input('value', sqlType, value);
+        const query = `UPDATE MedicalTable SET ${actualFieldName} = @value WHERE ID = @recordId`;
+        await request.query(query);
+        return existingRecordId;
+    } else {
+        // Create new record
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, cowTag);
+        request.input('eventId', sql.Int, null);
+        
+        let medicine = null, treatmentDate = new Date(), notes = null;
+        
+        switch (fieldName) {
+            case 'TreatmentMedicineID':
+                medicine = value;
+                break;
+            case 'TreatmentDate':
+                treatmentDate = value;
+                break;
+            case 'TreatmentNotes':
+                notes = value;
+                break;
+        }
+        
+        request.input('medicine', sql.NVarChar, medicine);
+        request.input('treatmentDate', sql.Date, treatmentDate);
+        request.input('notes', sql.NVarChar(sql.MAX), notes);
+        
+        const query = `
+            INSERT INTO MedicalTable (EventID, CowTag, TreatmentMedicine, TreatmentDate, Notes)
+            OUTPUT INSERTED.ID
+            VALUES (@eventId, @cowTag, @medicine, @treatmentDate, @notes)`;
+        
+        const result = await request.query(query);
+        return result.recordset[0].ID;
+    }
+}
+
+
+
     async getHerdsValue(cowTag, fieldName) {
         await this.ensureConnection();
 
@@ -3435,6 +5166,25 @@ class DatabaseOperations {
         }
     }
 
+    async getWeightRecordsValue(cowTag, fieldName) {
+        try {
+            const weightData = await this.getCurrentWeight(cowTag);
+            
+            switch (fieldName) {
+                case 'Weight':
+                case 'Latest':
+                    return weightData.weight || '';
+                case 'TimeRecorded':
+                case 'Date':
+                    return weightData.formattedDate || '';
+                default:
+                    return '';
+            }
+        } catch (error) {
+            console.error(`Error fetching WeightRecords value for ${fieldName}:`, error);
+            return '';
+        }
+    }
 
     calculateAge(dateOfBirth) {
         try {
@@ -3507,283 +5257,6 @@ class DatabaseOperations {
         }
     }
 
-    async getCalculatedValue(cowTag, fieldName) {
-        try {
-            switch (fieldName) {
-                case 'Age':
-                    const basicInfo = await this.getCowTableValue(cowTag, 'DateOfBirth');
-                    return this.calculateAge(basicInfo);
-
-                case 'PregnancyMonths':
-                    const pregCheck = await this.getPregancyCheckValue(cowTag, 'IsPregnant');
-                    const pregDate = await this.getPregancyCheckValue(cowTag, 'PregCheckDate');
-                    return this.calculatePregnancyMonths(pregDate, pregCheck === 'Yes');
-
-                case 'OpenStatus':
-                    const isPregnant = await this.getPregancyCheckValue(cowTag, 'IsPregnant');
-                    return isPregnant === 'Yes' ? 'No' : 'Yes';
-
-                case 'CullStatus':
-                    const status = await this.getCowTableValue(cowTag, 'Status');
-                    return status === 'Cull' ? 'Yes' : 'No';
-
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error calculating value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    async getSheetDataDynamic(params) {
-        const { sheetId, herdName, breedingYear, sheetName } = params;
-
-        try {
-            // 1. Get sheet definition
-            const sheetDef = await this.getSheetDefinition({ sheetId });
-            const columnConfig = JSON.parse(sheetDef.columns);
-
-            // 2. Get cow list based on sheet type and filters
-            const cowList = await this.getCowListForSheet(herdName, sheetName, breedingYear);
-
-            // 3. For each cow, get all column values
-            const sheetData = [];
-            for (const cowTag of cowList) {
-                const rowData = { CowTag: cowTag };
-
-                for (const column of columnConfig.columns) {
-                    rowData[column.key] = await this.getColumnValue(cowTag, column.dataPath, breedingYear);
-                }
-                sheetData.push(rowData);
-            }
-
-            // 4. Add sheet-specific columns
-            const enhancedColumns = await this.addSheetSpecificColumns(columnConfig.columns, sheetName);
-
-            // 5. Build update handlers
-            const updateHandlers = {};
-            enhancedColumns.forEach(col => {
-                if (col.updateHandler) {
-                    updateHandlers[col.key] = col.updateHandler;
-                }
-            });
-
-            return {
-                columns: enhancedColumns,
-                data: sheetData,
-                updateHandlers: updateHandlers
-            };
-        } catch (error) {
-            console.error('Error loading dynamic sheet data:', error);
-            throw error;
-        }
-    }
-
-    async getCowListForSheet(herdName, sheetName, breedingYear) {
-        await this.ensureConnection();
-
-        try {
-            let query = '';
-            const request = this.pool.request();
-
-            if (sheetName === 'PregCheck') {
-                // Only cows with breeding records for the current year
-                query = `
-                SELECT DISTINCT c.CowTag
-                FROM CowTable c
-                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
-                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                WHERE bp.PlanYear = @breedingYear
-                  AND ${STATUS_ACTIVE}
-                  ${herdName && herdName !== 'All active' ? 'AND c.CurrentHerd = @herdName' : ''}
-                ORDER BY c.CowTag`;
-
-                request.input('breedingYear', sql.Int, breedingYear);
-                if (herdName && herdName !== 'All active') {
-                    request.input('herdName', sql.NVarChar, herdName);
-                }
-            } else if (sheetName === 'CalvingTracker') {
-                // Only cows with breeding records for the current year
-                query = `
-                SELECT DISTINCT c.CowTag
-                FROM CowTable c
-                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
-                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                WHERE bp.PlanYear = @breedingYear
-                  AND ${STATUS_ACTIVE}
-                  ${herdName && herdName !== 'All active' ? 'AND c.CurrentHerd = @herdName' : ''}
-                ORDER BY c.CowTag`;
-
-                request.input('breedingYear', sql.Int, breedingYear);
-                if (herdName && herdName !== 'All active') {
-                    request.input('herdName', sql.NVarChar, herdName);
-                }
-            } else if (sheetName === 'Weanlings') {
-                // Only calves born in current and previous year
-                query = `
-                SELECT CowTag
-                FROM CowTable
-                WHERE YEAR(DateOfBirth) IN (@currentYear, @previousYear)
-                  AND ${STATUS_ACTIVE}
-                  ${herdName && herdName !== 'All active' ? 'AND CurrentHerd = @herdName' : ''}
-                ORDER BY CowTag`;
-
-                request.input('currentYear', sql.Int, breedingYear);
-                request.input('previousYear', sql.Int, breedingYear - 1);
-                if (herdName && herdName !== 'All active') {
-                    request.input('herdName', sql.NVarChar, herdName);
-                }
-            } else {
-                // Default behavior for other sheets
-                return await this.getCowListForHerd(herdName);
-            }
-
-            const result = await request.query(query);
-            return result.recordset.map(r => r.CowTag);
-        } catch (error) {
-            console.error('Error fetching cow list for sheet:', error);
-            throw error;
-        }
-    }
-
-    async getColumnValue(cowTag, dataPath, breedingYear = null) {
-        const [source, fieldName] = dataPath.split('/');
-
-        try {
-            switch (source) {
-                case 'CowTable':
-                    return await this.getCowTableValue(cowTag, fieldName);
-                case 'WeightRecords':
-                    return await this.getWeightRecordsValue(cowTag, fieldName);
-                case 'MedicalTable':
-                    return await this.getMedicalTableValue(cowTag, fieldName);
-                case 'BreedingRecords':
-                    return await this.getBreedingRecordsValue(cowTag, fieldName, breedingYear);
-                case 'PregancyCheck':
-                    return await this.getPregancyCheckValue(cowTag, fieldName, breedingYear);
-                case 'CalvingRecords':
-                    return await this.getCalvingRecordsValue(cowTag, fieldName);
-                case 'Herds':
-                    return await this.getHerdsValue(cowTag, fieldName);
-                case 'Calculated':
-                    return await this.getCalculatedValue(cowTag, fieldName, breedingYear);
-                case 'Fillable':
-                    return await this.getFillableValue(cowTag, fieldName);
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error getting column value for ${dataPath}:`, error);
-            return '';
-        }
-    }
-
-    async getBreedingRecordsValue(cowTag, fieldName, breedingYear = null) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            let yearFilter = '';
-            if (breedingYear) {
-                request.input('breedingYear', sql.Int, breedingYear);
-                yearFilter = `
-                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
-            } else {
-                yearFilter = 'WHERE br.CowTag = @cowTag';
-            }
-
-            switch (fieldName) {
-                case 'PrimaryBull':
-                    const primaryQuery = `
-                    SELECT TOP 1 PrimaryBull
-                    FROM BreedingRecords br
-                    ${yearFilter}
-                    ORDER BY ExposureStartDate DESC`;
-                    const primaryResult = await request.query(primaryQuery);
-                    return primaryResult.recordset[0]?.PrimaryBull || '';
-
-                // ... other cases remain the same
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error fetching BreedingRecords value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    async getCalculatedValue(cowTag, fieldName, breedingYear = null) {
-        try {
-            switch (fieldName) {
-                case 'ExpectedDeliveryDate':
-                    return await this.calculateExpectedDeliveryDate(cowTag, breedingYear);
-
-                case 'BreedingStatus':
-                    return await this.calculateBreedingStatus(cowTag, breedingYear);
-
-                // ... other existing cases
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error calculating value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    async getSheetDataDynamic(params) {
-        const { sheetId, herdName, breedingYear, sheetName } = params;
-
-        try {
-            // 1. Get sheet definition
-            const sheetDef = await this.getSheetDefinition({ sheetId });
-            const columnConfig = JSON.parse(sheetDef.columns);
-
-            // 2. Get cow list based on sheet type and filters
-            const cowList = await this.getCowListForSheet(herdName, sheetName, breedingYear);
-
-            // 3. For each cow, get all column values
-            const sheetData = [];
-            for (const cowTag of cowList) {
-                const rowData = { CowTag: cowTag };
-
-                for (const column of columnConfig.columns) {
-                    rowData[column.key] = await this.getColumnValue(cowTag, column.dataPath, breedingYear);
-                }
-                sheetData.push(rowData);
-            }
-
-            const enhancedColumns = columnConfig.columns;
-
-            // 5. Build update handlers - FIX THIS SECTION
-            const updateHandlers = {};
-            enhancedColumns.forEach(col => {
-                if (col.updateHandler) {
-                    updateHandlers[col.key] = col.updateHandler;
-                    console.log(`Added update handler: ${col.key} -> ${col.updateHandler}`);
-                }
-            });
-
-            // Add debug logging
-            console.log('Final updateHandlers:', updateHandlers);
-            console.log('Enhanced columns with handlers:', enhancedColumns.filter(col => col.updateHandler));
-
-            return {
-                columns: enhancedColumns,
-                data: sheetData,
-                updateHandlers: updateHandlers
-            };
-        } catch (error) {
-            console.error('Error loading dynamic sheet data:', error);
-            throw error;
-        }
-    }
-
-
     async calculateExpectedDeliveryDate(cowTag, breedingYear) {
         await this.ensureConnection();
 
@@ -3830,6 +5303,9 @@ class DatabaseOperations {
             return '';
         }
     }
+
+
+
 
     async updatePregCheckDate(cowTag, value, breedingYear = null) {
         await this.ensureConnection();
@@ -3983,7 +5459,7 @@ class DatabaseOperations {
 
             const query = `
             UPDATE PregancyCheck 
-            SET FetusSeX = @fetusSex
+            SET FetusSex = @fetusSex
             WHERE CowTag = @cowTag AND ID = (
                 SELECT TOP 1 ID FROM PregancyCheck 
                 WHERE CowTag = @cowTag 
@@ -4041,31 +5517,17 @@ class DatabaseOperations {
             let weightRecordId;
 
             if (existingWeightRecordId) {
-                // Update existing weight record
-                const updateWeightRequest = this.pool.request();
-                updateWeightRequest.input('weightRecordId', sql.Int, existingWeightRecordId);
-                updateWeightRequest.input('weight', sql.Int, weightValue);
-
-                const updateWeightQuery = `
-                UPDATE WeightRecords 
-                SET Weight = @weight, TimeRecorded = GETDATE()
-                WHERE ID = @weightRecordId`;
-                await updateWeightRequest.query(updateWeightQuery);
-                
+                await this.updateWeightRecord({
+                    recordId: existingWeightRecordId,
+                    weight: weightValue
+                });
                 weightRecordId = existingWeightRecordId;
             } else {
-                // Create new weight record
-                const createWeightRequest = this.pool.request();
-                createWeightRequest.input('cowTag', sql.NVarChar, cowTag);
-                createWeightRequest.input('weight', sql.Int, weightValue);
-
-                const createWeightQuery = `
-                INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, EventID)
-                OUTPUT INSERTED.ID
-                VALUES (@cowTag, @weight, GETDATE(), NULL)`;
-                const weightResult = await createWeightRequest.query(createWeightQuery);
-                
-                weightRecordId = weightResult.recordset[0].ID;
+                const result = await this.createWeightRecord({
+                    cowTag: cowTag,
+                    weight: weightValue
+                });
+                weightRecordId = result.recordId;
 
                 // Link the weight record to the pregnancy check
                 const linkWeightRequest = this.pool.request();
@@ -4111,269 +5573,6 @@ class DatabaseOperations {
         }
     }
 
-
-    /**
-     * Get breeding animal status categorized by age and breeding records
-     */
-    async getBreedingAnimalStatus() {
-        await this.ensureConnection();
-
-        try {
-            // Get current breeding plan year
-            const currentPlanQuery = `
-                SELECT TOP 1 ID, PlanYear 
-                FROM BreedingPlan 
-                WHERE IsActive = 1 
-                ORDER BY PlanYear DESC`;
-            const planResult = await this.pool.request().query(currentPlanQuery);
-            const currentPlanId = planResult.recordset[0]?.ID;
-            const currentYear = planResult.recordset[0]?.PlanYear || new Date().getFullYear();
-
-
-            const request = this.pool.request();
-            request.input('currentPlanId', sql.Int, currentPlanId);
-
-            // Main query to categorize all active animals
-            const query = `
-                SELECT 
-                    c.CowTag,
-                    c.Sex,
-                    c.DateOfBirth,
-                    c.Description,
-                    c.CurrentHerd,
-                    c.Castrated,
-                    c.Status,
-                    DATEDIFF(month, c.DateOfBirth, GETDATE()) AS AgeInMonths,
-                    CASE WHEN wr.ID IS NOT NULL THEN 1 ELSE 0 END AS HasWeaningRecord,
-                    CASE WHEN br.ID IS NOT NULL THEN 1 ELSE 0 END AS HasCurrentBreedingRecord,
-                    CASE 
-                        -- Bulls: Male and not castrated (Castrated = 0 or NULL)
-                        WHEN (c.Sex = 'Bull' OR (c.Sex = 'Male' AND (c.Castrated IS NULL OR c.Castrated = 0))) THEN 'bull'
-                        
-                        -- Female categorization
-                        WHEN c.Sex = 'Female' THEN
-                            CASE 
-                                -- Calves: Female, < 12 months, no weaning record
-                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) < 12 AND wr.ID IS NULL THEN 'calf'
-                                
-                                -- Yearlings: Female, < 24 months, AND (> 12 months OR has weaning record)
-                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) < 24 
-                                    AND (DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 12 OR wr.ID IS NOT NULL) THEN 'yearling'
-                                
-                                -- Assigned cows: Female, >= 24 months, has breeding record for current plan
-                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 24 AND br.ID IS NOT NULL THEN 'assigned-cow'
-                                
-                                -- Unassigned cows: Female, >= 24 months, no breeding record for current plan
-                                WHEN DATEDIFF(month, c.DateOfBirth, GETDATE()) >= 24 AND br.ID IS NULL THEN 'unassigned-cow'
-                                
-                                ELSE 'unknown-female'
-                            END
-                        ELSE 'other'
-                    END AS Category
-                FROM CowTable c
-                LEFT JOIN WeaningRecords wr ON c.CowTag = wr.CowTag
-                LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @currentPlanId
-                WHERE ${STATUS_ACTIVE}
-                ORDER BY c.CowTag`;
-
-            const result = await request.query(query);
-            
-            
-            // Group results by category
-            const categorized = {
-                bulls: [],
-                calfs: [],
-                yearlings: [],
-                'assigned-cow': [],
-                'unassigned-cows': []
-            };
-
-            result.recordset.forEach(animal => {
-                const category = animal.Category;
-
-                if (category === 'bull') {
-                    categorized.bulls.push(animal);
-                } else if (category === 'calf') {
-                    categorized.calfs.push(animal);
-                } else if (category === 'yearling') {
-                    categorized.yearlings.push(animal);
-                } else if (category === 'assigned-cow') {
-                    categorized['assigned-cow'].push(animal);
-                } else if (category === 'unassigned-cow') {
-                    categorized['unassigned-cows'].push(animal);
-                }
-            });
-
-            // console.log('Categorized results:', {
-            //     bulls: categorized.bulls.length,
-            //     calfs: categorized.calfs.length,
-            //     yearlings: categorized.yearlings.length,
-            //     'assigned-cow': categorized['assigned-cow'].length,
-            //     'unassigned-cows': categorized['unassigned-cows'].length
-            // });
-
-            return {
-                currentPlanYear: currentYear,
-                currentPlanId: currentPlanId,
-                bulls: categorized.bulls,
-                calfs: categorized.calfs,
-                yearlings: categorized.yearlings,
-                'assigned-cow': categorized['assigned-cow'],
-                'unassigned-cows': categorized['unassigned-cows']
-            };
-        } catch (error) {
-            console.error('Error fetching breeding animal status:', error);
-            throw error;
-        }
-    }
-
-    async findBreedingRecordForDam(damTag, breedingYear) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('damTag', sql.NVarChar, damTag);
-            request.input('breedingYear', sql.Int, breedingYear);
-            // console.log(`Binding damTag: [${damTag}] length: ${damTag.length}`);
-            // console.log(`Binding breedingYear: [${breedingYear}]`);
-
-            const query = `
-            SELECT TOP 1 br.ID
-            FROM BreedingRecords br
-            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-            WHERE br.CowTag = @damTag AND bp.PlanYear = @breedingYear
-            ORDER BY br.ExposureStartDate DESC`;
-            
-            const result = await request.query(query);
-            // console.log("findBreedingRecordForDam returned:", { result });
-            return result.recordset[0]?.ID || null;
-        } catch (error) {
-            console.error('Error finding breeding record:', error);
-            return null;
-        }
-    }
-
-    async assignBreedingRecords(params) {
-        const { planId, primaryBull, cowTags, exposureStartDate, exposureEndDate, cleanupBull, pasture } = params;
-        await this.ensureConnection();
-
-        try {
-            const results = [];
-
-            for (const cowTag of cowTags) {
-                const request = this.pool.request();
-                request.input('planId', sql.Int, planId);
-                request.input('cowTag', sql.NVarChar, cowTag);
-                request.input('primaryBull', sql.NVarChar, primaryBull);
-                request.input('cleanupBull', sql.NVarChar, cleanupBull || null);
-                request.input('exposureStartDate', sql.DateTime, new Date(exposureStartDate));
-                request.input('exposureEndDate', sql.DateTime, new Date(exposureEndDate));
-                request.input('pasture', sql.NVarChar, pasture || null);
-                request.input('isAI', sql.Bit, false); // Default to natural breeding
-
-                const query = `
-                    INSERT INTO BreedingRecords (
-                        PlanID, CowTag, PrimaryBull, CleanupBull, IsAI, 
-                        ExposureStartDate, ExposureEndDate, Pasture
-                    ) VALUES (
-                        @planId, @cowTag, @primaryBull, @cleanupBull, @isAI,
-                        @exposureStartDate, @exposureEndDate, @pasture
-                    )`;
-
-                await request.query(query);
-                results.push({ cowTag, success: true });
-            }
-
-            return { success: true, results, assignedCount: results.length };
-        } catch (error) {
-            console.error('Error assigning breeding records:', error);
-            throw error;
-        }
-    }
-
-    async updateBreedingStatus(cowTag, value, breedingYear) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('breedingYear', sql.Int, breedingYear);
-            request.input('isPregnant', sql.Bit, value === 'Pregnant');
-
-            // Find breeding record for the specific plan year
-            const breedingQuery = `
-            SELECT TOP 1 br.ID 
-            FROM BreedingRecords br
-            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-            WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear
-            ORDER BY br.ExposureStartDate DESC`;
-            
-            const breedingResult = await request.query(breedingQuery);
-
-            if (breedingResult.recordset.length === 0) {
-                throw new Error(`No breeding record found for ${cowTag} in year ${breedingYear}`);
-            }
-
-            const breedingRecordId = breedingResult.recordset[0].ID;
-
-            if (value === 'Pregnant' || value === 'Open') {
-                // Update or insert pregnancy check without EventID
-                const mergeRequest = this.pool.request();
-                mergeRequest.input('cowTag', sql.NVarChar, cowTag);
-                mergeRequest.input('breedingRecordId', sql.Int, breedingRecordId);
-                mergeRequest.input('isPregnant', sql.Bit, value === 'Pregnant');
-
-                const mergeQuery = `
-                MERGE PregancyCheck AS target
-                USING (SELECT @cowTag AS CowTag, @breedingRecordId AS BreedingRecordID) AS source
-                ON (target.CowTag = source.CowTag AND target.BreedingRecordID = source.BreedingRecordID)
-                WHEN MATCHED THEN
-                    UPDATE SET IsPregnant = @isPregnant, PregCheckDate = GETDATE()
-                WHEN NOT MATCHED THEN
-                    INSERT (CowTag, BreedingRecordID, IsPregnant, PregCheckDate, EventID)
-                    VALUES (@cowTag, @breedingRecordId, @isPregnant, GETDATE(), NULL);`;
-
-                await mergeRequest.query(mergeQuery);
-            }
-
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating breeding status:', error);
-            throw error;
-        }
-    }
-
-    async addCalvingNote(cowTag, value, breedingYear) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('breedingYear', sql.Int, breedingYear);
-            request.input('calvingNotes', sql.NVarChar(sql.MAX), value);
-
-            // Find the calving record for this cow and breeding year
-            const query = `
-            UPDATE cr 
-            SET CalvingNotes = @calvingNotes
-            FROM CalvingRecords cr
-            INNER JOIN BreedingRecords br ON cr.BreedingRecordID = br.ID
-            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-            WHERE cr.DamTag = @cowTag AND bp.PlanYear = @breedingYear`;
-
-            const result = await request.query(query);
-            
-            if (result.rowsAffected[0] === 0) {
-                throw new Error(`No calving record found for ${cowTag} in year ${breedingYear}`);
-            }
-
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating calving notes:', error);
-            throw error;
-        }
-    }
-
     async updateWeaningStatus(cowTag, value, breedingYear) {
         await this.ensureConnection();
 
@@ -4414,61 +5613,104 @@ class DatabaseOperations {
         }
     }
 
+    async addCalvingNote(cowTag, value, breedingYear) {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('cowTag', sql.NVarChar, cowTag);
+            request.input('breedingYear', sql.Int, breedingYear);
+            request.input('calvingNotes', sql.NVarChar(sql.MAX), value);
+
+            // Find the calving record for this cow and breeding year
+            const query = `
+            UPDATE cr 
+            SET CalvingNotes = @calvingNotes
+            FROM CalvingRecords cr
+            INNER JOIN BreedingRecords br ON cr.BreedingRecordID = br.ID
+            INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
+            WHERE cr.DamTag = @cowTag AND bp.PlanYear = @breedingYear`;
+
+            const result = await request.query(query);
+            
+            if (result.rowsAffected[0] === 0) {
+                throw new Error(`No calving record found for ${cowTag} in year ${breedingYear}`);
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating calving notes:', error);
+            throw error;
+        }
+    }
+
+
+
+
+
 
     async getFillableValue(cowTag, fieldName) {
         // Fillable fields always return empty string for user input
         return '';
     }
 
+    async getUpdateHandler(columnName)  {
+        const handlerMap = {
+            'PregancyCheck/IsPregnant': 'updatePregancyResult',
+            'PregancyCheck/FetusSex': 'updateFetusSex', 
+            'PregancyCheck/WeightAtCheck': 'updatePregCheckWeight',
+            'PregancyCheck/Notes': 'updatePregCheckNotes',
+            'PregancyCheck/MonthsPregnant': 'updateMonthsPregnant',
+            'WeightRecords/Latest': 'recordNewWeight',
+            'CalvingRecords/CalfSex': 'updateCalfSex',
+            'CalvingRecords/CalvingNotes': 'addCalvingNote'
+        };
+        return handlerMap[columnName] || null;
+    }
+
+    async getFieldOptions(columnName)  {
+        const optionsMap = {
+            'PregancyCheck/IsPregnant': ['', 'Pregnant', 'Open'],
+            'PregancyCheck/FetusSex': ['', 'Heifer', 'Bull'],
+            'CalvingRecords/CalfSex': ['', 'Heifer', 'Bull'],
+            'CowTable/Sex': ['', 'Cow', 'Bull', 'Steer', 'Heifer'],
+            'CowTable/Status': ['', 'Current', 'Target Sale', 'Undefined', 'Cull'],
+        };
+
+        return optionsMap[columnName] || [];
+    }
+
+    async getFieldType(columnName) {
+        const types = [
+            { type: 'date', keywords: ['Date'] },
+            { type: 'number', keywords: ['Weight', 'Months'] },
+            { type: 'select', keywords: ['IsPregnant', 'Sex', 'Status', 'Breed', 'Temperament'] },
+            { type: 'text', keywords: ['Notes', 'Description'] }
+        ];
+
+        const match = types.find(({ keywords }) =>
+            keywords.some(keyword => columnName.includes(keyword))
+        );
+
+        return match?.type || 'text';
+    }
+
+
+
     /**
      * AVAILABLE COLUMNS
      */
     async getAvailableColumns() {
         try {
-            // Helper functions for auto-configuration
-            const getFieldType = (dataPath) => {
-                if (dataPath.includes('Date')) return 'date';
-                if (dataPath.includes('Weight') || dataPath.includes('Months')) return 'number';
-                if (dataPath.includes('IsPregnant') || dataPath.includes('Sex') || 
-                    dataPath.includes('Status') || dataPath.includes('Breed') || 
-                    dataPath.includes('Temperament')) return 'select';
-                if (dataPath.includes('Notes') || dataPath.includes('Description')) return 'text';
-                return 'text';
-            };
-
-            const getUpdateHandler = (dataPath) => {
-                const handlerMap = {
-                    'PregancyCheck/IsPregnant': 'updatePregancyResult',
-                    'PregancyCheck/FetusSeX': 'updateFetusSex', 
-                    'PregancyCheck/WeightAtCheck': 'updatePregCheckWeight',
-                    'PregancyCheck/Notes': 'updatePregCheckNotes',
-                    'PregancyCheck/MonthsPregnant': 'updateMonthsPregnant',
-                    'WeightRecords/Latest': 'recordNewWeight',
-                    'CalvingRecords/CalfSex': 'updateCalfSex',
-                    'CalvingRecords/CalvingNotes': 'addCalvingNote'
-                };
-                return handlerMap[dataPath] || null;
-            };
-
-            const getFieldOptions = (dataPath) => {
-                const optionsMap = {
-                    'PregancyCheck/IsPregnant': ['', 'Pregnant', 'Open'],
-                    'PregancyCheck/FetusSeX': ['', 'Heifer', 'Bull'],
-                    'CalvingRecords/CalfSex': ['', 'Heifer', 'Bull'],
-                    'CowTable/Sex': ['', 'Cow', 'Bull', 'Steer', 'Heifer'],
-                    'CowTable/Status': ['', 'Current', 'Target Sale', 'Undefined', 'Cull'],
-                };
-                return optionsMap[dataPath] || [];
-            };
-
+            
             const isEditable = (dataPath) => {
                 // All Fillable/ paths are editable
                 if (dataPath.startsWith('Fillable/')) return true;
                 
-                // Specific editable fields from your existing sheets
+                // Editable fields from your existing sheets
                 const editableFields = [
                     'PregancyCheck/IsPregnant',
-                    'PregancyCheck/FetusSeX', 
+                    'PregancyCheck/FetusSex', 
                     'PregancyCheck/WeightAtCheck',
                     'PregancyCheck/Notes',
                     'PregancyCheck/MonthsPregnant',
@@ -4500,20 +5742,18 @@ class DatabaseOperations {
                 { name: 'Status', path: 'CowTable/Status' },
                 { name: 'RegCert', path: 'CowTable/RegCert' },
 
-                // Weight records
-                { name: 'Current Weight', path: 'WeightRecords/CurrentWeight' },
-                { name: 'Last Weight Date', path: 'WeightRecords/LastWeightDate' },
-                { name: 'Latest Weight', path: 'WeightRecords/Latest' },
+                // Weight Records
+                { name: 'Latest Weight', path: 'WeightRecords/Weight' },
+                { name: 'Latest Weight Date', path: 'WeightRecords/TimeRecorded' },
+
 
                 // Medical records
-                { name: 'Vaccinations', path: 'MedicalTable/Vaccinations' },
-                { name: 'All Treatments', path: 'MedicalTable/AllTreatments' },
-                { name: 'Unique Treatments', path: 'MedicalTable/UniqueTreatments' },
-                { name: 'Recent Issues', path: 'MedicalTable/RecentIssues' },
+                { name: 'Medicine & Vax', path: 'MedicalTable/TreatmentMedicineID' },
 
+                
                 // Breeding records
-                { name: 'Primary Bull', path: 'BreedingRecords/PrimaryBull' },
-                { name: 'Cleanup Bull', path: 'BreedingRecords/CleanupBull' },
+                { name: 'Primary Bull', path: 'BreedingRecords/PrimaryBulls' },
+                { name: 'Cleanup Bull', path: 'BreedingRecords/CleanupBulls' },
                 { name: 'Current Bull', path: 'BreedingRecords/CurrentBull' },
                 { name: 'Exposure Start Date', path: 'BreedingRecords/ExposureStartDate' },
                 { name: 'Exposure End Date', path: 'BreedingRecords/ExposureEndDate' },
@@ -4521,9 +5761,9 @@ class DatabaseOperations {
                 // Pregnancy checks
                 { name: 'Is Pregnant', path: 'PregancyCheck/IsPregnant' },
                 { name: 'Pregnancy Check Date', path: 'PregancyCheck/PregCheckDate' },
-                { name: 'Fetus Sex', path: 'PregancyCheck/FetusSeX' },
+                { name: 'Fetus Sex', path: 'PregancyCheck/FetusSex' },
                 { name: 'Months Pregnant', path: 'PregancyCheck/MonthsPregnant' },
-                { name: 'Pregnancy Weight', path: 'PregancyCheck/WeightAtCheck' },
+                { name: 'Pregnancy Weight', path: 'PregancyCheck/WeightRecordID' },
                 { name: 'Pregnancy Notes', path: 'PregancyCheck/Notes' },
 
                 // Calving records
@@ -4545,18 +5785,15 @@ class DatabaseOperations {
 
                 // Fillable fields
                 { name: 'Notes', path: 'Fillable/Notes' },
-                { name: 'New Weight', path: 'Fillable/NewWeight' },
+                { name: 'New Weight', path: 'Fillable/Weight' },
                 { name: 'Date', path: 'Fillable/Date' },
-                { name: 'Extra Notes', path: 'Fillable/ExtraNotes' },
-                { name: 'Cull Prospect', path: 'Fillable/CullProspect' }
             ];
 
-            // Enhanced columns with auto-configuration
             const enhancedColumns = baseColumns.map(col => {
-                const type = getFieldType(col.path);
+                const type = this.getFieldType(col.path);
                 const editable = isEditable(col.path);
-                const updateHandler = getUpdateHandler(col.path);
-                const options = getFieldOptions(col.path);
+                const updateHandler = this.getUpdateHandler(col.path);
+                const options = this.getFieldOptions(col.path);
                 
                 return {
                     key: generateKey(col.name, col.path),
@@ -4583,10 +5820,21 @@ const dbOps = new DatabaseOperations();
 
 
 module.exports = {
-    fetchCowData: (params) => dbOps.fetchCowData(params),
+    getCowTableData: (params) => dbOps.getCowTableData(params),
+    updateCowTableData: (params) => dbOps.updateCowTableData(params),
     fetchCowEpds: (params) => dbOps.fetchCowEpds(params),
-    addObservation: (params) => dbOps.addObservation(params),
-    updateCowWeight: (params) => dbOps.updateCowWeight(params),
+    getOffspring: (params) => dbOps.getOffspring(params),
+
+    addNote: (params) => dbOps.addNote(params),
+    getNotes: (params) => dbOps.getNotes(params),
+    updateNote: (params) => dbOps.updateNote(params),
+
+    createWeightRecord: (params) => dbOps.createWeightRecord(params),
+    getCurrentWeight: (params) => dbOps.getCurrentWeight(params),
+    getWeightByRecordId: (params) => dbOps.getWeightByRecordId(params),
+    updateWeightRecord: (params) => dbOps.updateWeightRecord(params),
+
+
     addCow: (params) => dbOps.addCow(params),
     getAllCows: (params) => dbOps.getAllCows(params),
     setHerd: (params) => dbOps.setHerd(params),
@@ -4600,6 +5848,7 @@ module.exports = {
     resolveIssue: (params) => dbOps.resolveIssue(params),
     getMedicines: (params) => dbOps.getMedicines(params),
     addMedicine: (params) => dbOps.addMedicine(params),
+    updateMedicine: (params) => dbOps.updateMedicine(params),
 
     // Pasture & feed activity
     getAllPastures: () => dbOps.getAllPastures(),
@@ -4622,12 +5871,24 @@ module.exports = {
     getCowsByHerd: () => dbOps.getCowsByHerd(),
 
     // sheet management
-    getAllSheetsFromDB: () => dbOps.getAllSheetsFromDB(),
-    getSheetDefinition: (sheetId) => dbOps.getSheetDefinition(sheetId),
-    createSheetInDB: (params) => dbOps.createSheetInDB(params),
-    updateSheetInDB: (params) => dbOps.updateSheetInDB(params),
-    deleteSheetFromDB: (sheetId) => dbOps.deleteSheetFromDB(sheetId),
+    getAllSheetTemplates: () => dbOps.getAllSheetTemplates(),
+    getSheetTemplate: (sheetId) => dbOps.getSheetTemplate(sheetId),
+    createSheetTemplate: (params) => dbOps.createSheetTemplate(params),
+    updateSheetTemplate: (params) => dbOps.updateSheetTemplate(params),
+    deleteSheetTemplate: (sheetId) => dbOps.deleteSheetTemplate(sheetId),
 
+
+    // sheet instance management
+    getAllSheetInstances: () => dbOps.getAllSheetInstances(),
+    getSheetInstances: (sheetId) => dbOps.getSheetInstances(sheetId),
+    loadSheetInstance: (params) => dbOps.loadSheetInstance(params),
+    createSheetInstance: (params) => dbOps.createSheetInstance(params),
+    tryLoadSheetInstance: (params) => dbOps.tryLoadSheetInstance(params),
+    updateSheetInstanceCell: (params) => dbOps.updateSheetInstanceCell(params),
+    batchUpdateSheetInstanceCells: (params) => dbOps.batchUpdateSheetInstanceCells(params),
+    deleteSheetInstance: (instanceId) => dbOps.deleteSheetInstance(instanceId),
+
+    
     // Users
     getUserPreferences: (params) => dbOps.getUserPreferences(params),
     updateUserPreferences: (params) => dbOps.updateUserPreferences(params),
@@ -4636,11 +5897,12 @@ module.exports = {
     // Dynamic sheet data & updaters
     getSheetDataDynamic: (params) => dbOps.getSheetDataDynamic(params),
     getAvailableColumns: () => dbOps.getAvailableColumns(),
-    getColumnValue: (cowTag, dataPath) => dbOps.getColumnValue(cowTag, dataPath),
     updateSheetCell: (params) => dbOps.updateSheetCell(params),
     batchUpdateSheetCells: (params) => dbOps.batchUpdateSheetCells(params),
+
     getFormDropdownData: () => dbOps.getFormDropdownData(), 
-    getCowListForHerd: (herdName) => dbOps.getCowListForHerd(herdName),
+    addFormDropdownData: (params) => dbOps.addFormDropdownData(params),
+
     generateTagSuggestions: (params) => dbOps.generateTagSuggestions(params),
     recordBatchWeights: (params) => dbOps.recordBatchWeights(params),
 

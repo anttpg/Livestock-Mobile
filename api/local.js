@@ -16,6 +16,7 @@ class LocalFileOperations {
         this.mapDataDir = path.join(this.basePath, 'MapData');
         this.minimapsDir = path.join(this.mapDataDir, 'minimaps');
         this.usersFile = path.join(this.basePath, 'users.csv');
+        // this.backups = path.join(this.basePath, 'backups');
         this.SALT_ROUNDS = 10;
     }
 
@@ -1820,6 +1821,419 @@ class LocalFileOperations {
     }
 
     /**
+     * Creates permanent .bak file in SQL Server's default backup directory,
+     * stores a copy in database table for easy download via web
+     * Create backup storage table (run this once to set up)
+     */
+    async createBackupTable() {
+        const { hasDevConnection, getDevConnection } = require('./db');
+        
+        if (!hasDevConnection()) {
+            return {
+                success: false,
+                message: 'No active database connection',
+                code: 'NO_CONNECTION'
+            };
+        }
+        
+        try {
+            const pool = getDevConnection();
+            
+            const createTableQuery = `
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DatabaseBackups')
+                BEGIN
+                    CREATE TABLE DatabaseBackups (
+                        BackupID INT IDENTITY(1,1) PRIMARY KEY,
+                        DatabaseName NVARCHAR(255) NOT NULL,
+                        BackupFileName NVARCHAR(500) NOT NULL,
+                        BackupFilePath NVARCHAR(1000) NOT NULL,
+                        BackupData VARBINARY(MAX) NOT NULL,
+                        BackupDate DATETIME NOT NULL DEFAULT GETDATE(),
+                        BackupSize BIGINT NOT NULL,
+                        CreatedBy NVARCHAR(255) NULL
+                    );
+                END
+            `;
+            
+            await pool.request().query(createTableQuery);
+            
+            return {
+                success: true,
+                message: 'Backup table created or already exists'
+            };
+        } catch (error) {
+            console.error('Error creating backup table:', error);
+            return {
+                success: false,
+                message: `Failed to create backup table: ${error.message}`,
+                code: 'TABLE_ERROR'
+            };
+        }
+    }
+
+    /**
+     * Backup the SQL database - HYBRID approach
+     * 1. Saves permanent .bak file to SQL Server's backup directory
+     * 2. Stores copy in database table for easy web download
+     */
+    async backupSqlDatabase(params = {}) {
+        const { userPermissions } = params;
+        
+        // VALIDATION: Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        const { hasDevConnection, getDevConnection } = require('./db');
+        
+        if (!hasDevConnection()) {
+            return {
+                success: false,
+                message: 'No active database connection. Please connect first.',
+                code: 'NO_CONNECTION'
+            };
+        }
+        
+        try {
+            const pool = getDevConnection();
+            
+            // Ensure backup table exists
+            await this.createBackupTable();
+            
+            // Get SQL Server's default backup directory
+            const dirQuery = `EXEC master.dbo.xp_instance_regread 
+                            N'HKEY_LOCAL_MACHINE', 
+                            N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',
+                            N'BackupDirectory'`;
+            
+            const dirResult = await pool.request().query(dirQuery);
+            const sqlBackupDir = dirResult.recordset[0]?.Data;
+            
+            if (!sqlBackupDir) {
+                return {
+                    success: false,
+                    message: 'Could not determine SQL Server backup directory',
+                    code: 'CONFIGURATION_ERROR'
+                };
+            }
+            
+            // Create timestamp for backup filename
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const backupFileName = `${process.env.DB_DATABASE}_backup_${timestamp}.bak`;
+            const backupFilePath = path.join(sqlBackupDir, backupFileName);
+            const escapedPath = path.resolve(backupFilePath).replace(/\\/g, '\\\\');
+            
+            // STEP 1: Create permanent backup file in SQL Server's backup directory
+            const backupQuery = `
+                BACKUP DATABASE [${process.env.DB_DATABASE}] 
+                TO DISK = N'${escapedPath}' 
+                WITH FORMAT, INIT, 
+                NAME = 'Full Backup', 
+                DESCRIPTION = 'Backup created via dev console'
+            `;
+            
+            await pool.request().query(backupQuery);
+            console.log(`✓ Backup file created: ${backupFilePath}`);
+            
+            // STEP 2: Read the backup file and store in database table for easy download
+            const insertQuery = `
+                DECLARE @BackupData VARBINARY(MAX);
+                
+                -- Read the backup file
+                SELECT @BackupData = BulkColumn 
+                FROM OPENROWSET(
+                    BULK N'${escapedPath}', 
+                    SINGLE_BLOB
+                ) AS BackupFile;
+                
+                -- Store in database table (for easy web download)
+                INSERT INTO DatabaseBackups (DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupSize)
+                VALUES (
+                    '${process.env.DB_DATABASE}',
+                    '${backupFileName}',
+                    '${backupFilePath}',
+                    @BackupData,
+                    DATALENGTH(@BackupData)
+                );
+                
+                -- Return the BackupID
+                SELECT SCOPE_IDENTITY() AS BackupID, DATALENGTH(@BackupData) AS BackupSize;
+            `;
+            
+            const result = await pool.request().query(insertQuery);
+            const backupID = result.recordset[0]?.BackupID;
+            const backupSize = result.recordset[0]?.BackupSize;
+            
+            console.log(`✓ Backup stored in database table (BackupID: ${backupID})`);
+            
+            return {
+                success: true,
+                message: `Database backed up successfully`,
+                backupID: backupID,
+                backupFileName: backupFileName,
+                backupFilePath: backupFilePath,
+                backupSize: backupSize,
+                database: process.env.DB_DATABASE,
+                permanent: {
+                    location: sqlBackupDir,
+                    note: 'Permanent backup file saved - will accumulate over time'
+                },
+                downloadable: {
+                    backupID: backupID,
+                    note: 'Also stored in database table for easy download'
+                }
+            };
+            
+        } catch (error) {
+            console.error('Error backing up database:', error);
+            
+            if (error.message?.includes('OPENROWSET')) {
+                return {
+                    success: false,
+                    message: 'Backup file created, but OPENROWSET is not enabled. Backup is saved but cannot be downloaded via web.',
+                    code: 'PARTIAL_SUCCESS',
+                    solution: 'Ask administrator to enable: EXEC sp_configure \'Ad Hoc Distributed Queries\', 1; RECONFIGURE;',
+                    note: 'Backup file exists in SQL Server backup directory but cannot be stored in database table'
+                };
+            }
+            
+            return {
+                success: false,
+                message: `Failed to backup database: ${error.message}`,
+                code: 'BACKUP_ERROR'
+            };
+        }
+    }
+
+    
+    /**
+     * Backup and retrieve the SQL database - DEV ONLY
+     * Automatically creates a new backup if needed, then downloads it
+     */
+    async getSqlDatabase(params = {}) {
+        const { userPermissions, backupID } = params;
+        
+        // VALIDATION: Must have dev permission
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        const { hasDevConnection, getDevConnection } = require('./db');
+        
+        if (!hasDevConnection()) {
+            return {
+                success: false,
+                message: 'No active database connection',
+                code: 'NO_CONNECTION'
+            };
+        }
+        
+        try {
+            const pool = getDevConnection();
+            
+            // Ensure backup table exists first
+            await this.createBackupTable();
+            
+            let backup;
+            
+            // If specific backupID requested, get that one
+            if (backupID) {
+                const query = `
+                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupDate, BackupSize
+                    FROM DatabaseBackups
+                    WHERE BackupID = ${backupID}
+                `;
+                
+                const result = await pool.request().query(query);
+                
+                if (!result.recordset || result.recordset.length === 0) {
+                    return {
+                        success: false,
+                        message: `Backup with ID ${backupID} not found`,
+                        code: 'NOT_FOUND'
+                    };
+                }
+                
+                backup = result.recordset[0];
+            } 
+            // Otherwise, create a fresh backup
+            else {
+                console.log('Creating new backup for download...');
+                
+                // Call backupSqlDatabase to create a new backup
+                const backupResult = await this.backupSqlDatabase({ userPermissions });
+                
+                if (!backupResult.success) {
+                    return backupResult;
+                }
+                
+                // Now fetch the backup we just created
+                const query = `
+                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupDate, BackupSize
+                    FROM DatabaseBackups
+                    WHERE BackupID = ${backupResult.backupID}
+                `;
+                
+                const result = await pool.request().query(query);
+                
+                if (!result.recordset || result.recordset.length === 0) {
+                    return {
+                        success: false,
+                        message: 'Backup was created but could not be retrieved',
+                        code: 'INTERNAL_ERROR'
+                    };
+                }
+                
+                backup = result.recordset[0];
+            }
+            
+            // Convert VARBINARY to base64 for transmission
+            const backupData = backup.BackupData;
+            
+            return {
+                success: true,
+                message: 'Database backup retrieved successfully',
+                fileName: backup.BackupFileName,
+                fileSize: backup.BackupSize,
+                fileData: backupData.toString('base64'),
+                database: backup.DatabaseName,
+                backupDate: backup.BackupDate,
+                backupID: backup.BackupID,
+                permanentLocation: backup.BackupFilePath
+            };
+            
+        } catch (error) {
+            console.error('Error getting database backup:', error);
+            return {
+                success: false,
+                message: `Failed to get database backup: ${error.message}`,
+                code: 'QUERY_ERROR'
+            };
+        }
+    }
+
+    /**
+     * List available backups
+     */
+    async listBackups(params = {}) {
+        const { userPermissions } = params;
+        
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        const { hasDevConnection, getDevConnection } = require('./db');
+        
+        if (!hasDevConnection()) {
+            return {
+                success: false,
+                message: 'No active database connection',
+                code: 'NO_CONNECTION'
+            };
+        }
+        
+        try {
+            const pool = getDevConnection();
+            
+            const query = `
+                SELECT 
+                    BackupID, 
+                    DatabaseName, 
+                    BackupFileName,
+                    BackupFilePath,
+                    BackupDate, 
+                    BackupSize,
+                    CreatedBy
+                FROM DatabaseBackups
+                WHERE DatabaseName = '${process.env.DB_DATABASE}'
+                ORDER BY BackupDate DESC
+            `;
+            
+            const result = await pool.request().query(query);
+            
+            return {
+                success: true,
+                backups: result.recordset || [],
+                count: result.recordset?.length || 0
+            };
+            
+        } catch (error) {
+            console.error('Error listing backups:', error);
+            return {
+                success: false,
+                message: `Failed to list backups: ${error.message}`,
+                code: 'QUERY_ERROR'
+            };
+        }
+    }
+
+    /**
+     * Delete old backups FROM DATABASE TABLE ONLY
+     * NOTE: This only cleans up the database table, permanent .bak files remain
+     */
+    async deleteOldBackups(params = {}) {
+        const { userPermissions, daysToKeep = 7 } = params;
+        
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+        
+        const { hasDevConnection, getDevConnection } = require('./db');
+        
+        if (!hasDevConnection()) {
+            return {
+                success: false,
+                message: 'No active database connection',
+                code: 'NO_CONNECTION'
+            };
+        }
+        
+        try {
+            const pool = getDevConnection();
+            
+            const query = `
+                DELETE FROM DatabaseBackups
+                WHERE DatabaseName = '${process.env.DB_DATABASE}'
+                AND BackupDate < DATEADD(day, -${daysToKeep}, GETDATE())
+            `;
+            
+            const result = await pool.request().query(query);
+            
+            return {
+                success: true,
+                message: `Deleted ${result.rowsAffected[0] || 0} backup entries from database table (older than ${daysToKeep} days)`,
+                deletedCount: result.rowsAffected[0] || 0,
+                note: 'Permanent .bak files in SQL Server backup directory are not deleted'
+            };
+            
+        } catch (error) {
+            console.error('Error deleting old backups:', error);
+            return {
+                success: false,
+                message: `Failed to delete old backups: ${error.message}`,
+                code: 'QUERY_ERROR'
+            };
+        }
+    }
+
+
+    /**
      * Close dev SQL connection - DEV ONLY
      */
     async closeDevSqlConnection(params = {}) {
@@ -1892,4 +2306,8 @@ module.exports = {
     connectSqlServer: (params) => localOps.connectSqlServer(params),
     executeSqlQuery: (params) => localOps.executeSqlQuery(params),
     closeDevSqlConnection: (params) => localOps.closeDevSqlConnection(params),
+
+    backupSqlDatabase: (params) => localOps.backupSqlDatabase(params),
+    getSqlDatabase: (params) => localOps.getSqlDatabase(params),
+    
 };

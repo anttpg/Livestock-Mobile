@@ -1,0 +1,75 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "type": "text"
+        },
+        {
+            "key": "sex",
+            "name": "Sex",
+            "dataPath": "CowTable/Sex",
+            "type": "select"
+        },
+        {
+            "key": "current_herd",
+            "name": "Current Herd",
+            "dataPath": "CowTable/CurrentHerd",
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "copy"
+        },
+        {
+            "key": "current_pasture",
+            "name": "Current Pasture",
+            "dataPath": "Herds/CurrentPasture",
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "copy"
+        },
+        {
+            "key": "previous_weight",
+            "name": "Previous Weight",
+            "dataPath": "WeightRecords/Weight",
+            "type": "number",
+            "savedPerInstance": true,
+            "instanceSource": "WeightRecords/Weight"
+        },
+        {
+            "key": "previous_weight_date",
+            "name": "Previous Date",
+            "dataPath": "WeightRecords/TimeRecorded",
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "WeightRecords/TimeRecorded"
+        },
+        {
+            "key": "current_weight",
+            "name": "New Weight",
+            "dataPath": "Fillable/Weight",
+            "editable": true,
+            "type": "number",
+            "savedPerInstance": true,
+            "instanceSource": "WeightRecords/Weight"
+        },
+        {
+            "key": "current_weight_date",
+            "name": "Date",
+            "dataPath": "Fillable/Date",
+            "editable": true,
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "WeightRecords/TimeRecorded"
+        },
+        {
+            "key": "notes",
+            "name": "Notes",
+            "dataPath": "Fillable/Notes",
+            "editable": true,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "WeightRecords/Notes"
+        }
+    ]
+}

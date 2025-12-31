@@ -1831,9 +1831,84 @@ const validationSchemas = {
 };
 
 /**
+ * Simple validator for parameterized queries
+ * Only validates type, length, and format
+ */
+const createSimpleGenericValidator = (options = {}) => {
+    const { maxLength = 1000 } = options;
+
+    return (req, res, next) => {
+        const errors = [];
+
+        const validateValue = (value, fieldName, path) => {
+            if (value === null || value === undefined || value === '') {
+                return; // Allow empty values
+            }
+
+            const strValue = String(value);
+
+            // Just check length - that's it
+            if (strValue.length > maxLength) {
+                errors.push({
+                    field: fieldName,
+                    path: path,
+                    message: `${fieldName} exceeds maximum length of ${maxLength} characters`
+                });
+            }
+        };
+
+        const validateObject = (obj, pathPrefix = '') => {
+            for (const [key, value] of Object.entries(obj)) {
+                const fullPath = pathPrefix ? `${pathPrefix}.${key}` : key;
+
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
+                    validateObject(value, fullPath);
+                } else if (Array.isArray(value)) {
+                    value.forEach((item, index) => {
+                        if (typeof item === 'object' && item !== null) {
+                            validateObject(item, `${fullPath}[${index}]`);
+                        } else {
+                            validateValue(item, key, `${fullPath}[${index}]`);
+                        }
+                    });
+                } else {
+                    validateValue(value, key, fullPath);
+                }
+            }
+        };
+
+        if (req.body && Object.keys(req.body).length > 0) {
+            validateObject(req.body, 'body');
+        }
+        if (req.query && Object.keys(req.query).length > 0) {
+            validateObject(req.query, 'query');
+        }
+        if (req.params && Object.keys(req.params).length > 0) {
+            validateObject(req.params, 'params');
+        }
+
+        if (errors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                details: errors
+            });
+        }
+
+        next();
+    };
+};
+
+
+/**
  * Validation middleware generator
  */
-const createValidationMiddleware = (schemaName) => {
+const createValidationMiddleware = (schemaName, useGenericValidation = false, genericOptions = {}) => {
+    // If using generic validation, return generic validator
+    if (useGenericValidation) {
+        return createSimpleGenericValidator(genericOptions);
+    }
+    
     const schema = validationSchemas[schemaName];
     if (!schema) {
         throw new Error(`Validation schema '${schemaName}' not found`);

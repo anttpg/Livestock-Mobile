@@ -1,0 +1,70 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "dam_tag",
+            "name": "Dam Tag",
+            "dataPath": "CowTable/Dam",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "sire_tag",
+            "name": "Sire Tag",
+            "dataPath": "CowTable/Sire",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "sex",
+            "name": "Sex",
+            "dataPath": "CowTable/Sex",
+            "editable": false,
+            "type": "select",
+            "selectSource" : "Sex/Sex"
+        },
+        {
+            "key": "current_herd",
+            "name": "Current Herd",
+            "dataPath": "CowTable/CurrentHerd",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "date_of_birth",
+            "name": "Date of Birth",
+            "dataPath": "CowTable/DateOfBirth",
+            "editable": false,
+            "type": "date"
+        },
+        {
+            "key": "age",
+            "name": "Age",
+            "dataPath": "Calculated/Age",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "breed",
+            "name": "Breed",
+            "dataPath": "CowTable/Breed",
+            "editable": false,
+            "type": "select",
+            "selectSource" : "Breed/Breed"
+        },
+        {
+            "key": "regcert",
+            "name": "RegCert",
+            "dataPath": "CowTable/RegCert",
+            "editable": false,
+            "type": "select",
+            "selectSource" : "RegCert/RegCertStatus"
+        }
+    ]
+}

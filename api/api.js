@@ -99,13 +99,12 @@ class APIWrapper {
         }
     }
 
+
     /**
      * Returns primary cow data
      */
     async getCowData(req, res) {
         try {
-
-
             // Validation check
             const validationErrors = validationResult(req);
             if (!validationErrors.isEmpty()) {
@@ -117,15 +116,19 @@ class APIWrapper {
 
             const cowTag = req.params.tag;
 
-            // Get database data
-            const dbResult = await dbOperations.fetchCowData({ cowTag });
+            // Get database data using individual functions
+            const [cowData, currentWeight, notes, calves] = await Promise.all([
+                dbOperations.getCowTableData(cowTag),
+                dbOperations.getCurrentWeight(cowTag),
+                dbOperations.getNotes(cowTag),
+                dbOperations.getOffspring(cowTag)
+            ]);
 
-            // Reuse the existing getCowImage logic
+            // Get images
             const images = await localFileOps.getCowImage({ cowTag });
 
             // Get minimap if cow has a pasture
             let minimap = null;
-            const cowData = dbResult.cowData?.[0];
             if (cowData?.PastureName) {
                 const minimapResult = await localFileOps.getMinimap({
                     fieldName: cowData.PastureName
@@ -140,11 +143,14 @@ class APIWrapper {
 
             const allHerds = await dbOperations.getAllHerds();
 
-            // Include in responseData:
+            // Build response
             const responseData = {
-                ...dbResult,
-                images,
-                minimap,
+                cowData: cowData,
+                currentWeight: currentWeight,
+                notes: notes,
+                calves: calves,
+                images: images,
+                minimap: minimap,
                 availableHerds: allHerds
             };
 
@@ -158,6 +164,15 @@ class APIWrapper {
         }
     }
 
+    async updateCow(req, res) {
+        return this.executeDBOperation(req, res, 'updateCowTableData', (req) => ({
+            cowTag: req.params.cowTag,
+            updates: req.body
+        }));
+    }
+
+
+    
     /**
      * Returns all Epds for a cow
      */
@@ -230,7 +245,7 @@ class APIWrapper {
     }
 
     async addObservation(req, res) {
-        return this.executeDBOperation(req, res, 'addObservation', (req) => ({
+        return this.executeDBOperation(req, res, 'addNote', (req) => ({
             cowTag: req.body.cowTag,
             note: req.body.note,
             dateOfEntry: req.body.dateOfEntry || new Date()
@@ -289,16 +304,33 @@ class APIWrapper {
 
     async addMedicine(req, res) {
         return this.executeDBOperation(req, res, 'addMedicine', (req) => ({
-            medicine: req.body.medicine,
+            medicineClass: req.body.medicineClass,
+            dewormerClass: req.body.dewormerClass,
+            shorthand: req.body.shorthand,
+            genericName: req.body.genericName,
+            brandName: req.body.brandName,
+            manufacturer: req.body.manufacturer,
             applicationMethod: req.body.applicationMethod,
-            isImmunization: req.body.isImmunization
+            mixRecipe: req.body.mixRecipe
         }));
     }
 
-
+    async updateMedicine(req, res) {
+        return this.executeDBOperation(req, res, 'updateMedicine', (req) => ({
+            medicineID: parseInt(req.params.ID),
+            medicineClass: req.body.medicineClass,
+            dewormerClass: req.body.dewormerClass,
+            shorthand: req.body.shorthand,
+            genericName: req.body.genericName,
+            brandName: req.body.brandName,
+            manufacturer: req.body.manufacturer,
+            applicationMethod: req.body.applicationMethod,
+            mixRecipe: req.body.mixRecipe
+        }));
+    }
 
     async updateCowWeight(req, res) {
-        return this.executeDBOperation(req, res, 'updateCowWeight', (req) => ({
+        return this.executeDBOperation(req, res, 'updateWeightRecord', (req) => ({
             cowTag: req.body.cowTag,
             weight: req.body.weight
         }));
@@ -415,6 +447,14 @@ class APIWrapper {
     async getFormDropdownData(req, res) {
         return this.executeDBOperation(req, res, 'getFormDropdownData', (req) => ({}));
     }
+
+    async addFormDropdownData(req, res) {
+        return this.executeDBOperation(req, res, 'addFormDropdownData', (req) => ({
+            table: req.body.table,
+            value: req.body.value
+        }));
+    }
+
 
     /**
      * Add a new cow to the database with optional calving record creation
@@ -837,6 +877,9 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'getAllHerds', (req) => ({}));
     }
 
+
+    
+
     /**
      * Get feed status for a specific herd
      */
@@ -956,11 +999,6 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'getCowsByHerd', (req) => ({}));
     }
 
-    async getHerdsList(req, res) {
-        return this.executeDBOperation(req, res, 'getAllHerds', (req) => ({}));
-    }
-
-
 
     async getUserPreferences(req, res) {
         return this.executeDBOperation(req, res, 'getUserPreferences', (req) => ({
@@ -1004,12 +1042,127 @@ class APIWrapper {
      */
 
     async getAllSheets(req, res) {
-        return this.executeDBOperation(req, res, 'getAllSheetsFromDB', (req) => ({}));
+        return this.executeDBOperation(req, res, 'getAllSheetTemplates', (req) => ({}));
+    }
+    
+    /**
+     * handle parentSheetId and locked status
+     */
+    async createSheet(req, res) {
+        return this.executeDBOperation(req, res, 'createSheetTemplate', (req) => ({
+            name: req.body.name,
+            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] },
+            createdBy: req.session?.user?.username || 'Unknown',
+            locked: req.body.locked || false,
+            parentSheetId: req.body.parentSheetId || null
+        }));
+    }
+
+    async getSheetStructure(req, res) {
+        try {
+            const sheetDef = await dbOperations.getSheetTemplate({ sheetId: req.params.sheetId });
+            const columnConfig = JSON.parse(sheetDef.columns);
+
+            // Separate columns based on whether they're fillable
+            const dataColumns = columnConfig.columns.filter(col => !col.dataPath.startsWith('Fillable/'));
+            const fillableColumns = columnConfig.columns.filter(col => col.dataPath.startsWith('Fillable/'));
+
+            return res.status(200).json({
+                name: sheetDef.name,
+                dataColumns: dataColumns,
+                fillableColumns: fillableColumns
+            });
+        } catch (error) {
+            console.error('Error getting sheet structure:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    async updateSheet(req, res) {
+        return this.executeDBOperation(req, res, 'updateSheetTemplate', (req) => ({
+            sheetId: req.params.sheetId,
+            name: req.body.name,
+            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] }
+        }));
+    }
+
+    async deleteSheet(req, res) {
+        return this.executeDBOperation(req, res, 'deleteSheetTemplate', (req) => req.params.sheetId);
     }
 
     async getAvailableColumns(req, res) {
         return this.executeDBOperation(req, res, 'getAvailableColumns', (req) => ({}));
     }
+
+
+
+
+    /**
+     * SHEET INSTANCE API FUNCTIONS
+     */
+
+    async getAllInstances(req, res) {
+        return this.executeDBOperation(req, res, 'getAllSheetInstances', (req) => ({}));
+    }
+
+    async getSheetInstances(req, res) {
+        return this.executeDBOperation(req, res, 'getSheetInstances', (req) => 
+            req.params.sheetId
+        );
+    }
+
+    async loadSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'loadSheetInstance', (req) => ({
+            instanceId: req.params.instanceId
+        }));
+    }
+
+    async createSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'createSheetInstance', (req) => ({
+            sheetId: req.params.sheetId,
+            herdName: req.body.herdName,
+            breedingYear: req.body.breedingYear,
+            createdBy: req.session?.user?.username || 'Unknown'
+        }));
+    }
+
+    async tryLoadSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'tryLoadSheetInstance', (req) => ({
+            instanceId: req.body.instanceId,
+            sheetId: req.body.sheetId,
+            herdName: req.body.herdName,
+            breedingYear: req.body.breedingYear,
+            createdBy: req.session?.user?.username || 'Unknown'
+        }));
+    }
+
+    async updateSheetInstanceCell(req, res) {
+        return this.executeDBOperation(req, res, 'updateSheetInstanceCell', (req) => ({
+            instanceId: req.params.instanceId,
+            cowTag: req.body.cowTag,
+            columnKey: req.body.columnKey,
+            value: req.body.value,
+            column: req.body.column
+        }));
+    }
+
+    async batchUpdateSheetInstanceCells(req, res) {
+        return this.executeDBOperation(req, res, 'batchUpdateSheetInstanceCells', (req) => ({
+            instanceId: req.params.instanceId,
+            updates: req.body.updates
+        }));
+    }
+
+    async deleteSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'deleteSheetInstance', (req) => 
+            req.params.instanceId
+        );
+    }
+
+
+
+
+
 
     /**
      * Load sheet data with filtering
@@ -1047,58 +1200,8 @@ class APIWrapper {
     }
 
 
-    /**
-     * Updated createSheet to handle parentSheetId and locked status
-     */
-    async createSheet(req, res) {
-        return this.executeDBOperation(req, res, 'createSheetInDB', (req) => ({
-            name: req.body.name,
-            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] },
-            createdBy: req.session?.user?.username || 'Unknown',
-            locked: req.body.locked || false,
-            parentSheetId: req.body.parentSheetId || null
-        }));
-    }
 
-    async getSheetStructure(req, res) {
-        try {
-            const sheetDef = await dbOperations.getSheetDefinition({ sheetId: req.params.sheetId });
-            const columnConfig = JSON.parse(sheetDef.columns);
 
-            // Separate columns based on whether they're fillable
-            const dataColumns = columnConfig.columns.filter(col => !col.dataPath.startsWith('Fillable/'));
-            const fillableColumns = columnConfig.columns.filter(col => col.dataPath.startsWith('Fillable/'));
-
-            return res.status(200).json({
-                name: sheetDef.name,
-                dataColumns: dataColumns,
-                fillableColumns: fillableColumns
-            });
-        } catch (error) {
-            console.error('Error getting sheet structure:', error);
-            return res.status(500).json({ error: error.message });
-        }
-    }
-
-    async createSheet(req, res) {
-        return this.executeDBOperation(req, res, 'createSheetInDB', (req) => ({
-            name: req.body.name,
-            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] },
-            createdBy: req.session?.user?.username || 'Unknown'
-        }));
-    }
-
-    async updateSheet(req, res) {
-        return this.executeDBOperation(req, res, 'updateSheetInDB', (req) => ({
-            sheetId: req.params.sheetId,
-            name: req.body.name,
-            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] }
-        }));
-    }
-
-    async deleteSheet(req, res) {
-        return this.executeDBOperation(req, res, 'deleteSheetFromDB', (req) => req.params.sheetId);
-    }
 
     /**
      * Get user's email from Cloudflare Access
@@ -1519,6 +1622,99 @@ class APIWrapper {
             return res.status(500).json({
                 success: false,
                 message: 'Failed to execute SQL query'
+            });
+        }
+    }
+
+    /**
+     * Backup SQL database - Dev only, validation in local.js
+     */
+    async backupSqlDatabase(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            
+            const result = await localFileOps.backupSqlDatabase({
+                userPermissions
+            });
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+            
+            const statusCode = result.code === 'FORBIDDEN' ? 403 :
+                            result.code === 'NO_CONNECTION' ? 503 :
+                            result.code === 'BAD_REQUEST' ? 400 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error backing up database:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to backup database'
+            });
+        }
+    }
+
+    /**
+     * Backup and download SQL database - Dev only, validation in local.js
+     */
+    async getSqlDatabase(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            
+            const result = await localFileOps.getSqlDatabase({
+                userPermissions
+            });
+            
+            if (result.success) {
+                // Send the file as a download
+                const fileBuffer = Buffer.from(result.fileData, 'base64');
+                res.setHeader('Content-Type', 'application/octet-stream');
+                res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+                res.setHeader('Content-Length', result.fileSize);
+                return res.send(fileBuffer);
+            }
+            
+            const statusCode = result.code === 'FORBIDDEN' ? 403 :
+                            result.code === 'NO_CONNECTION' ? 503 :
+                            result.code === 'BAD_REQUEST' ? 400 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error getting database backup:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to get database backup'
+            });
+        }
+    }
+
+    /**
+     * Close dev SQL connection - Dev only, validation in local.js
+     */
+    async closeDevSqlConnection(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            
+            const result = await localFileOps.closeDevSqlConnection({
+                userPermissions
+            });
+            
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+            
+            const statusCode = result.code === 'FORBIDDEN' ? 403 : 500;
+            
+            return res.status(statusCode).json(result);
+            
+        } catch (error) {
+            console.error('Error closing dev connection:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to close dev connection'
             });
         }
     }

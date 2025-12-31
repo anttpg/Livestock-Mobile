@@ -1,9 +1,18 @@
 import React from 'react';
 
-function Medications({ cowTag, cowData }) {
+function Medications({ cowTag, cowData, medicines = [] }) {
   const formatDate = (dateString) => {
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
+  // Helper function to get medicine name from ID
+  const getMedicineName = (medicineID) => {
+    if (!medicineID) return 'Unknown';
+    const medicine = medicines.find(m => m.ID === medicineID);
+    if (!medicine) return medicineID; // Fallback to ID if not found
+    // Prefer BrandName, then GenericName, then Shorthand
+    return medicine.BrandName || medicine.GenericName || medicine.Shorthand || medicineID;
   };
 
   // Extract current medications from real medical records
@@ -14,11 +23,11 @@ function Medications({ cowTag, cowData }) {
     return cowData.medicalRecords.treatments
       .filter(treatment => treatment.TreatmentIsActive)
       .map(treatment => ({
-        MedicineApplied: treatment.TreatmentMedicine,
+        MedicineApplied: getMedicineName(treatment.TreatmentMedicine),
         TreatmentDate: treatment.TreatmentDate,
         Method: treatment.TreatmentMethod,
         Response: treatment.TreatmentResponse,
-        IsImmunization: treatment.TreatmentIsImmunization
+        IsImmunization: treatment.IsImmunization
       }))
       .sort((a, b) => new Date(b.TreatmentDate) - new Date(a.TreatmentDate));
   };

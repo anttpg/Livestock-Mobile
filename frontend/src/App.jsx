@@ -13,7 +13,7 @@ import BreedingPlan from './components/breedingPlan';
 import Layout from './components/layout';
 import TimeoutPopup from './components/timeoutPopup';
 import UserManagement from './components/userManagement';
-import { userSessionManager } from './userSessionManager';
+import { useUserSessionManager } from './userSessionManager';
 import { setSessionExpiredCallback } from './apiInterceptor';
 import AnimalFolder from './components/animalFolder';
 
@@ -28,7 +28,7 @@ function App() {
     remainingTime,
     handleExtendSession,
     handleTimeoutClose
-  } = userSessionManager(authState === 'authenticated');
+  } = useUserSessionManager(authState === 'authenticated');
 
   useEffect(() => {
     checkAuthStatus();

@@ -1,0 +1,71 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "dam_tag",
+            "name": "Dam Tag",
+            "dataPath": "CowTable/Dam",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "date_of_birth",
+            "name": "Date of Birth",
+            "dataPath": "CowTable/DateOfBirth",
+            "editable": false,
+            "type": "date"
+        },
+        {
+            "key": "age_in_months",
+            "name": "Age in Months",
+            "dataPath": "Calculated/AgeInMonths",
+            "editable": false,
+            "savedPerInstance": true,
+            "instanceSource": "copy"
+        
+        },
+        {
+            "key": "weaning_status",
+            "name": "Weaning Status",
+            "dataPath": "Calculated/WeaningStatus",
+            "editable": true,
+            "type": "select",
+            "selectSource" : "AnimalClass/AnimalClass",
+            "savedPerInstance": true,
+            "instanceSource": "CowTable/AnimalClass"
+        },
+        {
+            "key": "weaning_weight",
+            "name": "Weaning Weight",
+            "dataPath": "CowTable/WeaningWeight",
+            "editable": true,
+            "type": "number",
+            "savedPerInstance": true,
+            "instanceSource": "CowTable/WeaningWeight"
+        },
+        {
+            "key": "weaning_date",
+            "name": "Weaning Date",
+            "dataPath": "CowTable/WeaningDate",
+            "editable": true,
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "CowTable/WeaningDate"
+        },
+        {
+            "key": "notes",
+            "name": "Notes",
+            "dataPath": "Fillable/Notes",
+            "editable": true,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "WeaningRecords/Notes"
+        }
+    ]
+}

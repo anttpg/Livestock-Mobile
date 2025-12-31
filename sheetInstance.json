@@ -1,0 +1,65 @@
+{
+    "columnData": [
+        {
+            "key": "current_herd",
+            "value": "Herd 1"
+        },
+        {
+            "key": "current_pasture",
+            "value": "Pasture 1"
+        },
+        {
+            "key": "previous_weight",
+            "sourceRecordID": 1
+        },
+        {
+            "key": "previous_weight_date",
+            "sourceRecordID": 1
+        },
+        {
+            "key": "current_weight",
+            "sourceRecordID": 3
+        },
+        {
+            "key": "current_weight_date",
+            "sourceRecordID": 3
+        },
+        {
+            "key": "notes",
+            "sourceRecordID": 3
+        }
+    ]
+}
+
+{
+    "columnData": [
+        {
+            "key": "current_herd",
+            "value": "Herd 1"
+        },
+        {
+            "key": "current_pasture",
+            "value": "Pasture 1"
+        },
+        {
+            "key": "previous_weight",
+            "sourceRecordID": 1
+        },
+        {
+            "key": "previous_weight_date",
+            "sourceRecordID": 1
+        },
+        {
+            "key": "current_weight",
+            "sourceRecordID": null
+        },
+        {
+            "key": "current_weight_date",
+            "sourceRecordID": null
+        },
+        {
+            "key": "notes",
+            "sourceRecordID": null
+        }
+    ]
+}

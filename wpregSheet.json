@@ -1,0 +1,66 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "type": "text"
+        },
+        {
+            "key": "preg_check_date",
+            "name": "Check Date",
+            "dataPath": "PregancyCheck/PregCheckDate",
+            "editable": true,
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "PregancyCheck/PregCheckDate"
+        },
+        {
+            "key": "primary_bull",
+            "name": "Primary Bull",
+            "dataPath": "BreedingRecords/PrimaryBull",
+            "editable": false,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "BreedingRecords/PrimaryBull"
+        },
+        {
+            "key": "is_pregnant",
+            "name": "Is Pregnant",
+            "dataPath": "PregancyCheck/IsPregnant",
+            "editable": true,
+            "type": "select",
+            "selectSource": "PregTestResult/Result",
+            "savedPerInstance": true,
+            "instanceSource": "PregancyCheck/IsPregnant"
+        },
+        {
+            "key": "fetus_sex",
+            "name": "Fetus Sex",
+            "dataPath": "PregancyCheck/FetusSex",
+            "editable": true,
+            "type": "select",
+            "selectSource": "Sex/Sex",
+            "savedPerInstance": true,
+            "instanceSource": "PregancyCheck/FetusSex"
+        },
+        {
+            "key": "pregnancy_weight",
+            "name": "Pregnancy Weight",
+            "dataPath": "PregancyCheck/WeightAtCheck",
+            "editable": true,
+            "type": "number",
+            "savedPerInstance": true,
+            "instanceSource": "PregancyCheck/WeightAtCheck"
+        },
+        {
+            "key": "pregnancy_notes",
+            "name": "Pregnancy Notes",
+            "dataPath": "PregancyCheck/Notes",
+            "editable": true,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "PregancyCheck/Notes"
+        }
+    ]
+}

@@ -1,0 +1,79 @@
+{
+    "columns": [
+        {
+            "key": "cowtag",
+            "name": "CowTag",
+            "dataPath": "CowTable/CowTag",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "current_pasture",
+            "name": "Current Pasture",
+            "dataPath": "Herds/CurrentPasture",
+            "editable": false,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "copy"
+        },
+        {
+            "key": "primary_bull",
+            "name": "Primary Bull",
+            "dataPath": "BreedingRecords/PrimaryBull",
+            "editable": false,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "BreedingRecords/PrimaryBull"
+        },
+        {
+            "key": "breeding_status",
+            "name": "Breeding Status",
+            "dataPath": "Calculated/BreedingStatus",
+            "editable": false,
+            "type": "select"
+        },
+        {
+            "key": "expected_delivery",
+            "name": "Expected Delivery",
+            "dataPath": "Calculated/ExpectedDeliveryDate",
+            "editable": false,
+            "type": "date"
+        },
+        {
+            "key": "calf_tag",
+            "name": "Calf Tag",
+            "dataPath": "CalvingRecords/CalfTag",
+            "editable": false,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "CalvingRecords/CalfTag"
+        },
+        {
+            "key": "calf_birth_date",
+            "name": "Calf Birth Date",
+            "dataPath": "CalvingRecords/BirthDate",
+            "editable": false,
+            "type": "date",
+            "savedPerInstance": true,
+            "instanceSource": "CalvingRecords/BirthDate"
+        },
+        {
+            "key": "calf_sex",
+            "name": "Calf Sex",
+            "dataPath": "CalvingRecords/CalfSex",
+            "editable": false,
+            "type": "select",
+            "savedPerInstance": true,
+            "instanceSource": "CalvingRecords/CalfSex"
+        },
+        {
+            "key": "calving_notes",
+            "name": "Calving Notes",
+            "dataPath": "CalvingRecords/CalvingNotes",
+            "editable": true,
+            "type": "text",
+            "savedPerInstance": true,
+            "instanceSource": "CalvingRecords/CalvingNotes"
+        }
+    ]
+}

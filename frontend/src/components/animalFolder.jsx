@@ -159,7 +159,7 @@ function AnimalFolder() {
             tabs={tabs}
             searchConfig={searchConfig}
             defaultTab="general"
-            defaultSearch="46"
+            defaultSearch="36"
             enableDefaultSearch={true}
             onDataFetch={handleDataFetch}
             renderTab={renderTab}
