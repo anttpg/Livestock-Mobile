@@ -307,13 +307,15 @@ function Notes({ cowTag, cowData, onRefresh, currentUser }) {
       key: 'DateOfEntry',
       header: 'Modified',
       type: 'custom',
-      width: '150px',
+      width: '80px',
       align: 'left',
       customRender: (value, row) => {
         return (
           <div style={{ fontSize: '13px' }}>
-            <div>Created: {formatDate(row.DateOfEntry)}</div>
-            <div>Modified: {formatDate(row.DateOfLastUpdate)}</div>
+            <div><b>Created</b></div>
+            <div>{formatDate(row.DateOfEntry)}</div>
+            <div><b>Modified</b></div>
+            <div>{formatDate(row.DateOfLastUpdate)}</div>
           </div>
         );
       }
@@ -322,7 +324,7 @@ function Notes({ cowTag, cowData, onRefresh, currentUser }) {
       key: 'Username',
       header: 'User',
       type: 'text',
-      width: '120px',
+      width: '80px',
       align: 'left'
     },
     {
