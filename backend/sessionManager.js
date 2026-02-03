@@ -391,14 +391,31 @@ app.put('/api/cow/:cowTag',
 
 
 // Add observation
-app.post('/api/add-observation',
+app.post('/api/add-note',
     requireAuth(),
-    createValidationMiddleware('addObservation'),
+    createValidationMiddleware('', true),
     async (req, res) => {
-        return apiWrapper.addObservation(req, res);
+        return apiWrapper.addNote(req, res);
     }
 );
 
+// Update note
+app.post('/api/update-note',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.updateNote(req, res);
+    }
+);
+
+// Delete note
+app.post('/api/delete-note',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.deleteNote(req, res);
+    }
+);
 
 
 

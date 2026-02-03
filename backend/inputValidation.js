@@ -1435,12 +1435,6 @@ const validationSchemas = {
         ...fieldValidators.cowTagParam()
     ],
 
-    addObservation: [
-        ...fieldValidators.cowTag(),
-        ...fieldValidators.note(),
-        ...fieldValidators.dateOfEntry()
-    ],
-
     getMedicalRecord: [
         ...fieldValidators.recordIdParam()
     ],
@@ -1977,5 +1971,4 @@ module.exports = {
 
     // Legacy exports for backward compatibility
     setupInputValidation: () => createValidationMiddleware('login'),
-    validateInputs: () => createValidationMiddleware('addObservation')
 };

@@ -414,6 +414,8 @@ class DatabaseOperations {
         }
     }
 
+
+
     /**
      * Get notes for a cow
      * @param {string} cowTag - The cow's tag identifier
@@ -428,8 +430,15 @@ class DatabaseOperations {
             
             const query = `
                 SELECT 
-                    Note, DateOfEntry,
-                    CONVERT(varchar, DateOfEntry, 120) AS FormattedDate
+                    NoteID,
+                    DateOfEntry,
+                    Username,
+                    CowTag,
+                    Note,
+                    DateOfLastUpdate,
+                    NeedsFollowUp,
+                    Archive,
+                    SSMA_TimeStamp
                 FROM 
                     Notes 
                 WHERE 
@@ -445,54 +454,39 @@ class DatabaseOperations {
     }
 
     /**
-     * Add a new note
-     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
-     * @returns {Promise<{success: boolean}>}
-     */
-    async addNote(params) {
-        const { cowTag, note, dateOfEntry } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('note', sql.NVarChar, note);
-            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            const query = `
-                INSERT INTO Notes (Note, DateOfEntry, CowTag)
-                VALUES (@note, @dateOfEntry, @cowTag)`;
-
-            const result = await request.query(query);
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Observation added successfully'
-            };
-        } catch (error) {
-            console.error('Error adding observation:', error);
-            throw new Error(`Failed to add observation: ${error.message}`);
-        }
-    }
-
-    /**
      * Update an existing note
-     * @param {Object} params - { noteId, note }
+     * @param {Object} params - { noteId, note, archive }
      * @returns {Promise<{success: boolean}>}
      */
     async updateNote(params) {
-        const { noteId, note } = params;
+        const { noteId, note, archive } = params;
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
             request.input('noteId', sql.Int, noteId);
-            request.input('note', sql.NVarChar(sql.MAX), note);
+            
+            // Build update query dynamically based on what's being updated
+            let updateFields = [];
+            
+            if (note !== undefined) {
+                request.input('note', sql.NVarChar(sql.MAX), note);
+                updateFields.push('Note = @note');
+            }
+            
+            if (archive !== undefined) {
+                request.input('archive', sql.Bit, archive);
+                updateFields.push('Archive = @archive');
+            }
+            
+            if (updateFields.length === 0) {
+                throw new Error('No fields to update');
+            }
 
             const query = `
                 UPDATE Notes 
-                SET Note = @note
-                WHERE ID = @noteId`;
+                SET ${updateFields.join(', ')}, DateOfLastUpdate = GETDATE()
+                WHERE NoteID = @noteId`;
 
             const result = await request.query(query);
 
@@ -506,6 +500,72 @@ class DatabaseOperations {
             throw new Error(`Failed to update note: ${error.message}`);
         }
     }
+
+    /**
+     * Delete a note
+     * @param {Object} params - { noteId }
+     * @returns {Promise<{success: boolean}>}
+     */
+    async deleteNote(params) {
+        const { noteId } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('noteId', sql.Int, noteId);
+
+            const query = `
+                DELETE FROM Notes 
+                WHERE NoteID = @noteId`;
+
+            const result = await request.query(query);
+
+            if (result.rowsAffected[0] === 0) {
+                throw new Error('Note not found');
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error deleting note:', error);
+            throw new Error(`Failed to delete note: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Add a new note
+     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
+     * @returns {Promise<{success: boolean, noteId: number}>}
+     */
+    async addNote(params) {
+        const { cowTag, note, dateOfEntry } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('note', sql.NVarChar, note);
+            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
+            request.input('cowTag', sql.NVarChar, cowTag);
+
+            const query = `
+                INSERT INTO Notes (Note, DateOfEntry, CowTag)
+                OUTPUT INSERTED.NoteID
+                VALUES (@note, @dateOfEntry, @cowTag)`;
+
+            const result = await request.query(query);
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                noteId: result.recordset[0].ID,
+                message: 'Observation added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding observation:', error);
+            throw new Error(`Failed to add observation: ${error.message}`);
+        }
+    }
+
+
 
     /**
      * Get offspring/calves for a cow
@@ -5828,6 +5888,7 @@ module.exports = {
     addNote: (params) => dbOps.addNote(params),
     getNotes: (params) => dbOps.getNotes(params),
     updateNote: (params) => dbOps.updateNote(params),
+    deleteNote: (params) => dbOps.deleteNote(params),
 
     createWeightRecord: (params) => dbOps.createWeightRecord(params),
     getCurrentWeight: (params) => dbOps.getCurrentWeight(params),

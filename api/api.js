@@ -244,13 +244,22 @@ class APIWrapper {
         }));
     }
 
-    async addObservation(req, res) {
+
+    async addNote(req, res) {
         return this.executeDBOperation(req, res, 'addNote', (req) => ({
-            cowTag: req.body.cowTag,
-            note: req.body.note,
+            ...req.body,
             dateOfEntry: req.body.dateOfEntry || new Date()
         }));
     }
+
+    async updateNote(req, res) {
+        return this.executeDBOperation(req, res, 'updateNote', (req) => req.body);
+    }
+
+    async deleteNote(req, res) {
+        return this.executeDBOperation(req, res, 'deleteNote', (req) => req.body);
+    }
+
 
     async createMedicalRecord(req, res) {
         return this.executeDBOperation(req, res, 'createMedicalRecord', (req) => ({
