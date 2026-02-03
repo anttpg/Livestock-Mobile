@@ -21,14 +21,6 @@ if exist node_modules (
     echo [%TIME%] No root node_modules found
 )
 
-if exist frontend\node_modules (
-    echo [%TIME%] Removing frontend\node_modules...
-    rmdir /s /q frontend\node_modules
-    echo [%TIME%] Frontend node_modules removed
-) else (
-    echo [%TIME%] No frontend\node_modules found
-)
-echo.
 
 echo [%TIME%] Step 3: Removing package-lock.json if it exists...
 if exist package-lock.json (
@@ -38,6 +30,7 @@ if exist package-lock.json (
     echo [%TIME%] No package-lock.json found
 )
 echo.
+
 
 echo [%TIME%] Step 4: Clean installing dependencies from lock file...
 call npm install
