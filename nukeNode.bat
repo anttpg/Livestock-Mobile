@@ -6,13 +6,13 @@ cd /d "%SCRIPT_DIR%"
 echo [%TIME%] Working directory: %CD%
 echo.
 
-echo [%TIME%] Step 1: Pulling latest changes from git...
-git fetch origin main
-git reset --hard origin/main
-echo [%TIME%] Git updated successfully
+echo [%TIME%] Killing any running Node processes...
+taskkill /F /IM node.exe 2>nul
+timeout /t 2
 echo.
 
-echo [%TIME%] Step 2: Removing broken node_modules...
+
+echo [%TIME%] Removing broken node_modules...
 if exist node_modules (
     echo [%TIME%] Removing root node_modules...
     rmdir /s /q node_modules
@@ -22,32 +22,11 @@ if exist node_modules (
 )
 
 
-echo [%TIME%] Step 3: Removing package-lock.json if it exists...
+echo [%TIME%] Removing package-lock.json if it exists...
 if exist package-lock.json (
     del /f package-lock.json
     echo [%TIME%] package-lock.json removed
 ) else (
     echo [%TIME%] No package-lock.json found
 )
-echo.
-
-
-echo [%TIME%] Step 4: Clean installing dependencies from lock file...
-call npm install
-if %ERRORLEVEL% NEQ 0 (
-    echo [%TIME%] ERROR: npm install failed!
-    pause
-    exit /b 1
-)
-echo [%TIME%] Dependencies installed successfully
-echo.
-
-echo [%TIME%] Step 5: Building application...
-call npm run build
-if %ERRORLEVEL% NEQ 0 (
-    echo [%TIME%] ERROR: Build failed!
-    pause
-    exit /b 1
-)
-echo [%TIME%] Build completed successfully
 echo.

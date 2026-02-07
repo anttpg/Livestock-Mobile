@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Form from './forms';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function PregCheck({ breedingPlanId, breedingYear }) {
     const headerContent = (

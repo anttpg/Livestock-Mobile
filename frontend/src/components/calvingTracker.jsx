@@ -3,14 +3,13 @@ import Form from './forms';
 import AddAnimal from './addAnimal';
 import Popup from './popup';
 import AnimalFolder from './animalFolder';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function CalvingTracker({ breedingPlanId, breedingYear }) {
   const [showAddAnimal, setShowAddAnimal] = useState(false);
   const [showAnimalPopup, setShowAnimalPopup] = useState(false);
   const [selectedMother, setSelectedMother] = useState(null);
   const [selectedFather, setSelectedFather] = useState(null);
-  const [selectedAnimalTag, setSelectedAnimalTag] = useState('');
 
   const handleAddCalf = (mother, father) => {
     setSelectedMother(mother);
@@ -19,7 +18,6 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
   };
 
   const handleViewAnimal = (animalTag) => {
-    setSelectedAnimalTag(animalTag);
     setShowAnimalPopup(true);
   };
 
@@ -29,9 +27,13 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
     setSelectedFather(null);
   };
 
+  const refresh = () => {
+    handleAddAnimalClose();
+    window.location.reload();
+  }
+
   const handleCloseAnimalPopup = () => {
     setShowAnimalPopup(false);
-    setSelectedAnimalTag('');
   };
 
   // This function determines what happens when action button is clicked
@@ -112,7 +114,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
           fatherTag={selectedFather}
           showTwinsOption={true}
           onClose={handleAddAnimalClose}
-          onSuccess={handleAddAnimalClose}
+          onSuccess={refresh}
           createCalvingRecord={true}
           breedingYear={breedingYear}
         />
@@ -122,13 +124,11 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
       <Popup
         isOpen={showAnimalPopup}
         onClose={handleCloseAnimalPopup}
-        title={`Animal Details - ${selectedAnimalTag}`}
+        title={`Animal Details - TODO FIX`}
         fullscreen={true}
       >
         <div style={{ width: '100%', height: '100%' }}>
           <AnimalFolder
-            key={selectedAnimalTag}
-            defaultSearch={selectedAnimalTag}
             enableDefaultSearch={true}
             hideSearchBar={false}
           />

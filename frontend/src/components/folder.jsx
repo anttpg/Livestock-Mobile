@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import SearchBar from './searchBar';
-import '../cow-data.css';
+import '../screenSizing.css';
 
-const FolderTabs = ({ activeTab, onTabChange, tabs = [], alertStates = {}, selectedTabColor = 'white' }) => {
+const FolderTabs = ({ activeTab, onTabChange, tabs = [], alertStates = {}, alertColors = {}, selectedTabColor = 'white' }) => {
     const tabWidth = '140px';
 
     return (
@@ -13,37 +13,58 @@ const FolderTabs = ({ activeTab, onTabChange, tabs = [], alertStates = {}, selec
             zIndex: 5,
             position: 'relative'
         }}>
-            {tabs.map((tab, index) => (
-                <div
-                    key={tab.id}
-                    onClick={() => !tab.disabled && onTabChange(tab.id)}
-                    style={{
-                        width: tabWidth,
-                        background: activeTab === tab.id ? 
-                            (alertStates[tab.id] ? `linear-gradient(to bottom, #cf7b79, ${selectedTabColor})` : selectedTabColor) :
-                            (alertStates[tab.id] ? 'linear-gradient(to bottom, #cf7b79, #cf7b79)' : 'linear-gradient(to bottom, #e8e8e8, #c0c0c2)'),
-                        border: '1px solid rgb(232, 232, 232)',
-                        borderBottom: activeTab === tab.id ? 'none' : '1px solid #ccc',
-                        height: activeTab === tab.id ? '43px' : '40px',
-                        borderTopLeftRadius: '5px',
-                        borderTopRightRadius: '5px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: tab.disabled ? 'not-allowed' : 'pointer',
-                        color: tab.disabled ? '#999' :
-                            activeTab === tab.id ? 'rgb(28, 28, 66)' : 'black',
-                        fontWeight: 'bold',
-                        fontSize: '14px',
-                        opacity: tab.disabled ? 0.5 : 1,
-                        zIndex: activeTab === tab.id ? 12 : 11,
-                        marginRight: index < tabs.length - 1 ? 'var(--folder-gap)' : 'var(--folder-offset)',
-                        transition: 'color 0.3s ease'
-                    }}
-                >
-                    {tab.label}
-                </div>
-            ))}
+            {tabs.map((tab, index) => {
+                const alertColor = alertColors[tab.id] || '#cf7b79';
+
+                return (
+                    <div
+                        key={tab.id}
+                        onClick={() => !tab.disabled && onTabChange(tab.id)}
+                        style={{
+                            width: tabWidth,
+                            background: activeTab === tab.id
+                                ? (alertStates[tab.id]
+                                    ? `linear-gradient(to bottom, ${alertColor}, ${selectedTabColor})`
+                                    : selectedTabColor)
+                                : (alertStates[tab.id]
+                                    ? `linear-gradient(to bottom, ${alertColor}, ${alertColor})`
+                                    : 'linear-gradient(to bottom, #e8e8e8, #c0c0c2)'),
+                            border: '1px solid rgb(232, 232, 232)',
+                            borderBottom: activeTab === tab.id ? 'none' : '1px solid #ccc',
+                            height: activeTab === tab.id ? '43px' : '40px',
+                            borderTopLeftRadius: '5px',
+                            borderTopRightRadius: '5px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: tab.disabled ? 'not-allowed' : 'pointer',
+                            color: tab.disabled ? '#999'
+                                : activeTab === tab.id ? 'rgb(28, 28, 66)' : 'black',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            opacity: tab.disabled ? 0.5 : 1,
+                            zIndex: activeTab === tab.id ? 12 : 11,
+                            marginRight: index < tabs.length - 1
+                                ? 'var(--folder-gap)'
+                                : 'var(--folder-offset)',
+                            transition: 'color 0.3s ease'
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                textAlign: 'center',
+                                width: '100%',
+                                lineHeight: '1.2'
+                            }}
+                        >
+                            {tab.label}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 };
@@ -58,7 +79,8 @@ function Folder({
     onDataFetch = null, // Function to fetch data for a tab: (searchTerm, tab) => Promise<data>
     onTabChange = null, // Optional callback for tab changes
     renderTab = null, // Function to render tab content: (tab, data, searchTerm, helpers) => Component
-    alertStates = {}, // Object mapping tab IDs to alert boolean states
+    alertStates = {}, // Object mapping tab IDs(name) to alert boolean states
+    alertColors = {}, // Map tab IDs(name) to the alert color
     selectedTabColor = 'white'
 }) {
     const [activeTab, setActiveTab] = useState(defaultTab || (tabs.length > 0 ? tabs[0].id : ''));
@@ -207,6 +229,7 @@ function Folder({
                 onTabChange={handleTabChangeInternal}
                 tabs={tabs}
                 alertStates={alertStates}
+                alertColors={alertColors}
                 selectedTabColor={selectedTabColor}
             />
 

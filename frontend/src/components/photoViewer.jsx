@@ -5,7 +5,7 @@ function PhotoViewer({
   cowTag, 
   imageType, 
   style = {}, 
-  alternateDefaultPhoto = false // NEW: Use NoPhoto.png instead of NoHead/NoBody
+  alternateDefaultPhoto = false // Use NoPhoto.png if false
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -416,10 +416,7 @@ function PhotoViewer({
           isOpen={isExpanded}
           onClose={() => setIsExpanded(false)}
           title="Photos"
-          width="90vw"
           height="90vh"
-          maxWidth="1200px"
-          maxHeight="800px"
         >
           {dataLoaded && (
             <PhotoGallery 

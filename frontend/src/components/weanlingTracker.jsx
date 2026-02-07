@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Form from './forms';
 import WeighIn from './weighIn';
 import Popup from './popup';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function WeanlingTracker({ breedingPlanId, breedingYear }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);

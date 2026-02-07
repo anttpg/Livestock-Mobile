@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import PhotoViewer from './photoViewer';
+import { useUser } from '../UserContext';
 
 function IssueSubform({ 
   issue, 
   cowTag, 
-  currentUser, 
   isCreatingNew, 
   onClose, 
   onSave, 
@@ -19,7 +19,7 @@ function IssueSubform({
     // Issue Information
     IssueDescription: '',
     IssueObservationDate: new Date().toISOString().split('T')[0],
-    IssueObservedBy: currentUser?.username || '',
+    IssueObservedBy: useUser()?.username,
     
     // Treatment Information
     TreatmentMedicineID: '',  // Changed to ID

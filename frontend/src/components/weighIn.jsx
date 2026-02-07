@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Form from './forms';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function WeighIn({ onClose }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -48,7 +48,6 @@ function WeighIn({ onClose }) {
         headerContent={headerContent}
         sheetName="WeightCheck"
         showImportButton={true}
-        // Remove onTagClick prop - let Sheet use its default centralized behavior
       />
 
       {/* Animal Details Popup removed - centralized in Sheet.jsx */}

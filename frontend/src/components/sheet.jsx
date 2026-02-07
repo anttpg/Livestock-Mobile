@@ -6,7 +6,7 @@ import ExcelJS from 'exceljs';
 import Table from './table';
 import AnimalFolder from './animalFolder';
 import Popup from './popup';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 // Main Sheet Component
 function Sheet({
@@ -17,7 +17,6 @@ function Sheet({
     onEditorClose,
     bodyComponent = null,
     showImportButton = false,
-    onTagClick,
     editLive = true,
     selectableRows = false,
     showActionColumn = false,
@@ -46,7 +45,6 @@ function Sheet({
 
     // Add state for animal popup
     const [showAnimalPopup, setShowAnimalPopup] = useState(false);
-    const [selectedAnimalTag, setSelectedAnimalTag] = useState('');
 
     // Resolve sheet name to ID when component mounts or sheetName changes
     useEffect(() => {
@@ -406,7 +404,7 @@ function Sheet({
                             cursor: 'pointer',
                             ...textStyle // Apply conditional styling
                         }}
-                        onClick={() => handleTagClick(value)}
+                        onClick={() => window.location.href = `/animal?tab=general&search=${encodeURIComponent(value)}`}
                     >
                         {value || ''}
                     </span>
@@ -518,19 +516,8 @@ function Sheet({
         }
     };
 
-    // Centralized tag click handler
-    const handleTagClick = (tag) => {
-        if (onTagClick) {
-            onTagClick(tag);
-        } else {
-            setSelectedAnimalTag(tag);
-            setShowAnimalPopup(true);
-        }
-    };
-
     const handleCloseAnimalPopup = () => {
         setShowAnimalPopup(false);
-        setSelectedAnimalTag('');
     };
 
     const getFilteredDataForExport = () => {
@@ -1060,17 +1047,15 @@ function Sheet({
             </div>
 
             {/* Animal Details Popup */}
-            {showAnimalPopup && selectedAnimalTag && (
+            {showAnimalPopup && (
                 <Popup
                     isOpen={showAnimalPopup}
                     onClose={handleCloseAnimalPopup}
-                    title={`Animal Details - ${selectedAnimalTag}`}
+                    title={`Animal Details - TODO FIX`}
                     fullscreen={true}
                 >
                     <div style={{ width: '100%', height: '100%' }}>
                         <AnimalFolder
-                            key={selectedAnimalTag}
-                            defaultSearch={selectedAnimalTag}
                             enableDefaultSearch={true}
                             hideSearchBar={false}
                         />

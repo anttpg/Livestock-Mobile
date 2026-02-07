@@ -424,21 +424,160 @@ class LocalFileOperations {
         }
     }
 
-    async getActualImageFile(params) {
-        const { cowTag, imageType, n = 1 } = params;
+
+    /**
+     * Parse date from filename format: {CowTag} {BODY/HEAD} {DDMmmYYYY}
+     * Example: "36 HEAD 06Feb2026.jpg" -> Date object
+     */
+    parseDateFromFilename(filename) {
+        try {
+            // Match pattern: DD + Month(3 letters) + YYYY
+            const datePattern = /(\d{2})([A-Za-z]{3})(\d{4})/;
+            const match = filename.match(datePattern);
+            
+            if (!match) return null;
+            
+            const [, day, monthStr, year] = match;
+            
+            const months = {
+                'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+                'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
+            };
+            
+            const month = months[monthStr.toLowerCase()];
+            if (month === undefined) return null;
+            
+            return new Date(parseInt(year), month, parseInt(day));
+        } catch (error) {
+            console.error('Error parsing date from filename:', filename, error);
+            return null;
+        }
+    }
+
+
+    /**
+     * Get date from image EXIF metadata or filename
+     * @param {string} filePath - Full path to image file
+     * @param {string} filename - Just the filename (for parsing date)
+     * @returns {Date|null} Date object or null
+     */
+    async getImageDate(filePath, filename) {
+        const fs = require('fs').promises;
+        const ExifReader = require('exifreader');
         
         try {
-            const result = await this.getNthCowImage({
-                cowTag: cowTag,
-                type: imageType,
-                n: n
-            });
+            // Try to read EXIF data first
+            const fileBuffer = await fs.readFile(filePath);
+            const tags = ExifReader.load(fileBuffer, { expanded: true });
             
-            if (!result.success) {
-                return result;
+            // Try multiple EXIF date fields in order of preference
+            const dateFields = [
+                tags.exif?.DateTimeOriginal,  // When photo was taken
+                tags.exif?.CreateDate,         // When photo was created
+                tags.exif?.DateTime            // General date/time
+            ];
+            
+            for (const dateField of dateFields) {
+                if (dateField?.description) {
+                    // EXIF dates are in format "YYYY:MM:DD HH:MM:SS"
+                    const exifDate = dateField.description.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+                    const parsedDate = new Date(exifDate);
+                    
+                    if (!isNaN(parsedDate.getTime())) {
+                        return parsedDate;
+                    }
+                }
             }
+        } catch (error) {
+            // EXIF reading failed, will fall back to filename parsing
+            console.log(`No EXIF data for ${filename}, using filename date`);
+        }
+        
+        // Fallback: parse date from filename
+        return this.parseDateFromFilename(filename);
+    }
+
+    /**
+     * Get the nth most recent image file (sorted by EXIF date, then filename date)
+     * @param {Object} params - { cowTag, imageType, n }
+     */
+    async getActualImageFile(params) {
+        const { cowTag, imageType, n = 1 } = params;
+        const fs = require('fs').promises;
+        
+        try {
+            const safeTagName = this.remCowtagSlash(cowTag);
+            const cowDir = path.join(this.cowPhotosDir, safeTagName);
             
-            return result;
+            // Check if directory exists
+            try {
+                await fs.access(cowDir);
+            } catch (error) {
+                return {
+                    success: false,
+                    message: `No photos found for cow ${cowTag}`
+                };
+            }
+
+            // Get all files
+            const files = await fs.readdir(cowDir);
+            const validImages = files.filter(file => {
+                return this.validateFileType(file, this.imageFormats) &&
+                    file.toUpperCase().startsWith(safeTagName.toUpperCase());
+            });
+
+            // Filter by image type
+            const typeKeyword = imageType === 'headshot' ? ' HEAD ' : ' BODY ';
+            const imageList = validImages.filter(file => 
+                file.toUpperCase().includes(typeKeyword)
+            );
+
+            if (imageList.length === 0) {
+                return {
+                    success: false,
+                    message: `No ${imageType} images found for cow ${cowTag}`
+                };
+            }
+
+            // Get dates for all images
+            const imagesWithDates = await Promise.all(
+                imageList.map(async (filename) => {
+                    const filePath = path.join(cowDir, filename);
+                    const date = await this.getImageDate(filePath, filename);
+                    return { filename, filePath, date };
+                })
+            );
+
+            // Sort by date (newest first), put null dates at the end
+            imagesWithDates.sort((a, b) => {
+                if (!a.date && !b.date) return 0;
+                if (!a.date) return 1;  // a goes to end
+                if (!b.date) return -1; // b goes to end
+                return b.date - a.date; // Newest first
+            });
+
+            // Check if nth image exists
+            if (imagesWithDates.length < n) {
+                return {
+                    success: false,
+                    message: `Only ${imagesWithDates.length} ${imageType} images available for cow ${cowTag}`
+                };
+            }
+
+            // Get the nth image (1-indexed)
+            const targetImage = imagesWithDates[n - 1];
+            const fileBuffer = await fs.readFile(targetImage.filePath);
+            const stats = await fs.stat(targetImage.filePath);
+
+            return {
+                success: true,
+                fileBuffer,
+                filename: targetImage.filename,
+                size: stats.size,
+                modified: stats.mtime,
+                dateTaken: targetImage.date,
+                mimeType: this.getMimeType(targetImage.filename)
+            };
         } catch (error) {
             console.error('Error getting actual image file:', error);
             return { 
@@ -447,6 +586,19 @@ class LocalFileOperations {
             };
         }
     }
+
+    /**
+     * Renames the given cowtag to another cowtag
+     * @param {*} params 
+     */
+    async renameCow(params) {
+        // Find the cow folder, create it if it doesnt exist.
+
+        // Rename all files within the folder
+
+        // Finally, rename the folder
+    }
+
 
     /**
      * Convert forward slashes in cow tags to filesystem-safe characters

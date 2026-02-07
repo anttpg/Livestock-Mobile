@@ -270,7 +270,6 @@ app.post('/api/users/pre-register',
 
 
 
-
 // DEV ONLY
 
 // Get backend log file
@@ -308,6 +307,9 @@ app.post('/api/dev/logs/frontend/clear',
         return apiWrapper.clearFrontendLog(req, res);
     }
 );
+
+
+
 
 
 // Because these functions are sensitive, perform validation in the function itself. 
@@ -381,11 +383,39 @@ app.get('/api/cow/:tag',
     }
 );
 
+
 app.put('/api/cow/:cowTag',
     requireAuth(),
     createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.updateCow(req, res);
+    }
+);
+
+
+app.get('/api/cow/accounting/:cowTag',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getCowAccounting(req, res);
+  }
+);
+
+app.get('/api/cows/invalid-tag-chars',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getInvalidCowTagCharacters(req, res);
+  }
+);
+
+
+
+
+// Get notes
+app.get('/api/notes/:cowTag',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.getNotes(req, res);
     }
 );
 
@@ -479,6 +509,97 @@ app.put('/api/medical/medicines/:ID',
     return apiWrapper.updateMedicine(req, res);
   }
 );
+
+
+
+
+
+
+
+// CUSTOMERS
+app.get('/api/customers',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getCustomers(req, res);
+  }
+);
+
+app.post('/api/customers',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.addCustomer(req, res);
+  }
+);
+
+app.put('/api/customers/:NameFirstLast',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateCustomer(req, res);
+  }
+);
+
+
+
+// SALES / PURCHASE ROUTES
+app.get('/api/sales',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getAllSales(req, res);
+  }
+);
+
+app.get('/api/sales/:ID',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getSaleRecord(req, res);
+  }
+);
+
+app.post('/api/sales',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.createSaleRecord(req, res);
+  }
+);
+
+app.put('/api/sales/:ID',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateSaleRecord(req, res);
+  }
+);
+
+
+
+app.get('/api/purchases',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getAllPurchases(req, res);
+  }
+);
+
+app.get('/api/purchases/:ID',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getPurchaseRecord(req, res);
+  }
+);
+
+app.post('/api/purchases',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.createPurchaseRecord(req, res);
+  }
+);
+
+app.put('/api/purchases/:ID',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updatePurchaseRecord(req, res);
+  }
+);
+
+
 
 
 
@@ -763,13 +884,7 @@ app.post('/api/form-dropdown-data',
 
 
 
-// Get nth cow image (headshot or body) - returns specific image by position
-app.get('/api/cow/:tag/image/:imageType/:n',
-  createValidationMiddleware('getNthCowImage'),
-  async (req, res) => {
-    return apiWrapper.getNthCowImage(req, res);
-  }
-);
+
 
 // Get cow image count
 app.get('/api/cow/:tag/image-count',
@@ -788,6 +903,8 @@ app.post('/api/cow/:tag/upload-image',
   }
 );
 
+
+
 // Get cow image (headshot or body) - returns most recent
 app.get('/api/cow/:tag/image/:imageType',
   createValidationMiddleware('getCowImage'),
@@ -795,6 +912,18 @@ app.get('/api/cow/:tag/image/:imageType',
     return apiWrapper.getCowImage(req, res);
   }
 );
+
+// Get nth cow image (headshot or body) - returns specific image by position
+app.get('/api/cow/:tag/image/:imageType/:n',
+  createValidationMiddleware('getNthCowImage'),
+  async (req, res) => {
+    return apiWrapper.getNthCowImage(req, res);
+  }
+);
+
+
+
+
 
 // Get all cow images (list all headshots and bodyshots)
 app.get('/api/cow/:tag/images',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sheet from './sheet';
 import Popup from './popup';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function FieldsheetRecords({  }) {
   const [instances, setInstances] = useState([]);

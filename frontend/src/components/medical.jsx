@@ -9,7 +9,7 @@ import MedicationViewer from './MedicationViewer';
 const BREAKPOINT_HIDE_USER = 800;
 const BREAKPOINT_HIDE_TREATMENT = 600;
 
-function Medical({ cowTag, cowData, currentUser, loading = false, hideSearchBar = false, onDataUpdate }) {
+function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDataUpdate }) {
   const [expandedMedicines, setExpandedMedicines] = useState(new Set());
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showIssueDetails, setShowIssueDetails] = useState(false);
@@ -567,7 +567,7 @@ function Medical({ cowTag, cowData, currentUser, loading = false, hideSearchBar 
       </div>
 
       {/* Section 2: All Treatments (Immunizations & Maintenance) */}
-      <div className="bubble-container" style={{maxWidth:"600px"}}>
+      <div className="bubble-container">
         <h3 style={{ margin: '0 0 15px 0' }}>Treatments & Immunizations</h3>
         <ColorTable
           data={prepareTreatmentData()}
@@ -633,7 +633,6 @@ function Medical({ cowTag, cowData, currentUser, loading = false, hideSearchBar 
         <IssueSubform 
           issue={selectedIssue}
           cowTag={cowTag}
-          currentUser={currentUser}
           isCreatingNew={isCreatingNew}
           onClose={handleCloseIssueDetails}
           onSave={saveMedicalRecord}

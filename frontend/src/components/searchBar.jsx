@@ -193,14 +193,14 @@ function SearchBar({
   placeholder = "Search by tag", 
   buttonImage = "/images/search-icon.png",
   value = "", // Controlled value prop
-  cowOptions = [], // NEW: Array of cow options for autocomplete
-  herdFilter = null // NEW: Optional herd to filter cows by
+  cowOptions = [], // Array of cow options for autocomplete
+  herdFilter = null // Optional herd to filter cows by
 }) {
   const [searchValue, setSearchValue] = useState(value);
   const [history, setHistory] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
 
-  // GLOBAL HISTORY: Load from sessionStorage on mount
+  // GLOBAL HISTORY, load from sessionStorage on mount
   useEffect(() => {
     try {
       const savedHistory = sessionStorage.getItem('cowSearchHistory');

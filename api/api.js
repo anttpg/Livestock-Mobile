@@ -172,6 +172,50 @@ class APIWrapper {
     }
 
 
+
+    async renameCow(req, res) {
+        // Parse initial tag, resultingTag
+        var cowTag = req.params.cowTag;
+        var newTag = req.params.newTag;
+
+        // Check that the specified cowtag exists, and that the target cowtag does not already exist
+        var initialExists = this.executeDBOperation(req, res, 'cowTagExists', (req) => ({ cowTag }));
+        var newExists = this.executeDBOperation(req, res, 'cowTagExists', (req) => ({ newTag }));
+        
+        if (!initialExists) {
+            // return 500 error, the starting cow does not exist / 
+        }
+
+        if (newExists) {
+            // return 500 error, the ending tag must not exist in cowTable
+        }
+
+        // Rename all the database records...
+        var res = this.executeDBOperation(req, res, 'renameCow', (req) => ({ 
+            cowTag,
+            newTag
+        }));
+
+        // ...as well as all photos
+        this.executeFileOperation(req, res, 'renameCow', (req) => ({ 
+            cowTag,
+            newTag
+        }));
+    }
+
+    /**
+     * @returns JSON { invalidCharacters: a list invalid cowTag characters }
+     */
+    getInvalidCowTagCharacters(req, res) {
+        return res.json({ 
+            invalidCharacters: ['/', '\\', ':', '*', '?', '"', "'", '<', '>', '|', '#'] 
+        });
+    }
+
+
+
+
+
     
     /**
      * Returns all Epds for a cow
@@ -245,6 +289,12 @@ class APIWrapper {
     }
 
 
+    async getNotes(req, res) {
+        return this.executeDBOperation(req, res, 'getNotes', (req) => ({
+            cowTag: req.params.cowTag
+        }));
+    }
+
     async addNote(req, res) {
         return this.executeDBOperation(req, res, 'addNote', (req) => ({
             ...req.body,
@@ -259,6 +309,105 @@ class APIWrapper {
     async deleteNote(req, res) {
         return this.executeDBOperation(req, res, 'deleteNote', (req) => req.body);
     }
+
+
+
+
+
+
+
+
+    // CUSTOMERS
+    async getCustomers(req, res) {
+        return this.executeDBOperation(req, res, 'getCustomers', () => ({}));
+    }
+
+    async addCustomer(req, res) {
+        return this.executeDBOperation(req, res, 'addCustomer', (req) => req.body);
+    }
+
+    async updateCustomer(req, res) {
+        return this.executeDBOperation(req, res, 'updateCustomer', (req) => ({
+            NameFirstLast: req.params.NameFirstLast,
+            ...req.body
+        }));
+    }
+
+
+
+    // SALES
+    async getAllSales(req, res) {
+        return this.executeDBOperation(req, res, 'getAllSales', () => ({}));
+    }
+
+    async getSaleRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getSaleRecord', (req) => ({
+            ID: parseInt(req.params.ID)
+        }));
+    }
+
+    async createSaleRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createSaleRecord', (req) => req.body);
+    }
+
+    async updateSaleRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updateSaleRecord', (req) => ({
+            ID: parseInt(req.params.ID),
+            ...req.body
+        }));
+    }
+
+
+
+    // PURCHASES
+    async getAllPurchases(req, res) {
+        return this.executeDBOperation(req, res, 'getAllPurchases', () => ({}));
+    }
+
+    async getPurchaseRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getPurchaseRecord', (req) => ({
+            ID: parseInt(req.params.ID)
+        }));
+    }
+
+    async createPurchaseRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createPurchaseRecord', (req) => req.body);
+    }
+
+    async updatePurchaseRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updatePurchaseRecord', (req) => ({
+            ID: parseInt(req.params.ID),
+            ...req.body
+        }));
+    }
+
+
+
+
+
+    // COW ACCOUNTING
+    async getCowAccounting(req, res) {
+        return this.executeDBOperation(req, res, 'getCowAccounting', (req) => ({
+            cowTag: req.params.cowTag
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     async createMedicalRecord(req, res) {
@@ -346,8 +495,8 @@ class APIWrapper {
     }
 
     /**
- * Get breeding candidates for pregnancy check
- */
+     * Get breeding candidates for pregnancy check
+     */
     async getHerdBreedingCandidates(req, res) {
         return this.executeDBOperation(req, res, 'getHerdBreedingCandidates', (req) => ({
             herdName: req.params.herdName
@@ -470,9 +619,6 @@ class APIWrapper {
      */
     async addCow(req, res) {
         try {
-
-
-
             // Validation check
             const validationErrors = validationResult(req);
             if (!validationErrors.isEmpty()) {
@@ -567,14 +713,10 @@ class APIWrapper {
         }
     }
 
-
     async getAllCows(req, res) {
-        return this.executeDBOperation(req, res, 'getAllCows', (req) => ({
-            page: parseInt(req.query.page) || 1,
-            limit: parseInt(req.query.limit) || 50,
-            search: req.query.search || ''
-        }));
+        return this.executeDBOperation(req, res, 'getAllCows', (req) => ({}));
     }
+
 
 
 
@@ -595,11 +737,10 @@ class APIWrapper {
         }));
     }
 
+
+
     async getCowImage(req, res) {
         try {
-
-
-
             // Validation check
             const validationErrors = validationResult(req);
             if (!validationErrors.isEmpty()) {
@@ -630,17 +771,8 @@ class APIWrapper {
         }
     }
 
-    async getAllCowImages(req, res) {
-        return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
-            cowTag: req.params.tag
-        }));
-    }
-
     async getNthCowImage(req, res) {
         try {
-
-
-
             // Validation check
             const validationErrors = validationResult(req);
             if (!validationErrors.isEmpty()) {
@@ -672,10 +804,19 @@ class APIWrapper {
         }
     }
 
+
+
+    async getAllCowImages(req, res) {
+        return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
+            cowTag: req.params.tag
+        }));
+    }
+
+
+
+
     async getCowImageCount(req, res) {
         try {
-
-
 
             // Validation check
             const validationErrors = validationResult(req);

@@ -7,10 +7,7 @@ import Popup from './popup';
 function BreedingFitness({ 
   cowTag, 
   cowData, 
-  currentUser, 
   loading = false, 
-  hideSearchBar = false, 
-  onDataUpdate,
   onNavigate
 }) {
   const [epdData, setEpdData] = useState(null);

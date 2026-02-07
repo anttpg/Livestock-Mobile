@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 const allowedSheetTypes = [
   'PregCheck',

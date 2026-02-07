@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 import AutoCombobox from './autoCombobox';
 import ConfirmPopup from './popupConfirm';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 // SheetEditor Component
 function SheetEditor({ isOpen, onClose, sheetId, sheetName: initialSheetName, locked = false }) {

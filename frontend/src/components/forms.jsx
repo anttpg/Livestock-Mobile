@@ -1,6 +1,6 @@
 import React from 'react';
 import Sheet from './sheet';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function Form({ 
   title,
@@ -9,7 +9,6 @@ function Form({
   sheetId = null,
   sheetName = null,
   showImportButton = false,
-  onTagClick = null,
   customData = null,
   customColumns = null,
   editLive = true,
@@ -72,7 +71,6 @@ function Form({
             </div>
           }
           showImportButton={showImportButton}
-          onTagClick={onTagClick}
           editLive={editLive}
           selectableRows={selectableRows}
           showActionColumn={showActionColumn}

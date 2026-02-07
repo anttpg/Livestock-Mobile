@@ -3,7 +3,7 @@ import Folder from './folder';
 import PregCheck from './pregCheck';
 import CalvingTracker from './calvingTracker';
 import WeanlingTracker from './weanlingTracker';
-import '../cow-data.css';
+import '../screenSizing.css';
 
 function BreedingPlan() {
     const [breedingPlans, setBreedingPlans] = useState([]);

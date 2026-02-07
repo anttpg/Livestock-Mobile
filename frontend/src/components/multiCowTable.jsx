@@ -9,11 +9,11 @@ function MultiCowTable({
   emptyMessage = "No animals found"
 }) {
 
-  // Navigation function that always goes to /general?search=COWTAG
+  // Navigation function that always goes to the general page
   const navigateToCow = (row) => {
     const cowTag = row.CowTag || row.CalfTag; // Handle both CowTag and CalfTag
     if (cowTag) {
-      window.location.href = `/general?search=${encodeURIComponent(cowTag)}`;
+      window.location.href = `/animal?tab=general&search=${encodeURIComponent(cowTag)}`;
     }
   };
 

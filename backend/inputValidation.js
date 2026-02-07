@@ -1547,12 +1547,6 @@ const validationSchemas = {
         ...fieldValidators.cowTagParam()
     ],
 
-    getAllCows: [
-        ...fieldValidators.page(),
-        ...fieldValidators.limit(),
-        ...fieldValidators.search()
-    ],
-
     uploadCowImage: [
         ...fieldValidators.cowTagParam(),
         ...fieldValidators.imageType()

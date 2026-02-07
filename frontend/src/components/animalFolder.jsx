@@ -3,17 +3,18 @@ import Folder from './folder';
 import General from './general';
 import Medical from './medical';
 import BreedingFitness from './breedingFitness';
+import Sales from './sales';
 
 function AnimalFolder() {
     const [allCows, setAllCows] = useState([]);
-    const [currentUser, setCurrentUser] = useState('');
     const [hasSeriousIssues, setHasSeriousIssues] = useState(false);
 
     // Define tabs configuration
     const tabs = [
         { id: 'general', label: 'General' },
         { id: 'medical', label: 'Medical' },
-        { id: 'breeding', label: 'Breeding Fitness' }
+        { id: 'breeding', label: 'Breeding Fitness' },
+        { id: 'sales', label: `Purchase & Sales` }
     ];
 
     // Search configuration
@@ -22,26 +23,6 @@ function AnimalFolder() {
         placeholder: "Search by tag",
         options: allCows
     };
-
-    // Get current user when component mounts
-    useEffect(() => {
-        const fetchUser = async () => {
-            try {
-                const response = await fetch('/api/check-auth', {
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const authData = await response.json();
-                    if (authData.authenticated && authData.user) {
-                        setCurrentUser(authData.user.username || authData.user.name || 'Current User');
-                    }
-                }
-            } catch (error) {
-                console.error('Error fetching user:', error);
-            }
-        };
-        fetchUser();
-    }, []);
 
     // Fetch all cows for autocomplete
     useEffect(() => {
@@ -114,7 +95,6 @@ function AnimalFolder() {
                         cowTag={searchTerm}
                         cowData={data}
                         allCows={allCows}
-                        currentUser={currentUser}
                         onRefresh={helpers.onRefresh}
                         onNavigate={helpers.onNavigate}
                         hideSearchBar={helpers.hideSearchBar}
@@ -125,7 +105,6 @@ function AnimalFolder() {
                     <Medical
                         cowTag={searchTerm}
                         cowData={data}
-                        currentUser={currentUser}
                         loading={helpers.loading}
                         hideSearchBar={helpers.hideSearchBar}
                         onDataUpdate={helpers.onRefresh}
@@ -136,11 +115,14 @@ function AnimalFolder() {
                     <BreedingFitness
                         cowTag={searchTerm}
                         cowData={data}
-                        currentUser={currentUser}
                         loading={helpers.loading}
-                        hideSearchBar={helpers.hideSearchBar}
-                        onDataUpdate={helpers.onRefresh}
                         onNavigate={helpers.onNavigate}
+                    />
+                );
+            case 'sales':
+                return (
+                    <Sales
+                        cowTag={searchTerm}
                     />
                 );
             default:
@@ -148,10 +130,6 @@ function AnimalFolder() {
         }
     };
 
-    // Alert states for tabs
-    const alertStates = {
-        medical: hasSeriousIssues
-    };
 
     return (
         <Folder
@@ -163,7 +141,8 @@ function AnimalFolder() {
             enableDefaultSearch={true}
             onDataFetch={handleDataFetch}
             renderTab={renderTab}
-            alertStates={alertStates}
+            alertStates={{medical: hasSeriousIssues/*, sales: true*/}}
+            alertColors={{medical: '#cf7b79'/*, sales: '#fcc858ff'*/}}
         />
     );
 }

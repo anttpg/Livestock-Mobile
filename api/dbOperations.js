@@ -55,6 +55,8 @@ class DatabaseOperations {
                 medicines: `SELECT BrandName FROM Medicines ORDER BY BrandName`,
 
                 pregTestResults: `SELECT Result FROM PregTestResult ORDER BY Result`,
+
+                paymentMethods: `SELECT PaymentMethod FROM PaymentMethods ORDER BY PaymentMethod`,
             };
 
             const results = {};
@@ -125,7 +127,7 @@ class DatabaseOperations {
         const {
             cowTag, dateOfBirth, description, dam, sire, sex, status,
             currentHerd, breed, temperament, regCert, regCertNumber,
-            birthweight, birthweightClass, targetPrice, origin
+            birthweight, animalClass, targetPrice, origin
         } = params;
 
         await this.ensureConnection();
@@ -145,19 +147,19 @@ class DatabaseOperations {
             request.input('regCert', sql.NVarChar, regCert || null);
             request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
             request.input('birthweight', sql.NVarChar, birthweight || null);
-            request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
+            request.input('animalClass', sql.NVarChar, animalClass || null);
             request.input('targetPrice', sql.Money, targetPrice || null);
-            request.input('origin', sql.NVarChar, origin || null);
+            // request.input('origin', sql.NVarChar, origin || null);
 
             const query = `
                 INSERT INTO CowTable (
                     CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
                     Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
-                    Birthweight, BirthweightClass, TargetPrice, SaleRecordID, Origin
+                    Birthweight, AnimalClass, TargetPrice, SaleRecordID
                 ) VALUES (
                     @cowTag, @dateOfBirth, @description, @dam, @sire,
                     @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
-                    @birthweight, @birthweightClass, @targetPrice, NULL, @origin
+                    @birthweight, @animalClass, @targetPrice, NULL
                 )`;
 
             const result = await request.query(query);
@@ -184,7 +186,7 @@ class DatabaseOperations {
             // Basic cow data
             cowTag, dateOfBirth, description, dam, sire, sex, status,
             currentHerd, breed, temperament, regCert, regCertNumber,
-            birthweight, birthweightClass, targetPrice, origin,
+            birthweight, animalClass, targetPrice, origin,
             // Calf-specific
             isNewCalf, breedingYear, createCalvingRecord, calvingNotes,
             // Twins
@@ -213,19 +215,19 @@ class DatabaseOperations {
                 request.input('regCert', sql.NVarChar, regCert || null);
                 request.input('regCertNumber', sql.NVarChar, regCertNumber || null);
                 request.input('birthweight', sql.NVarChar, birthweight || null);
-                request.input('birthweightClass', sql.NVarChar, birthweightClass || null);
+                request.input('animalClass', sql.NVarChar, animalClass || null);
                 request.input('targetPrice', sql.Money, targetPrice || null);
-                request.input('origin', sql.NVarChar, origin || null);
+                //request.input('origin', sql.NVarChar, origin || null); DISABLED FOR NOW...
 
                 const insertQuery = `
                     INSERT INTO CowTable (
                         CowTag, DateOfBirth, Description, [Dam (Mother)], [Sire (Father)],
                         Sex, Status, CurrentHerd, Breed, Temperament, RegCert, RegCertNumber,
-                        Birthweight, BirthweightClass, TargetPrice, Origin
+                        Birthweight, AnimalClass, TargetPrice 
                     ) VALUES (
                         @cowTag, @dateOfBirth, @description, @dam, @sire,
                         @sex, @status, @currentHerd, @breed, @temperament, @regCert, @regCertNumber,
-                        @birthweight, @birthweightClass, @targetPrice, @origin
+                        @birthweight, @animalClass, @targetPrice
                     )`;
                 await request.query(insertQuery);
 
@@ -320,6 +322,23 @@ class DatabaseOperations {
     }
     
 
+    /**
+     * Get all cows
+     */
+    async getAllCows() {
+        await this.ensureConnection();
+        try {
+            const result = await this.pool.request().query(
+                'SELECT CowTag FROM CowTable ORDER BY CowTag'
+            );
+            return result.recordset;
+        } catch (error) {
+            console.error('Error fetching all cows:', error);
+            throw new Error(`Failed to fetch cows: ${error.message}`);
+        }
+    }
+
+
 
     /**
      * Get all cow table data for a specific cow
@@ -374,7 +393,7 @@ class DatabaseOperations {
             
             const setClauses = [];
             for (const [field, value] of Object.entries(updates)) {
-                const paramName = field.replace(/[^a-zA-Z0-9]/g, '_'); // Sanitize param name
+                const paramName = field;
                 
                 // Validate types
                 if (['Castrated'].includes(field)) {
@@ -415,18 +434,57 @@ class DatabaseOperations {
     }
 
 
+        
+    /**
+     * Returns true if the given tag exists in CowTable
+     *  @param {*} params 
+     */
+    async cowTagExists(params) {
+
+    }
+
+
+    /**
+     * Renames the given animal
+     *  @param {*} cowTag newTag
+     */
+    async renameCow(params) {
+        // The following columns need to be checked & renamed per table:
+
+        /**
+         * [BreedingRecords] CowTag, PrimaryBulls, CleanupBulls {NOTE: PrimaryBulls, CleanupBulls are JSON lists}
+         * [CowTable]; CowTag, DamTag, SireTag
+         * [CalvingRecords] CalfTag, DamTag
+         * [DNATestRecords] CalfTag, ConfirmedSire, PossibleSires {NOTE: PossibleSires is a JSON list}
+         * [EPDRecords] CowTag
+         * [HerdMembershipHistory] CowTag
+         * [MedicalTable] CowTag
+         * [Notes] CowTag
+         * [PregancyCheck] CowTag
+         * [SheetInstances] TODO, NEED TO DETERMINE HOW TO CHANGE ROWDATA, LOG WARNING THAT THIS IS INCOMPLETE
+         * [WeaningRecords] CowTag
+         * [WeightRecords] CowTag
+         */
+    }
+
+
+
+
+
+
 
     /**
      * Get notes for a cow
      * @param {string} cowTag - The cow's tag identifier
      * @returns {Promise<Array>}
      */
-    async getNotes(cowTag) {
+    async getNotes(params) {
+        const { cowTag } = params;
         await this.ensureConnection();
         
         try {
             const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
+            request.input('cowTag', sql.NVarChar(sql.MAX), cowTag);
             
             const query = `
                 SELECT 
@@ -450,6 +508,40 @@ class DatabaseOperations {
         } catch (error) {
             console.error('Error fetching notes:', error);
             throw new Error(`Failed to fetch notes: ${error.message}`);
+        }
+    }
+
+    /**
+     * Add a new note
+     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
+     * @returns {Promise<{success: boolean, noteId: number}>}
+     */
+    async addNote(params) {
+        const { cowTag, note, dateOfEntry, username } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('note', sql.NVarChar(sql.MAX), note);
+            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
+            request.input('cowTag', sql.NVarChar(sql.MAX), cowTag);
+            request.input('username', sql.NVarChar(sql.MAX), username)
+
+            const query = `
+                INSERT INTO Notes (Note, DateOfEntry, CowTag, Username)
+                OUTPUT INSERTED.NoteID
+                VALUES (@note, @dateOfEntry, @cowTag, @username)`;
+
+            const result = await request.query(query);
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                noteId: result.recordset[0].NoteID,
+                message: 'Observation added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding observation:', error);
+            throw new Error(`Failed to add observation: ${error.message}`);
         }
     }
 
@@ -532,38 +624,9 @@ class DatabaseOperations {
     }
 
 
-    /**
-     * Add a new note
-     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
-     * @returns {Promise<{success: boolean, noteId: number}>}
-     */
-    async addNote(params) {
-        const { cowTag, note, dateOfEntry } = params;
-        await this.ensureConnection();
 
-        try {
-            const request = this.pool.request();
-            request.input('note', sql.NVarChar, note);
-            request.input('dateOfEntry', sql.DateTime, dateOfEntry);
-            request.input('cowTag', sql.NVarChar, cowTag);
 
-            const query = `
-                INSERT INTO Notes (Note, DateOfEntry, CowTag)
-                OUTPUT INSERTED.NoteID
-                VALUES (@note, @dateOfEntry, @cowTag)`;
 
-            const result = await request.query(query);
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                noteId: result.recordset[0].ID,
-                message: 'Observation added successfully'
-            };
-        } catch (error) {
-            console.error('Error adding observation:', error);
-            throw new Error(`Failed to add observation: ${error.message}`);
-        }
-    }
 
 
 
@@ -608,6 +671,9 @@ class DatabaseOperations {
             throw new Error(`Failed to fetch offspring: ${error.message}`);
         }
     }
+
+
+
 
 
     /**
@@ -1358,6 +1424,346 @@ class DatabaseOperations {
             console.error('Error resolving issue:', error);
             throw new Error(`Failed to resolve issue: ${error.message}`);
         }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //              CUSTOMERS  //////////////////////////////////////////////////////////////////////////////////////////
+
+    async addPaymentMethod(params) {
+        const query = `
+            INSERT INTO [V4.1Livestock].[dbo].[PaymentMethods] ([PaymentMethod])
+            VALUES (@paymentMethod)
+        `;
+        const request = this.pool.request();
+        request.input('paymentMethod', sql.NVarChar, params.paymentMethod);
+        await request.query(query);
+    }
+
+
+    async getCustomers() {
+        const query = `
+            SELECT [NameFirstLast]
+                  ,[Address]
+                  ,[City]
+                  ,[State]
+                  ,[Zip]
+                  ,[Phone]
+                  ,[Email]
+                  ,[DateAdded]
+                  ,[HasSoldTo]
+                  ,[HasPurchasedFrom]
+                  ,[SSMA_TimeStamp]
+            FROM [V4.1Livestock].[dbo].[Customers]
+            ORDER BY [NameFirstLast]
+        `;
+        const result = await this.pool.request().query(query);
+        return result.recordset;
+    }
+
+
+    async addCustomer(params) {
+        const query = `
+            INSERT INTO [V4.1Livestock].[dbo].[Customers] 
+            ([NameFirstLast], [Address], [City], [State], [Zip], [Phone], [Email], [DateAdded], [HasSoldTo], [HasPurchasedFrom])
+            VALUES (@nameFirstLast, @address, @city, @state, @zip, @phone, @email, @dateAdded, @hasSoldTo, @hasPurchasedFrom)
+        `;
+        const request = this.pool.request();
+        request.input('nameFirstLast', sql.NVarChar, params.NameFirstLast);
+        request.input('address', sql.NVarChar, params.Address || null);
+        request.input('city', sql.NVarChar, params.City || null);
+        request.input('state', sql.NVarChar, params.State || null);
+        request.input('zip', sql.NVarChar, params.Zip || null);
+        request.input('phone', sql.NVarChar, params.Phone || null);
+        request.input('email', sql.NVarChar, params.Email || null);
+        request.input('dateAdded', sql.DateTime, params.DateAdded || new Date());
+        request.input('hasSoldTo', sql.Bit, params.HasSoldTo || 0);
+        request.input('hasPurchasedFrom', sql.Bit, params.HasPurchasedFrom || 0);
+        await request.query(query);
+    }
+
+
+    async updateCustomer(params) {
+        const query = `
+            UPDATE [V4.1Livestock].[dbo].[Customers]
+            SET [Address] = @address,
+                [City] = @city,
+                [State] = @state,
+                [Zip] = @zip,
+                [Phone] = @phone,
+                [Email] = @email,
+                [HasSoldTo] = @hasSoldTo,
+                [HasPurchasedFrom] = @hasPurchasedFrom
+            WHERE [NameFirstLast] = @nameFirstLast
+        `;
+        const request = this.pool.request();
+        request.input('nameFirstLast', sql.NVarChar, params.NameFirstLast);
+        request.input('address', sql.NVarChar, params.Address);
+        request.input('city', sql.NVarChar, params.City);
+        request.input('state', sql.NVarChar, params.State);
+        request.input('zip', sql.NVarChar, params.Zip);
+        request.input('phone', sql.NVarChar, params.Phone);
+        request.input('email', sql.NVarChar, params.Email);
+        request.input('hasSoldTo', sql.Bit, params.HasSoldTo);
+        request.input('hasPurchasedFrom', sql.Bit, params.HasPurchasedFrom);
+        await request.query(query);
+    }
+
+
+
+
+
+
+
+    //              SALE/PURCHASE RECORDS   
+    
+    async getAllSales() {
+        const query = `
+            SELECT [ID]
+                  ,[Description]
+                  ,[SaleDate]
+                  ,[SalePrice]
+                  ,[PaymentMethod]
+                  ,[Customer]
+                  ,[Commission]
+                  ,[SaleNotes]
+            FROM [V4.1Livestock].[dbo].[SaleRecords]
+            ORDER BY [SaleDate] DESC
+        `;
+        const result = await this.pool.request().query(query);
+        return result.recordset;
+    }
+
+
+    async getSaleRecord(params) {
+        const query = `
+            SELECT [ID]
+                  ,[Description]
+                  ,[SaleDate]
+                  ,[SalePrice]
+                  ,[PaymentMethod]
+                  ,[Customer]
+                  ,[Commission]
+                  ,[SaleNotes]
+            FROM [V4.1Livestock].[dbo].[SaleRecords]
+            WHERE [ID] = @id
+        `;
+        const request = this.pool.request();
+        request.input('id', sql.Int, params.ID);
+        const result = await request.query(query);
+        return result.recordset[0];
+    }
+    
+
+    async createSaleRecord(params) {
+        const query = `
+            INSERT INTO [V4.1Livestock].[dbo].[SaleRecords]
+            ([Description], [SaleDate], [SalePrice], [PaymentMethod], [Customer], [Commission], [SaleNotes])
+            VALUES (@description, @saleDate, @salePrice, @paymentMethod, @customer, @commission, @saleNotes);
+            SELECT SCOPE_IDENTITY() AS ID;
+        `;
+        const request = this.pool.request();
+        request.input('description', sql.NVarChar, params.Description || null);
+        request.input('saleDate', sql.DateTime, params.SaleDate || new Date());
+        request.input('salePrice', sql.Decimal(18, 2), params.SalePrice || null);
+        request.input('paymentMethod', sql.NVarChar, params.PaymentMethod || null);
+        request.input('customer', sql.NVarChar, params.Customer || null);
+        request.input('commission', sql.Decimal(18, 2), params.Commission || null);
+        request.input('saleNotes', sql.NVarChar, params.SaleNotes || null);
+        const result = await request.query(query);
+        return result.recordset[0].ID;
+    }
+
+
+    async updateSaleRecord(params) {
+        const query = `
+            UPDATE [V4.1Livestock].[dbo].[SaleRecords]
+            SET [Description] = @description,
+                [SaleDate] = @saleDate,
+                [SalePrice] = @salePrice,
+                [PaymentMethod] = @paymentMethod,
+                [Customer] = @customer,
+                [Commission] = @commission,
+                [SaleNotes] = @saleNotes
+            WHERE [ID] = @id
+        `;
+        const request = this.pool.request();
+        request.input('id', sql.Int, params.ID);
+        request.input('description', sql.NVarChar, params.Description);
+        request.input('saleDate', sql.DateTime, params.SaleDate);
+        request.input('salePrice', sql.Decimal(18, 2), params.SalePrice);
+        request.input('paymentMethod', sql.NVarChar, params.PaymentMethod);
+        request.input('customer', sql.NVarChar, params.Customer);
+        request.input('commission', sql.Decimal(18, 2), params.Commission);
+        request.input('saleNotes', sql.NVarChar, params.SaleNotes);
+        await request.query(query);
+    }
+
+
+
+    async getAllPurchases() {
+        const query = `
+            SELECT [ID]
+                  ,[Description]
+                  ,[PurchaseDate]
+                  ,[PurchasePrice]
+                  ,[PaymentMethod]
+                  ,[Origin]
+                  ,[PurchaseNotes]
+            FROM [V4.1Livestock].[dbo].[PurchaseRecords]
+            ORDER BY [PurchaseDate] DESC
+        `;
+        const result = await this.pool.request().query(query);
+        return result.recordset;
+    }
+
+    async getPurchaseRecord(params) {
+        const query = `
+            SELECT [ID]
+                  ,[Description]
+                  ,[PurchaseDate]
+                  ,[PurchasePrice]
+                  ,[PaymentMethod]
+                  ,[Origin]
+                  ,[PurchaseNotes]
+            FROM [V4.1Livestock].[dbo].[PurchaseRecords]
+            WHERE [ID] = @id
+        `;
+        const request = this.pool.request();
+        request.input('id', sql.Int, params.ID);
+        const result = await request.query(query);
+        return result.recordset[0];
+    }
+    
+    async createPurchaseRecord(params) {
+        const query = `
+            INSERT INTO [V4.1Livestock].[dbo].[PurchaseRecords]
+            ([Description], [PurchaseDate], [PurchasePrice], [PaymentMethod], [Origin], [PurchaseNotes])
+            VALUES (@description, @purchaseDate, @purchasePrice, @paymentMethod, @origin, @purchaseNotes);
+            SELECT SCOPE_IDENTITY() AS ID;
+        `;
+        const request = this.pool.request();
+        request.input('description', sql.NVarChar, params.Description || null);
+        request.input('purchaseDate', sql.DateTime, params.PurchaseDate || new Date());
+        request.input('purchasePrice', sql.Decimal(18, 2), params.PurchasePrice || null);
+        request.input('paymentMethod', sql.NVarChar, params.PaymentMethod || null);
+        request.input('origin', sql.NVarChar, params.Origin || null);
+        request.input('purchaseNotes', sql.NVarChar, params.PurchaseNotes || null);
+        const result = await request.query(query);
+        return result.recordset[0].ID;
+    }
+
+    async updatePurchaseRecord(params) {
+        const query = `
+            UPDATE [V4.1Livestock].[dbo].[PurchaseRecords]
+            SET [Description] = @description,
+                [PurchaseDate] = @purchaseDate,
+                [PurchasePrice] = @purchasePrice,
+                [PaymentMethod] = @paymentMethod,
+                [Origin] = @origin,
+                [PurchaseNotes] = @purchaseNotes
+            WHERE [ID] = @id
+        `;
+        const request = this.pool.request();
+        request.input('id', sql.Int, params.ID);
+        request.input('description', sql.NVarChar, params.Description);
+        request.input('purchaseDate', sql.DateTime, params.PurchaseDate);
+        request.input('purchasePrice', sql.Decimal(18, 2), params.PurchasePrice);
+        request.input('paymentMethod', sql.NVarChar, params.PaymentMethod);
+        request.input('origin', sql.NVarChar, params.Origin);
+        request.input('purchaseNotes', sql.NVarChar, params.PurchaseNotes);
+        await request.query(query);
+    }
+
+
+
+    /**
+     * Returns all the related accounting records for a cow
+     * @param {*} cowTag 
+     */
+    async getCowAccounting(params) {
+        // get the cow's accounting data
+        const cowQuery = `
+            SELECT [CowTag]
+                  ,[TargetPrice]
+                  ,[SalePrice]
+                  ,[SaleRecordID]
+                  ,[WeightAtSale]
+                  ,[ReasonAnimalSold]
+                  ,[PurchasePrice]
+                  ,[PurchaseRecordID]
+                  ,[Status]
+            FROM [V4.1Livestock].[dbo].[CowTable]
+            WHERE [CowTag] = @cowTag
+        `;
+        const request = this.pool.request();
+        request.input('cowTag', sql.NVarChar, params.cowTag);
+        const cowResult = await request.query(cowQuery);
+        
+        if (cowResult.recordset.length === 0) {
+            return null;
+        }
+        
+        const cowData = cowResult.recordset[0];
+        
+        // Get sale record if it exists
+        let saleRecord = null;
+        if (cowData.SaleRecordID) {
+            const saleResult = await this.getSaleRecord({ ID: cowData.SaleRecordID });
+            saleRecord = saleResult;
+        }
+        
+        // Get purchase record if it exists
+        let purchaseRecord = null;
+        if (cowData.PurchaseRecordID) {
+            const purchaseResult = await this.getPurchaseRecord({ ID: cowData.PurchaseRecordID });
+            purchaseRecord = purchaseResult;
+        }
+        
+        return {
+            cowTag: cowData.CowTag,
+            targetPrice: cowData.TargetPrice,
+            cowSalePrice: cowData.SalePrice,  // Price recorded in CowTable
+            saleRecordID: cowData.SaleRecordID,
+            weightAtSale: cowData.WeightAtSale,
+            reasonAnimalSold: cowData.ReasonAnimalSold,
+            cowPurchasePrice: cowData.PurchasePrice,  // Price recorded in CowTable
+            purchaseRecordID: cowData.PurchaseRecordID,
+            status: cowData.Status,
+            saleRecord: saleRecord,  // Full SaleRecord if exists
+            purchaseRecord: purchaseRecord  // Full PurchaseRecord if exists
+        };
     }
 
 
@@ -2257,57 +2663,7 @@ class DatabaseOperations {
 
 
 
-    /**
-     * Get all cows
-     * @param {Object} params - { page, limit, search }
-     */
-    async getAllCows(params) {
-        const { page = 1, limit = 50, search = '' } = params;
-        await this.ensureConnection();
 
-        try {
-            const offset = (page - 1) * limit;
-            const request = this.pool.request();
-            request.input('limit', sql.Int, limit);
-            request.input('offset', sql.Int, offset);
-            request.input('search', sql.NVarChar, `%${search}%`);
-
-            const query = `
-                SELECT 
-                    CowTag, DateOfBirth, {CurrentWeight:GetCurrentWeight}, Description,
-                    [Dam (Mother)] AS Dam, [Sire (Father)] AS Sire,
-                    CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
-                FROM CowTable
-                WHERE (@search = '' OR CowTag LIKE @search OR Description LIKE @search)
-                ORDER BY CowTag
-                OFFSET @offset ROWS
-                FETCH NEXT @limit ROWS ONLY`;
-
-            const result = await request.query(query);
-
-            // Get total count
-            const countRequest = this.pool.request();
-            countRequest.input('search', sql.NVarChar, `%${search}%`);
-            const countQuery = `
-                SELECT COUNT(*) as Total 
-                FROM CowTable
-                WHERE (@search = '' OR CowTag LIKE @search OR Description LIKE @search)`;
-            const countResult = await countRequest.query(countQuery);
-
-            return {
-                cows: result.recordset,
-                pagination: {
-                    page,
-                    limit,
-                    total: countResult.recordset[0].Total,
-                    totalPages: Math.ceil(countResult.recordset[0].Total / limit)
-                }
-            };
-        } catch (error) {
-            console.error('Error fetching all cows:', error);
-            throw new Error(`Failed to fetch cows: ${error.message}`);
-        }
-    }
 
 
 
@@ -5998,4 +6354,29 @@ module.exports = {
     updateWeaningStatus: (params) => dbOps.updateWeaningStatus(params.cowTag, params.value, params.breedingYear),
     recordWeaning: (params) => dbOps.recordWeaning(params),
     getWeaningCandidates: (params) => dbOps.getWeaningCandidates(params),
+
+
+
+    // Payment Methods
+    addPaymentMethod: (params) => dbOps.addPaymentMethod(params),
+    
+    // Customers
+    getCustomers: () => dbOps.getCustomers(),
+    addCustomer: (params) => dbOps.addCustomer(params),
+    updateCustomer: (params) => dbOps.updateCustomer(params),
+    
+    // Sales
+    getAllSales: () => dbOps.getAllSales(),
+    getSaleRecord: (params) => dbOps.getSaleRecord(params),
+    createSaleRecord: (params) => dbOps.createSaleRecord(params),
+    updateSaleRecord: (params) => dbOps.updateSaleRecord(params),
+    
+    // Purchases
+    getAllPurchases: () => dbOps.getAllPurchases(),
+    getPurchaseRecord: (params) => dbOps.getPurchaseRecord(params),
+    createPurchaseRecord: (params) => dbOps.createPurchaseRecord(params),
+    updatePurchaseRecord: (params) => dbOps.updatePurchaseRecord(params),
+    
+    // Cow Accounting
+    getCowAccounting: (params) => dbOps.getCowAccounting(params)
 };
