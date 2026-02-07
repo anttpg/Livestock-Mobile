@@ -1457,13 +1457,11 @@ class DatabaseOperations {
 
 
 
-
-
     //              CUSTOMERS  //////////////////////////////////////////////////////////////////////////////////////////
 
     async addPaymentMethod(params) {
         const query = `
-            INSERT INTO [V4.1Livestock].[dbo].[PaymentMethods] ([PaymentMethod])
+            INSERT INTO [PaymentMethods] ([PaymentMethod])
             VALUES (@paymentMethod)
         `;
         const request = this.pool.request();
@@ -1475,17 +1473,17 @@ class DatabaseOperations {
     async getCustomers() {
         const query = `
             SELECT [NameFirstLast]
-                  ,[Address]
-                  ,[City]
-                  ,[State]
-                  ,[Zip]
-                  ,[Phone]
-                  ,[Email]
-                  ,[DateAdded]
-                  ,[HasSoldTo]
-                  ,[HasPurchasedFrom]
-                  ,[SSMA_TimeStamp]
-            FROM [V4.1Livestock].[dbo].[Customers]
+                ,[Address]
+                ,[City]
+                ,[State]
+                ,[Zip]
+                ,[Phone]
+                ,[Email]
+                ,[DateAdded]
+                ,[HasSoldTo]
+                ,[HasPurchasedFrom]
+                ,[SSMA_TimeStamp]
+            FROM [Customers]
             ORDER BY [NameFirstLast]
         `;
         const result = await this.pool.request().query(query);
@@ -1495,7 +1493,7 @@ class DatabaseOperations {
 
     async addCustomer(params) {
         const query = `
-            INSERT INTO [V4.1Livestock].[dbo].[Customers] 
+            INSERT INTO [Customers] 
             ([NameFirstLast], [Address], [City], [State], [Zip], [Phone], [Email], [DateAdded], [HasSoldTo], [HasPurchasedFrom])
             VALUES (@nameFirstLast, @address, @city, @state, @zip, @phone, @email, @dateAdded, @hasSoldTo, @hasPurchasedFrom)
         `;
@@ -1516,7 +1514,7 @@ class DatabaseOperations {
 
     async updateCustomer(params) {
         const query = `
-            UPDATE [V4.1Livestock].[dbo].[Customers]
+            UPDATE [Customers]
             SET [Address] = @address,
                 [City] = @city,
                 [State] = @state,
@@ -1547,18 +1545,18 @@ class DatabaseOperations {
 
 
     //              SALE/PURCHASE RECORDS   
-    
+
     async getAllSales() {
         const query = `
             SELECT [ID]
-                  ,[Description]
-                  ,[SaleDate]
-                  ,[SalePrice]
-                  ,[PaymentMethod]
-                  ,[Customer]
-                  ,[Commission]
-                  ,[SaleNotes]
-            FROM [V4.1Livestock].[dbo].[SaleRecords]
+                ,[Description]
+                ,[SaleDate]
+                ,[SalePrice]
+                ,[PaymentMethod]
+                ,[Customer]
+                ,[Commission]
+                ,[SaleNotes]
+            FROM [SaleRecords]
             ORDER BY [SaleDate] DESC
         `;
         const result = await this.pool.request().query(query);
@@ -1569,14 +1567,14 @@ class DatabaseOperations {
     async getSaleRecord(params) {
         const query = `
             SELECT [ID]
-                  ,[Description]
-                  ,[SaleDate]
-                  ,[SalePrice]
-                  ,[PaymentMethod]
-                  ,[Customer]
-                  ,[Commission]
-                  ,[SaleNotes]
-            FROM [V4.1Livestock].[dbo].[SaleRecords]
+                ,[Description]
+                ,[SaleDate]
+                ,[SalePrice]
+                ,[PaymentMethod]
+                ,[Customer]
+                ,[Commission]
+                ,[SaleNotes]
+            FROM [SaleRecords]
             WHERE [ID] = @id
         `;
         const request = this.pool.request();
@@ -1584,11 +1582,11 @@ class DatabaseOperations {
         const result = await request.query(query);
         return result.recordset[0];
     }
-    
+
 
     async createSaleRecord(params) {
         const query = `
-            INSERT INTO [V4.1Livestock].[dbo].[SaleRecords]
+            INSERT INTO [SaleRecords]
             ([Description], [SaleDate], [SalePrice], [PaymentMethod], [Customer], [Commission], [SaleNotes])
             VALUES (@description, @saleDate, @salePrice, @paymentMethod, @customer, @commission, @saleNotes);
             SELECT SCOPE_IDENTITY() AS ID;
@@ -1608,7 +1606,7 @@ class DatabaseOperations {
 
     async updateSaleRecord(params) {
         const query = `
-            UPDATE [V4.1Livestock].[dbo].[SaleRecords]
+            UPDATE [SaleRecords]
             SET [Description] = @description,
                 [SaleDate] = @saleDate,
                 [SalePrice] = @salePrice,
@@ -1635,13 +1633,13 @@ class DatabaseOperations {
     async getAllPurchases() {
         const query = `
             SELECT [ID]
-                  ,[Description]
-                  ,[PurchaseDate]
-                  ,[PurchasePrice]
-                  ,[PaymentMethod]
-                  ,[Origin]
-                  ,[PurchaseNotes]
-            FROM [V4.1Livestock].[dbo].[PurchaseRecords]
+                ,[Description]
+                ,[PurchaseDate]
+                ,[PurchasePrice]
+                ,[PaymentMethod]
+                ,[Origin]
+                ,[PurchaseNotes]
+            FROM [PurchaseRecords]
             ORDER BY [PurchaseDate] DESC
         `;
         const result = await this.pool.request().query(query);
@@ -1651,13 +1649,13 @@ class DatabaseOperations {
     async getPurchaseRecord(params) {
         const query = `
             SELECT [ID]
-                  ,[Description]
-                  ,[PurchaseDate]
-                  ,[PurchasePrice]
-                  ,[PaymentMethod]
-                  ,[Origin]
-                  ,[PurchaseNotes]
-            FROM [V4.1Livestock].[dbo].[PurchaseRecords]
+                ,[Description]
+                ,[PurchaseDate]
+                ,[PurchasePrice]
+                ,[PaymentMethod]
+                ,[Origin]
+                ,[PurchaseNotes]
+            FROM [PurchaseRecords]
             WHERE [ID] = @id
         `;
         const request = this.pool.request();
@@ -1665,10 +1663,10 @@ class DatabaseOperations {
         const result = await request.query(query);
         return result.recordset[0];
     }
-    
+
     async createPurchaseRecord(params) {
         const query = `
-            INSERT INTO [V4.1Livestock].[dbo].[PurchaseRecords]
+            INSERT INTO [PurchaseRecords]
             ([Description], [PurchaseDate], [PurchasePrice], [PaymentMethod], [Origin], [PurchaseNotes])
             VALUES (@description, @purchaseDate, @purchasePrice, @paymentMethod, @origin, @purchaseNotes);
             SELECT SCOPE_IDENTITY() AS ID;
@@ -1686,7 +1684,7 @@ class DatabaseOperations {
 
     async updatePurchaseRecord(params) {
         const query = `
-            UPDATE [V4.1Livestock].[dbo].[PurchaseRecords]
+            UPDATE [PurchaseRecords]
             SET [Description] = @description,
                 [PurchaseDate] = @purchaseDate,
                 [PurchasePrice] = @purchasePrice,
@@ -1716,15 +1714,15 @@ class DatabaseOperations {
         // get the cow's accounting data
         const cowQuery = `
             SELECT [CowTag]
-                  ,[TargetPrice]
-                  ,[SalePrice]
-                  ,[SaleRecordID]
-                  ,[WeightAtSale]
-                  ,[ReasonAnimalSold]
-                  ,[PurchasePrice]
-                  ,[PurchaseRecordID]
-                  ,[Status]
-            FROM [V4.1Livestock].[dbo].[CowTable]
+                ,[TargetPrice]
+                ,[SalePrice]
+                ,[SaleRecordID]
+                ,[WeightAtSale]
+                ,[ReasonAnimalSold]
+                ,[PurchasePrice]
+                ,[PurchaseRecordID]
+                ,[Status]
+            FROM [CowTable]
             WHERE [CowTag] = @cowTag
         `;
         const request = this.pool.request();
@@ -1765,8 +1763,6 @@ class DatabaseOperations {
             purchaseRecord: purchaseRecord  // Full PurchaseRecord if exists
         };
     }
-
-
 
 
 
