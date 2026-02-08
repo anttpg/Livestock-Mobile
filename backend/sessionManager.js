@@ -966,6 +966,16 @@ app.get('/api/map', async (req, res) => {
   return apiWrapper.getMap(req, res);
 });
 
+app.put('/api/map',
+  upload.single('image'),
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.uploadMap(req, res);
+  }
+);
+
+
+
 
 // Get minimap for specific field
 app.get('/api/minimap/:fieldName',
@@ -979,6 +989,16 @@ app.get('/api/minimap/:fieldName',
 app.get('/api/minimaps', async (req, res) => {
   return apiWrapper.getAvailableMinimaps(req, res);
 });
+
+
+app.put('/api/minimap/:fieldName',
+  upload.single('image'),
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.uploadMinimap(req, res);
+  }
+);
+
 
 
 

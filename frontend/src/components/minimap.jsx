@@ -116,9 +116,10 @@ function Minimap({ cowTag, pastureName, minimapSrc }) {
 
 // MapViewer component for the popup content
 function MapViewer({ cowTag, pastureName, preloadedData }) {
-  const [showFields, setShowFields] = useState(false);
+  const [showFields, setShowFields] = useState(true);
   const [mapData, setMapData] = useState(preloadedData);
   const [loading, setLoading] = useState(!preloadedData);
+  const [showUploadPopup, setShowUploadPopup] = useState(false);
 
   useEffect(() => {
     // If we don't have preloaded data, fetch it now
@@ -214,6 +215,34 @@ function MapViewer({ cowTag, pastureName, preloadedData }) {
         </div>
       )}
 
+      {/* Upload Button */}
+      <div style={{
+        position: 'absolute',
+        bottom: '15px',
+        right: '70px',
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: '50%',
+        padding: '8px',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease'
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        setShowUploadPopup(true);
+      }}
+      >
+        <span 
+          className="material-symbols-outlined" 
+          style={{ 
+            fontSize: '28px',
+            color: '#2196F3'
+          }}
+        >
+          upload
+        </span>
+      </div>
+
       {/* Toggle Button */}
       <div style={{
         position: 'absolute',
@@ -256,6 +285,179 @@ function MapViewer({ cowTag, pastureName, preloadedData }) {
           📍 {pastureName}
         </div>
       )}
+
+      {/* Upload Popup */}
+      <Popup
+        isOpen={showUploadPopup}
+        onClose={() => setShowUploadPopup(false)}
+        title="Upload Map"
+        width="500px"
+        height="auto"
+      >
+        <UploadMapForm onClose={() => setShowUploadPopup(false)} />
+      </Popup>
+    </div>
+  );
+}
+
+// Upload form component
+function UploadMapForm({ onClose }) {
+  const [mapType, setMapType] = useState('map');
+  const [minimapName, setMinimapName] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      setMessage('');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      setMessage('Please select an image file');
+      return;
+    }
+
+    if (mapType === 'minimap' && !minimapName.trim()) {
+      setMessage('Please enter a minimap name');
+      return;
+    }
+
+    setUploading(true);
+    setMessage('');
+
+    try {
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      let endpoint;
+      if (mapType === 'minimap') {
+        endpoint = `/api/minimap/${encodeURIComponent(minimapName.trim())}`;
+      } else {
+        formData.append('mapType', mapType);
+        endpoint = '/api/map';
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        credentials: 'include',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setMessage('Upload successful!');
+        setTimeout(() => {
+          onClose();
+          window.location.reload(); // Refresh to show new map
+        }, 1500);
+      } else {
+        setMessage(result.message || 'Upload failed');
+      }
+    } catch (error) {
+      setMessage('Error uploading file: ' + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+          Map Type:
+        </label>
+        <select
+          value={mapType}
+          onChange={(e) => setMapType(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid #ccc'
+          }}
+        >
+          <option value="map">Map (with fields)</option>
+          <option value="MapCombined">MapCombined (without fields)</option>
+          <option value="minimap">Minimap (field-specific)</option>
+        </select>
+      </div>
+
+      {mapType === 'minimap' && (
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+            Minimap Name:
+          </label>
+          <input
+            type="text"
+            value={minimapName}
+            onChange={(e) => setMinimapName(e.target.value)}
+            placeholder="Enter field/pasture name"
+            style={{
+              width: '100%',
+              padding: '8px',
+              borderRadius: '4px',
+              border: '1px solid #ccc'
+            }}
+          />
+        </div>
+      )}
+
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+          Select Image:
+        </label>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          style={{
+            width: '100%',
+            padding: '8px'
+          }}
+        />
+        {selectedFile && (
+          <div style={{ marginTop: '8px', fontSize: '14px', color: '#666' }}>
+            Selected: {selectedFile.name}
+          </div>
+        )}
+      </div>
+
+      {message && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '10px',
+          borderRadius: '4px',
+          backgroundColor: message.includes('success') ? '#d4edda' : '#f8d7da',
+          color: message.includes('success') ? '#155724' : '#721c24',
+          border: `1px solid ${message.includes('success') ? '#c3e6cb' : '#f5c6cb'}`
+        }}>
+          {message}
+        </div>
+      )}
+
+      <button
+        onClick={handleSubmit}
+        disabled={uploading}
+        style={{
+          width: '100%',
+          padding: '12px',
+          backgroundColor: uploading ? '#ccc' : '#4CAF50',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          cursor: uploading ? 'not-allowed' : 'pointer'
+        }}
+      >
+        {uploading ? 'Uploading...' : 'Upload'}
+      </button>
     </div>
   );
 }

@@ -737,6 +737,33 @@ class APIWrapper {
         }));
     }
 
+    async uploadMap(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'uploadMap', (req) => ({
+            mapType: req.body.mapType,
+            fileBuffer: req.file.buffer,
+            filename: req.file.originalname,
+            mimeType: req.file.mimetype
+        }));
+    }
+
+    async uploadMinimap(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'uploadMinimap', (req) => ({
+            fieldName: req.params.fieldName,
+            fileBuffer: req.file.buffer,
+            filename: req.file.originalname,
+            mimeType: req.file.mimetype
+        }));
+    }
+
+
 
 
     async getCowImage(req, res) {
@@ -804,16 +831,11 @@ class APIWrapper {
         }
     }
 
-
-
     async getAllCowImages(req, res) {
         return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
             cowTag: req.params.tag
         }));
     }
-
-
-
 
     async getCowImageCount(req, res) {
         try {

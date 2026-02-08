@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
+const { param } = require('express-validator');
 require('dotenv').config();
 
 /**
@@ -592,11 +593,12 @@ class LocalFileOperations {
      * @param {*} params 
      */
     async renameCow(params) {
-        // Find the cow folder, create it if it doesnt exist.
+        // Find the original cow folder, create it if it doesnt exist.
 
         // Rename all files within the folder
 
-        // Finally, rename the folder
+        // Finally, rename the folder itself
+
     }
 
 
@@ -802,7 +804,7 @@ class LocalFileOperations {
 
     /**
      * Get main map image, public resource
-        */
+     */
     async getMap(params = {}) {
         const fs = require('fs').promises;
         const { pastureName } = params;
@@ -976,6 +978,149 @@ class LocalFileOperations {
         }
     }
 
+
+    async uploadMinimap(params) {
+        const ALLOW_OVERWRITE = false;
+        const fs = require('fs').promises;
+        const { fieldName, fileBuffer, filename, mimeType } = params;
+
+        try {
+            // Validate required parameters
+            if (!fieldName || !fileBuffer) {
+                return {
+                    success: false,
+                    message: 'Field name and file buffer are required'
+                };
+            }
+
+            // Validate file type
+            const originalFilename = filename || 'upload.png';
+            if (!this.validateFileType(originalFilename, this.imageFormats)) {
+                return {
+                    success: false,
+                    message: 'Invalid image file type. Allowed: ' + this.imageFormats.join(', ')
+                };
+            }
+
+            // Determine file extension
+            const extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
+            const minimapFilename = `${fieldName}_minimap${extension}`;
+            const minimapPath = path.join(this.minimapsDir, minimapFilename);
+
+            // Check if file already exists
+            if (!ALLOW_OVERWRITE) {
+                try {
+                    await fs.access(minimapPath);
+                    return {
+                        success: false,
+                        message: `Minimap for field "${fieldName}" already exists. Overwrite not allowed.`,
+                        existingFile: minimapFilename
+                    };
+                } catch (error) {
+                    // File doesn't exist, continue with upload
+                }
+            }
+
+            // Ensure minimaps directory exists
+            await fs.mkdir(this.minimapsDir, { recursive: true });
+
+            // Write file to disk
+            await fs.writeFile(minimapPath, fileBuffer);
+            const stats = await fs.stat(minimapPath);
+
+            return {
+                success: true,
+                message: `Minimap uploaded successfully for field "${fieldName}"`,
+                filename: minimapFilename,
+                fieldName: fieldName,
+                size: stats.size,
+                path: minimapPath
+            };
+        } catch (error) {
+            console.error('Error uploading minimap:', error);
+            return {
+                success: false,
+                message: `Failed to upload minimap: ${error.message}`
+            };
+        }
+    }
+
+
+    async uploadMap(params) {
+        const ALLOW_OVERWRITE = false;
+        const fs = require('fs').promises;
+        const { mapType, fileBuffer, filename, mimeType } = params;
+
+        try {
+            // Validate required parameters
+            if (!mapType || !fileBuffer) {
+                return {
+                    success: false,
+                    message: 'Map type and file buffer are required'
+                };
+            }
+
+            // Validate map type
+            const validMapTypes = ['map', 'MapCombined'];
+            if (!validMapTypes.includes(mapType)) {
+                return {
+                    success: false,
+                    message: `Invalid map type. Allowed: ${validMapTypes.join(', ')}`
+                };
+            }
+
+            // Validate file type
+            const originalFilename = filename || 'upload.png';
+            if (!this.validateFileType(originalFilename, this.imageFormats)) {
+                return {
+                    success: false,
+                    message: 'Invalid image file type. Allowed: ' + this.imageFormats.join(', ')
+                };
+            }
+
+            // Determine file extension
+            const extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
+            const mapFilename = `${mapType}${extension}`;
+            const mapPath = path.join(this.mapDataDir, mapFilename);
+
+            // Check if file already exists
+            if (!ALLOW_OVERWRITE) {
+                try {
+                    await fs.access(mapPath);
+                    return {
+                        success: false,
+                        message: `Map "${mapType}" already exists. Overwrite not allowed.`,
+                        existingFile: mapFilename
+                    };
+                } catch (error) {
+                    // File doesn't exist, continue with upload
+                }
+            }
+
+            // Ensure map data directory exists
+            await fs.mkdir(this.mapDataDir, { recursive: true });
+
+            // Write file to disk
+            await fs.writeFile(mapPath, fileBuffer);
+            const stats = await fs.stat(mapPath);
+
+            return {
+                success: true,
+                message: `Map "${mapType}" uploaded successfully`,
+                filename: mapFilename,
+                mapType: mapType,
+                size: stats.size,
+                path: mapPath
+            };
+        } catch (error) {
+            console.error('Error uploading map:', error);
+            return {
+                success: false,
+                message: `Failed to upload map: ${error.message}`
+            };
+        }
+    }
+
     /**
      * Configure multer for file upload
      */
@@ -999,6 +1144,9 @@ class LocalFileOperations {
             }
         });
     }
+
+
+
 
     /**
      * Parse CSV content into array of user objects
@@ -2427,12 +2575,18 @@ module.exports = {
     getCowImage: (params) => localOps.getCowImage(params),
     getNthCowImage: (params) => localOps.getNthCowImage(params),
     numCowImages: (params) => localOps.numCowImages(params),
+
     getActualImageFile: (params) => localOps.getActualImageFile(params),
     getAllCowImages: (params) => localOps.getAllCowImages(params),
     getMap: (params) => localOps.getMap(params),
     getMapImage: (mapType) => localOps.getMapImage(mapType),
     getMinimap: (params) => localOps.getMinimap(params),
     getAvailableMinimaps: () => localOps.getAvailableMinimaps(),
+    uploadMinimap: (params) => localOps.uploadMinimap(params),
+    uploadMap: (params) => localOps.uploadMap(params),
+
+
+
     configureMulter: () => localOps.configureMulter(),
     remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
     repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag),
