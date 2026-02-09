@@ -459,14 +459,14 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                             
                             {/* Left Half */}
                             <div style={{
-                                width: 'var(--minimap-size)',
+                                width: 'var(--herd-minimap)',
                                 flexShrink: 0,
                                 ...layoutStyles.flexColumn,
                                 gap: '15px'
                             }}>
                                 <div style={{
-                                    width: 'var(--minimap-size)',
-                                    height: 'var(--minimap-size)',
+                                    width: 'var(--herd-minimap)',
+                                    height: 'var(--herd-minimap)',
                                     borderRadius: '5px',
                                     overflow: 'hidden'
                                 }}>
@@ -503,8 +503,8 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                                         style={{
                                             ...getButtonStyle('actionButton', 'warning', false, false, { color: 'black' }),
                                             width: '90%',
-                                            fontSize: 'calc(var(--minimap-size) * 0.09)',
-                                            padding: 'calc(var(--minimap-size) * 0.05)'
+                                            fontSize: 'calc(var(--herd-minimap) * 0.09)',
+                                            padding: 'calc(var(--herd-minimap) * 0.05)'
                                         }}
                                     >
                                         Split Herd
@@ -514,8 +514,8 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                                         style={{
                                             ...getButtonStyle('actionButton', 'primary'),
                                             width: '90%',
-                                            fontSize: 'calc(var(--minimap-size) * 0.09)',
-                                            padding: 'calc(var(--minimap-size) * 0.05)'
+                                            fontSize: 'calc(var(--herd-minimap) * 0.09)',
+                                            padding: 'calc(var(--herd-minimap) * 0.05)'
                                         }}
                                     >
                                         See all animals...

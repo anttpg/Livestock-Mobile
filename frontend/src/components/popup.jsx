@@ -23,6 +23,12 @@ function Popup({
     Popup.openCount = 0;
   }
 
+  useEffect(() => {
+  if (isOpen) {
+    console.log('Focused element when popup opens:', document.activeElement);
+  }
+  }, [isOpen]);
+
   // Track viewport height changes for iOS Safari
   useEffect(() => {
     const handleResize = () => {
@@ -31,6 +37,8 @@ function Popup({
         setViewportHeight(window.innerHeight);
       }, 100);
     };
+
+  
 
     const handleVisualViewportResize = () => {
       if (window.visualViewport) {
@@ -203,6 +211,7 @@ function Popup({
       backdrop={false}
       keyboard={true}
       enforceFocus={false}
+      autoFocus={false}
       container={popupRoot}
       style={{ display: 'contents' }}
     >

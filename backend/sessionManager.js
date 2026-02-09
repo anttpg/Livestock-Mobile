@@ -374,32 +374,22 @@ app.post('/api/dev/sql/disconnect',
 
 
 
-// cow data
-app.get('/api/cow/:tag', 
-    requireAuth(),
-    createValidationMiddleware('getCowData'),
-    async (req, res) => {
-        return apiWrapper.getCowData(req, res);
-    }
-);
 
 
-app.put('/api/cow/:cowTag',
-    requireAuth(),
-    createValidationMiddleware('', true),
-    async (req, res) => {
-        return apiWrapper.updateCow(req, res);
-    }
-);
 
 
-app.get('/api/cow/accounting/:cowTag',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.getCowAccounting(req, res);
-  }
-);
 
+
+
+
+
+
+
+
+
+
+
+// START CHANGES cow data
 app.get('/api/cows/invalid-tag-chars',
   createValidationMiddleware('', true),
   async (req, res) => {
@@ -407,17 +397,6 @@ app.get('/api/cows/invalid-tag-chars',
   }
 );
 
-
-
-
-// Get notes
-app.get('/api/notes/:cowTag',
-    requireAuth(),
-    createValidationMiddleware('', true),
-    async (req, res) => {
-        return apiWrapper.getNotes(req, res);
-    }
-);
 
 
 // Add observation
@@ -453,29 +432,21 @@ app.post('/api/delete-note',
 
 
 // MEDICAL ROUTES
-app.post('/api/medical/add-record',
+app.post('/api/medical/record',
   createValidationMiddleware('createMedicalRecord'),
   async (req, res) => {
     return apiWrapper.createMedicalRecord(req, res);
   }
 );
 
-// Get all medical data for a cow
-app.get('/api/cow/:tag/medical',
-  createValidationMiddleware('getCowData'),
-  async (req, res) => {
-    return apiWrapper.getCowMedicalRecords(req, res);
-  }
-);
-
-app.get('/api/medical/get-record/:recordId',
+app.get('/api/medical/record/:recordId',
   createValidationMiddleware('getMedicalRecord'),
   async (req, res) => {
     return apiWrapper.getMedicalRecordDetails(req, res);
   }
 );
 
-app.put('/api/medical/update-record/:recordId',
+app.put('/api/medical/record/:recordId',
   createValidationMiddleware('updateMedicalRecord'),
   async (req, res) => {
     return apiWrapper.updateMedicalRecord(req, res);
@@ -510,6 +481,37 @@ app.put('/api/medical/medicines/:ID',
   }
 );
 
+
+app.post('/api/medical/:recordId/upload-image',
+    upload.single('image'), // Your existing multer middleware
+    createValidationMiddleware('uploadMedicalImage'),
+    async (req, res) => {
+        return apiWrapper.uploadMedicalImage(req, res);
+    }
+);
+
+app.get('/api/medical/:recordId/image/:imageType/:n?',
+    createValidationMiddleware('getMedicalImage'),
+    async (req, res) => {
+        return apiWrapper.getMedicalImage(req, res);
+    }
+);
+
+app.get('/api/medical/:recordId/image-count',
+    createValidationMiddleware('getMedicalImageCount'),
+    async (req, res) => {
+        return apiWrapper.getMedicalImageCount(req, res);
+    }
+);
+
+// Get all medical data for a cow
+app.get('/api/medical/*',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    req.params.tag = req.params[0];
+    return apiWrapper.getCowMedicalRecords(req, res);
+  }
+);
 
 
 
@@ -604,27 +606,21 @@ app.put('/api/purchases/:ID',
 
 
 
-app.post('/api/medical/:recordId/upload-image',
-    upload.single('image'), // Your existing multer middleware
-    createValidationMiddleware('uploadMedicalImage'),
-    async (req, res) => {
-        return apiWrapper.uploadMedicalImage(req, res);
-    }
-);
 
-app.get('/api/medical/:recordId/image/:imageType/:n?',
-    createValidationMiddleware('getMedicalImage'),
-    async (req, res) => {
-        return apiWrapper.getMedicalImage(req, res);
-    }
-);
 
-app.get('/api/medical/:recordId/image-count',
-    createValidationMiddleware('getMedicalImageCount'),
-    async (req, res) => {
-        return apiWrapper.getMedicalImageCount(req, res);
-    }
-);
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // Update cow weight
@@ -706,13 +702,6 @@ app.post('/api/weaning-record',
   }
 );
 
-// Generate tag suggestions
-app.get('/api/tag-suggestions/:tag',
-  createValidationMiddleware('generateTagSuggestions'),
-  async (req, res) => {
-    return apiWrapper.generateTagSuggestions(req, res);
-  }
-);
 
 
 
@@ -885,61 +874,121 @@ app.post('/api/form-dropdown-data',
 
 
 
-
 // Get cow image count
-app.get('/api/cow/:tag/image-count',
-  createValidationMiddleware('getCowImageCount'),
+app.get('/api/cow/*/image-count',
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.getCowImageCount(req, res);
   }
 );
 
 // Upload cow image (headshot or body only)
-app.post('/api/cow/:tag/upload-image',
+app.post('/api/cow/*/upload-image',
   upload.single('image'),
-  createValidationMiddleware('uploadCowImage'),
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.saveCowImage(req, res);
   }
 );
 
-
-
 // Get cow image (headshot or body) - returns most recent
-app.get('/api/cow/:tag/image/:imageType',
-  createValidationMiddleware('getCowImage'),
+app.get('/api/cow/*/image/:imageType',
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.getCowImage(req, res);
   }
 );
 
 // Get nth cow image (headshot or body) - returns specific image by position
-app.get('/api/cow/:tag/image/:imageType/:n',
-  createValidationMiddleware('getNthCowImage'),
+app.get('/api/cow/*/image/:imageType/:n',
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.getNthCowImage(req, res);
   }
 );
 
-
-
-
-
 // Get all cow images (list all headshots and bodyshots)
-app.get('/api/cow/:tag/images',
-  createValidationMiddleware('getCowImages'),
+app.get('/api/cow/*/images',
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.getAllCowImages(req, res);
   }
 );
 
 // Get all of a cows' epds
-app.get('/api/cow/:tag/epds',
-  createValidationMiddleware('getCowEpds'),
+app.get('/api/cow/*/epds',
+  createValidationMiddleware('', true),
   async (req, res) => {
+    req.params.tag = req.params[0];
     return apiWrapper.getCowEpds(req, res);
   }
 );
+
+app.get('/api/cow/accounting/*',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    req.params.cowTag = req.params[0];
+    return apiWrapper.getCowAccounting(req, res);
+  }
+);
+
+app.get('/api/cow/*', 
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        req.params.tag = req.params[0];
+        return apiWrapper.getCowData(req, res);
+    }
+);
+
+app.put('/api/cow/*',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        req.params.cowTag = req.params[0];
+        return apiWrapper.updateCow(req, res);
+    }
+);
+
+
+
+
+// Get notes
+app.get('/api/notes/*',
+    requireAuth(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        req.params.cowTag = req.params[0];
+        return apiWrapper.getNotes(req, res);
+    }
+);
+
+
+
+// Generate tag suggestions
+app.get('/api/tag-suggestions/*',
+  createValidationMiddleware('generateTagSuggestions'),
+  async (req, res) => {
+    req.params.tag = req.params[0];
+    return apiWrapper.generateTagSuggestions(req, res);
+  }
+);
+
+
+
+
+
+
+
+
+
+
+
 
 // Get available bulls for breeding assignment
 app.get('/api/breeding-animal-status', async (req, res) => {

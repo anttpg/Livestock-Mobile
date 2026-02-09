@@ -57,8 +57,8 @@ function PhotoViewer({
       // Check if this is a medical image request
       const isMedical = cowTag.startsWith('medical_');
       const apiPath = isMedical 
-        ? `/api/medical/${cowTag.replace('medical_', '')}/image-count`
-        : `/api/cow/${cowTag}/image-count`;
+        ? `/api/medical/${encodeURIComponent(cowTag.replace('medical_', ''))}/image-count`
+        : `/api/cow/${encodeURIComponent(cowTag)}/image-count`;
       
       // Get image count first
       const countResponse = await fetch(apiPath, {
@@ -75,8 +75,8 @@ function PhotoViewer({
         if (count > 0) {
           // Load first image
           const imageUrl = isMedical
-            ? `/api/medical/${cowTag.replace('medical_', '')}/image/${imageType}/1`
-            : `/api/cow/${cowTag}/image/${imageType}/1`;
+            ? `/api/medical/${encodeURIComponent(cowTag.replace('medical_', ''))}/image/${imageType}/1`
+            : `/api/cow/${encodeURIComponent(cowTag)}/image/${imageType}/1`;
           setInitialImage(imageUrl);
           setLoadedImages(new Map([[1, imageUrl]]));
         } else {
@@ -116,8 +116,8 @@ function PhotoViewer({
     try {
       const isMedical = cowTag.startsWith('medical_');
       const imageUrl = isMedical
-        ? `/api/medical/${cowTag.replace('medical_', '')}/image/${imageType}/${n}`
-        : `/api/cow/${cowTag}/image/${imageType}/${n}`;
+        ? `/api/medical/${encodeURIComponent(cowTag.replace('medical_', ''))}/image/${imageType}/${n}`
+        : `/api/cow/${encodeURIComponent(cowTag)}/image/${imageType}/${n}`;
       setLoadedImages(prev => new Map(prev.set(n, imageUrl)));
     } catch (error) {
       console.error(`Error loading image ${n}:`, error);
@@ -287,7 +287,7 @@ function PhotoViewer({
 
       const uploadUrl = isMedical 
         ? `/api/medical/${recordId}/upload-image`
-        : `/api/cow/${cowTag}/upload-image`;
+        : `/api/cow/${encodeURIComponent(cowTag)}/upload-image`;
 
       const response = await fetch(uploadUrl, {
         method: 'POST',

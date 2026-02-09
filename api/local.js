@@ -171,7 +171,7 @@ class LocalFileOperations {
             if (result.headshot && result.headshot.success) {
                 response.headshot = {
                     filename: result.headshot.filename,
-                    path: `/api/cow/${cowTag}/image/headshot`
+                    path: `/api/cow/${encodeURIComponent(cowTag)}/image/headshot`
                 };
                 response.totalImages++;
             } else {
@@ -181,7 +181,7 @@ class LocalFileOperations {
             if (result.bodyshot && result.bodyshot.success) {
                 response.bodyshot = {
                     filename: result.bodyshot.filename,
-                    path: `/api/cow/${cowTag}/image/body`
+                    path: `/api/cow/${encodeURIComponent(cowTag)}/image/body`
                 };
                 response.totalImages++;
             } else {

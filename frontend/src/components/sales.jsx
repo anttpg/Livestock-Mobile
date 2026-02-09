@@ -28,7 +28,7 @@ function Sales({ cowTag }) {
     
     setLoading(true);
     try {
-      const response = await fetch(`/api/cow/accounting/${cowTag}`, {
+      const response = await fetch(`/api/cow/accounting/${encodeURIComponent(cowTag)}`, {
         credentials: 'include'
       });
       
@@ -216,7 +216,7 @@ function Sales({ cowTag }) {
 
       // If we have individual animal data and this is the linked record, update cow record
       if (id === accountingData?.purchaseRecordID && purchaseData.IndividualPrice !== undefined) {
-        await fetch(`/api/cow/${cowTag}`, {
+        await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json'
@@ -293,7 +293,7 @@ function Sales({ cowTag }) {
         }
 
         if (Object.keys(cowUpdateData).length > 0) {
-          await fetch(`/api/cow/${cowTag}`, {
+          await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json'
@@ -315,7 +315,7 @@ function Sales({ cowTag }) {
   const handleLinkPurchase = async (linkData) => {
     try {
       // Update cow table with purchase record info
-      const updateResponse = await fetch(`/api/cow/${cowTag}`, {
+      const updateResponse = await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -355,7 +355,7 @@ function Sales({ cowTag }) {
         updateData.ReasonAnimalSold = linkData.reasonSold;
       }
 
-      const updateResponse = await fetch(`/api/cow/${cowTag}`, {
+      const updateResponse = await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'

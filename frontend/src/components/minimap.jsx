@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 
-function Minimap({ cowTag, pastureName, minimapSrc }) {
+function Minimap({ pastureName, minimapSrc }) {
   const [isHovered, setIsHovered] = useState(false);
   const [showMapPopup, setShowMapPopup] = useState(false);
   const [preloadedMapData, setPreloadedMapData] = useState(null);
@@ -105,7 +105,6 @@ function Minimap({ cowTag, pastureName, minimapSrc }) {
         maxHeight="95vh"
       >
         <MapViewer 
-          cowTag={cowTag} 
           pastureName={pastureName} 
           preloadedData={preloadedMapData}
         />
@@ -115,7 +114,7 @@ function Minimap({ cowTag, pastureName, minimapSrc }) {
 }
 
 // MapViewer component for the popup content
-function MapViewer({ cowTag, pastureName, preloadedData }) {
+function MapViewer({ pastureName, preloadedData }) {
   const [showFields, setShowFields] = useState(true);
   const [mapData, setMapData] = useState(preloadedData);
   const [loading, setLoading] = useState(!preloadedData);

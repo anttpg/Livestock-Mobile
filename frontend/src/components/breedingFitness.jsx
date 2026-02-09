@@ -70,7 +70,7 @@ function BreedingFitness({
     
     setLoadingEpds(true);
     try {
-      const response = await fetch(`/api/cow/${cowTag}/epds`, {
+      const response = await fetch(`/api/cow/${encodeURIComponent(cowTag)}/epds`, {
         credentials: 'include'
       });
       

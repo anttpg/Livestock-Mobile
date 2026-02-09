@@ -171,7 +171,7 @@ function General({
         // Original standalone fetching logic
         setCowTag(searchTag);
         try {
-            const response = await fetch(`/api/cow/${searchTag}`, {
+            const response = await fetch(`/api/cow/${encodeURIComponent(searchTag)}`, {
                 credentials: 'include'
             });
 
@@ -332,7 +332,7 @@ function General({
 
     const updateCowData = async (updates) => {
         try {
-            const response = await fetch(`/api/cow/${cowTag}`, {
+            const response = await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -365,11 +365,8 @@ function General({
         }
     };
 
-    // Check if we should show back navigation
-    const previousCow = sessionStorage.getItem('previousCow');
 
     const cow = cowData?.cowData; // FIXED: No longer using [0]
-    const images = cowData?.images;
     const minimap = cowData?.minimap;
     const currentWeight = cowData?.currentWeight;
 
@@ -443,17 +440,14 @@ function General({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '15px',
-                    flexShrink: 0
+                    flexShrink: 1
                 }}>
                     {/* Minimap Component */}
                     <div style={{
-                        width: '200px',
-                        height: '200px',
-                        borderRadius: '5px',
-                        overflow: 'hidden'
-                    }}>
+                    width: 'var(--minimap)',
+                    height: 'var(--minimap)'
+                }}>
                         <Minimap
-                            cowTag={cowTag}
                             pastureName={cow?.PastureName}
                             minimapSrc={minimap?.path}
                         />
@@ -462,11 +456,11 @@ function General({
                     {/* Basic Info */}
                     <div>
                         {/* Location Information */}
-                        {cow?.PastureName && (
+                        {cow?.IsActive && cow?.PastureName && (
                             <>
-                                <h3>Current Location:</h3>
+                                <b>Location:</b>
                                 <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-                                    {cow.PastureName}
+                                    <br />{cow.PastureName}
                                 </span>
                                 <br /><br />
                             </>
@@ -475,7 +469,7 @@ function General({
                         {/* Current Herd with dropdown - Only show if animal is active */}
                         {cow?.IsActive && (
                             <>
-                                <h3>Current Herd:</h3>
+                                <b>Herd:</b><br />
                                 <select
                                     value={cow?.CurrentHerd || ''}
                                     onChange={(e) => {
@@ -506,7 +500,7 @@ function General({
                         )}
 
                         {/* Status selector */}
-                        <h3>Status:</h3>
+                        <b>Status:</b><br />
                         <select
                             value={cow?.Status || ''}
                             onChange={(e) => handleStatusChange(e.target.value)}
@@ -518,31 +512,53 @@ function General({
                                 borderRadius: '3px'
                             }}
                         >
-                            <option value="">Select Status</option>
-                            {statuses.map((status, index) => (
-                                <option key={index} value={status}>
-                                    {status}
-                                </option>
-                            ))}
+                                <option value="">Select Status</option>
+    {statuses
+        .filter(status => status !== 'CULL LIST, Current')
+        .map((status, index) => (
+            <option key={index} value={status}>
+                {status}
+            </option>
+        ))
+    }
                         </select>
                         <br /><br />
 
-                        <h3>Date of Birth:</h3>
+
+<b>Sex:</b>
+<br/>
+<span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+    {cow?.Sex ? (
+        cow.Sex === 'Male' ? (
+            cow.Castrated ? 'Steer' : 'Bull'
+        ) : 'Heifer'
+    ) : 'Not recorded'}
+</span>
+<br /><br />
+
+                        <b>Date of Birth:</b>
+                        <br/>
                         <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
                             {cow?.DateOfBirth ? formatDate(cow.DateOfBirth) : 'Not recorded'}
                         </span>
                         <br /><br />
 
-                        <h3>Last Weight:</h3>
-                        <span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
-                            {currentWeight ?
-                                `${currentWeight.weight} lbs (${formatDate(currentWeight.date)})` :
-                                'No weight recorded'
-                            }
-                        </span>
-                        <br /><br />
+                        <b>Last Weight:</b>
+                        <br/>
+<span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
+    {currentWeight ? (
+        <>
+            {currentWeight.weight} lbs
+            <br />
+            ({formatDate(currentWeight.date)})
+        </>
+    ) : (
+        'No weight recorded'
+    )}
+</span>
+                        <br/><br />
 
-                        <h3>Temperament:</h3>
+                        <b>Temperament:</b>
                         <select
                             value={cow?.Temperament || ''}
                             onChange={(e) => handleTemperamentChange(e.target.value)}
@@ -554,17 +570,17 @@ function General({
                                 borderRadius: '3px'
                             }}
                         >
-                            <option value="">Select Temperament</option>
+                            <option value="">Select...</option>
                             {temperaments.map((temp, index) => (
                                 <option key={index} value={temp}>
                                     {temp}
                                 </option>
                             ))}
-                            <option value="+ New Temperament">+ New Temperament</option>
+                            <option value="+ New Temperament">+ Add New</option>
                         </select>
                         <br /><br />
 
-                        <h3>Description:</h3>
+                        <b>Description:</b>
                         <textarea
                             value={editableDescription}
                             onChange={(e) => setEditableDescription(e.target.value)}

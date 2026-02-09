@@ -61,7 +61,7 @@
             event.preventDefault();
             const cowTag = document.getElementById('cowname').value;
             try {
-                const response = await fetch(`/api/cow/${cowTag}`);
+                const response = await fetch(`/api/cow/${encodeURIComponent(cowTag)}`);
                 const data = await response.json();
 
                 if (data.cowData && data.cowData.length > 0) {

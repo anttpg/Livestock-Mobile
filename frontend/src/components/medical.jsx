@@ -182,7 +182,7 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
 
   const saveMedicalRecord = useCallback(async (recordData) => {
     try {
-      const response = await fetch('/api/medical/add-record', {
+      const response = await fetch('/api/medical/record', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -218,7 +218,7 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
     try {
       console.log('Medical.jsx sending update data:', updateData);
       
-      const response = await fetch(`/api/medical/update-record/${recordID}`, {
+      const response = await fetch(`/api/medical/record/${recordID}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'

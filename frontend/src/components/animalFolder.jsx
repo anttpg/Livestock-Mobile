@@ -47,13 +47,13 @@ function AnimalFolder() {
         if (!searchTag || searchTag.trim() === '') return null;
 
         try {
-            let endpoint = `/api/cow/${searchTag}`;
+            let endpoint = `/api/cow/${encodeURIComponent(searchTag)}`;
             if (tab === 'medical') { 
-                endpoint = `/api/cow/${searchTag}/medical`;
+                endpoint = `/api/medical/${encodeURIComponent(searchTag)}`;
             } else if (tab === 'breeding') {
                 // Use the same general endpoint since breeding fitness uses the same cow data
                 // EPDs will be fetched separately by the BreedingFitness component
-                endpoint = `/api/cow/${searchTag}`;
+                endpoint = `/api/cow/${encodeURIComponent(searchTag)}`;
             }
 
             const response = await fetch(endpoint, {
