@@ -219,7 +219,7 @@ function BreedingPlan() {
             );
         }
 
-        const unassignedCows = breedingAnimalStatus['unassigned-cows'] || [];
+        const unassignedCows = unassignedAnimals || [];
         const bulls = breedingAnimalStatus.bulls || [];
 
         return (
