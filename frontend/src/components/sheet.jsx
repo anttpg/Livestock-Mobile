@@ -116,14 +116,11 @@ function Sheet({
 
     const fetchHerds = async () => {
         try {
-            const response = await fetch('/api/herds/list', {
-                credentials: 'include'
-            });
+            const response = await fetch('/api/herds', { credentials: 'include' });
 
             if (response.ok) {
                 const herdsData = await response.json();
-                const herdsList = Array.isArray(herdsData) ? herdsData : (herdsData.herds || []);
-                setHerds(['All active', ...herdsList]);
+                setHerds(['All active', ...(herdsData.herds || []).map(h => h.herdName)]);
             } else {
                 setHerds(['All active']);
             }

@@ -79,14 +79,11 @@ function AddAnimal({
 
     const fetchHerds = async () => {
         try {
-            const response = await fetch('/api/herds/list', {
-                credentials: 'include'
-            });
+            const response = await fetch('/api/herds', { credentials: 'include' });
 
             if (response.ok) {
                 const herdsData = await response.json();
-                const herdsList = Array.isArray(herdsData) ? herdsData : (herdsData.herds || []);
-                setHerds(herdsList);
+                setHerds((herdsData.herds || []).map(h => h.herdName));
             } else {
                 console.error('Failed to fetch herds');
             }
@@ -98,14 +95,13 @@ function AddAnimal({
 
     const fetchExistingTags = async () => {
         try {
-            const response = await fetch('/api/cows', {
+            const response = await fetch('/api/animals/active', {
                 credentials: 'include'
             });
 
             if (response.ok) {
                 const data = await response.json();
-                const tags = data.map(cow => cow.CowTag);
-                //console.log('Fetched cow tags:', tags);
+                const tags = data.cows.map(cow => cow.CowTag);
                 setExistingTags(tags);
             } else {
                 console.error('Failed to fetch existing tags');

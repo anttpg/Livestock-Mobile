@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+
 import ColorTable from './colorTable';
 import PhotoViewer from './photoViewer';
 import Popup from './popup';
@@ -7,11 +9,11 @@ import Popup from './popup';
 function BreedingFitness({ 
   cowTag, 
   cowData, 
-  loading = false, 
-  onNavigate
+  loading = false
 }) {
   const [epdData, setEpdData] = useState(null);
   const [loadingEpds, setLoadingEpds] = useState(false);
+  const [, setSearchParams] = useSearchParams();
   const [showEpdInfoPopup, setShowEpdInfoPopup] = useState(false);
   const [svgDimensions, setSvgDimensions] = useState({ width: 400, height: 60 });
   const [linePositions, setLinePositions] = useState({
@@ -106,16 +108,10 @@ function BreedingFitness({
     }
   };
 
-  // Handle navigation to different animals
+
   const handleAnimalNavigation = (targetCowTag) => {
-    if (!targetCowTag) return;
-    
-    // Use onNavigate function passed from parent
-    if (onNavigate) {
-      onNavigate(targetCowTag);
-    } else {
-      console.warn('onNavigate not provided to BreedingFitness component');
-    }
+      if (!targetCowTag) return;
+      setSearchParams({ tab: 'general', search: targetCowTag });
   };
 
   // Format date for display

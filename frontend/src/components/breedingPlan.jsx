@@ -641,7 +641,6 @@ function BreedingPlan() {
         <div style={{ display: 'flex', flexDirection: 'column' }}>
             {renderTitle()}
             <Folder
-                title=""
                 tabs={tabs}
                 defaultTab="plan"
                 renderTab={renderTab}

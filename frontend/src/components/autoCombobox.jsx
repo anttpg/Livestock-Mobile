@@ -3,14 +3,18 @@ import React, { useState, useEffect, useRef } from 'react';
 function AutoCombobox({
   options = [], // Array of { name: string, value: string } or simple strings
   value = '',
-  onChange = () => {},
+  onChange = () => { },
+  onBlur = () => { },
+  onSelect = () => { },
+  onKeyDown = () => { },
   placeholder = 'Select or type...',
   disabled = false,
   style = {},
   searchPlaceholder = 'Search options...',
   emptyMessage = 'No matching options found',
   allowCustomValue = false, // If true, allows non-matching values
-  required = false // If true, reverts to last valid value when invalid selection
+  required = false, // If true, reverts to last valid value when invalid selection
+  renderOptionRight = null,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -20,7 +24,7 @@ function AutoCombobox({
   const inputRef = useRef(null);
 
   // Normalize options to consistent format
-  const normalizedOptions = options.map(option => 
+  const normalizedOptions = options.map(option =>
     typeof option === 'string' ? { name: option, value: option } : option
   );
 
@@ -77,7 +81,7 @@ function AutoCombobox({
     const newValue = e.target.value;
     setInputValue(newValue);
     setSearchFilter(newValue);
-    
+
     if (allowCustomValue) {
       onChange(newValue);
     }
@@ -89,7 +93,7 @@ function AutoCombobox({
     setSearchFilter('');
     setIsOpen(false);
     onChange(option.value);
-    
+
     // Return focus to input
     if (inputRef.current) {
       inputRef.current.blur();
@@ -133,7 +137,14 @@ function AutoCombobox({
         value={isOpen ? searchFilter : getDisplayValue()}
         onChange={handleInputChange}
         onClick={handleInputClick}
-        onKeyDown={handleKeyDown}
+        onKeyDown={(e) => { handleKeyDown(e); onKeyDown(e); }}
+        onBlur={(e) => {
+          // Only fire if focus moved outside the entire dropdown container
+          if (!dropdownRef.current?.contains(e.relatedTarget)) {
+            handleClose();
+            onBlur(inputValue);
+          }
+        }}
         disabled={disabled}
         placeholder={placeholder}
         style={{
@@ -146,7 +157,7 @@ function AutoCombobox({
           ...style
         }}
       />
-      
+
       {/* Dropdown */}
       {isOpen && (
         <div style={{
@@ -164,8 +175,8 @@ function AutoCombobox({
         }}>
           {/* Search indicator when filtering */}
           {searchFilter && (
-            <div style={{ 
-              padding: '8px', 
+            <div style={{
+              padding: '8px',
               borderBottom: '1px solid #eee',
               fontSize: '11px',
               color: '#666',
@@ -174,30 +185,40 @@ function AutoCombobox({
               {getFilteredOptions().length} matches for "{searchFilter}"
             </div>
           )}
-          
+
           {/* Options */}
           <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
             {getFilteredOptions().length > 0 ? (
               getFilteredOptions().map((option, idx) => (
                 <div
                   key={idx}
-                  onClick={() => handleOptionSelect(option)}
+                  onMouseDown={(e) => e.preventDefault()} // prevents blur firing before click
+                  onClick={() => { handleOptionSelect(option); onSelect(option.value); }}
                   style={{
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderBottom: idx < getFilteredOptions().length - 1 ? '1px solid #f5f5f5' : 'none',
-                    fontSize: '12px'
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',  // NEW
                   }}
-                  onMouseEnter={(e) => {
-                    e.target.style.backgroundColor = '#f5f5f5';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.backgroundColor = 'white';
-                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                 >
-                  <div style={{ fontWeight: 'bold' }}>{option.name}</div>
-                  {option.value !== option.name && (
-                    <div style={{ color: '#666', fontSize: '11px' }}>{option.value}</div>
+                  {/* Left: existing name/value display */}
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>{option.name}</div>
+                    {option.value !== option.name && (
+                      <div style={{ color: '#666', fontSize: '11px' }}>{option.value}</div>
+                    )}
+                  </div>
+
+                  {/* Right: optional extra content */}
+                  {renderOptionRight && (
+                    <div style={{ marginLeft: '8px', flexShrink: 0 }}>
+                      {renderOptionRight(option)}
+                    </div>
                   )}
                 </div>
               ))

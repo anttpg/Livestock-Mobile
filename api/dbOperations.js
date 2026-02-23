@@ -45,7 +45,7 @@ class DatabaseOperations {
                 statuses: `SELECT Status FROM Status ORDER BY Status`,
                 regCerts: `SELECT RegCertStatus FROM RegCert ORDER BY RegCertStatus`,
 
-                herds: `SELECT HerdName FROM Herds ORDER BY HerdName`,
+                herds: `SELECT HerdName FROM Herds WHERE Active = 1 ORDER BY HerdName`,
                 pastureFeedOptions: `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`,
                 pastureFeedUnits: `SELECT FeedUnit FROM FeedUnits ORDER BY FeedUnit`,
 
@@ -114,6 +114,52 @@ class DatabaseOperations {
         } catch (error) {
             console.error('Error adding dropdown data:', error);
             throw new Error(`Failed to add dropdown data to table "${table}" with value "${value}": ${error.message}`);
+        }
+    }
+
+
+
+
+    /**
+     * Get all animals & basic info
+     * @param {Object} params - { activeOnly: false }
+     * @returns {Object} - { cows: [...], goats: [...] }
+     */
+    async getAllAnimals({ activeOnly = false } = {}) {
+        await this.ensureConnection();
+
+        const statusFilter = activeOnly ? `AND ${STATUS_ACTIVE}` : '';
+
+        try {
+            const cowQuery = `
+                SELECT c.CowTag, c.DateOfBirth, c.Sex, c.Status, c.Description,
+                    CASE WHEN h.Active = 1 THEN h.HerdName ELSE NULL END AS HerdName
+                FROM CowTable c
+                LEFT JOIN Herds h ON h.HerdID = c.HerdID
+                WHERE c.CowTag IS NOT NULL
+                ${statusFilter}
+                ORDER BY HerdName, c.CowTag
+            `;
+
+            const goatQuery = `
+                SELECT g.GoatTag, g.DateOfBirth, g.GoatType, g.Status, g.[Color Markings],
+                    CASE WHEN h.Active = 1 THEN h.HerdName ELSE NULL END AS HerdName
+                FROM Goats g
+                LEFT JOIN Herds h ON h.HerdID = g.HerdID
+                WHERE g.GoatTag IS NOT NULL
+                ${statusFilter}
+                ORDER BY HerdName, g.GoatTag
+            `;
+
+            const [cowResult, goatResult] = await Promise.all([
+                this.pool.request().query(cowQuery),
+                this.pool.request().query(goatQuery)
+            ]);
+
+            return { cows: cowResult.recordset, goats: goatResult.recordset };
+        } catch (error) {
+            console.error('Error fetching animals:', error);
+            throw new Error(`Failed to fetch animals: ${error.message}`);
         }
     }
 
@@ -322,22 +368,6 @@ class DatabaseOperations {
     }
     
 
-    /**
-     * Get all cows
-     */
-    async getAllCows() {
-        await this.ensureConnection();
-        try {
-            const result = await this.pool.request().query(
-                'SELECT CowTag FROM CowTable ORDER BY CowTag'
-            );
-            return result.recordset;
-        } catch (error) {
-            console.error('Error fetching all cows:', error);
-            throw new Error(`Failed to fetch cows: ${error.message}`);
-        }
-    }
-
 
 
     /**
@@ -347,16 +377,17 @@ class DatabaseOperations {
      */
     async getCowTableData(cowTag) {
         await this.ensureConnection();
-        
+
         try {
             const request = this.pool.request();
             request.input('cowTag', sql.NVarChar, cowTag);
-            
+
             const query = `
                 SELECT 
                     c.*,
                     c.[Dam (Mother)] AS Dam,
                     c.[Sire (Father)] AS Sire,
+                    h.HerdName,
                     h.CurrentPasture AS PastureName,
                     CASE 
                         WHEN c.Status IS NULL OR c.Status IN ('Current', 'Target Sale', 'Undefined', 'CULL LIST, Current')
@@ -365,10 +396,10 @@ class DatabaseOperations {
                     END AS IsActive
                 FROM 
                     CowTable c
-                    LEFT JOIN Herds h ON c.CurrentHerd = h.HerdName
+                    LEFT JOIN Herds h ON h.HerdID = c.HerdID
                 WHERE 
                     c.CowTag = @cowTag`;
-            
+
             const result = await request.query(query);
             return result.recordset[0] || null;
         } catch (error) {
@@ -440,7 +471,7 @@ class DatabaseOperations {
      *  @param {*} params 
      */
     async cowTagExists(params) {
-
+        // TODO. NOT YET COMPLETED.
     }
 
 
@@ -1799,6 +1830,710 @@ class DatabaseOperations {
 
 
 
+
+
+    //                  HERD MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Resolve an active herd name to its HerdID
+     * @param {string} herdName
+     * @returns {Promise<number>} HerdID
+     */
+    async _resolveHerdID(herdName) {
+        const result = await this.pool.request()
+            .input('herdName', sql.NVarChar, herdName)
+            .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+        if (result.recordset.length === 0) {
+            throw new Error(`No active herd found with name: ${herdName}`);
+        }
+
+        return result.recordset[0].HerdID;
+    }
+
+    /**
+     * Resolve a HerdID to its active herd name
+     * @param {number} herdID
+     * @returns {Promise<string>} HerdName
+     */
+    async _resolveHerdName(herdID) {
+        const result = await this.pool.request()
+            .input('herdID', sql.Int, herdID)
+            .query(`SELECT HerdName FROM Herds WHERE HerdID = @herdID AND Active = 1`);
+
+        if (result.recordset.length === 0) {
+            throw new Error(`No active herd found with ID: ${herdID}`);
+        }
+
+        return result.recordset[0].HerdName;
+    }
+
+
+    /**
+     * Get all active herds. current pasture and days on pasture.
+     * @returns {Object} - { herds: [...] }
+     */
+    async getHerds() {
+        await this.ensureConnection();
+
+        try {
+            const [herdsResult, movementsResult] = await Promise.all([
+                this.pool.request().query(`
+                    SELECT HerdID, HerdName, CurrentPasture
+                    FROM Herds
+                    WHERE Active = 1
+                    ORDER BY HerdName
+                `),
+                this.pool.request().query(`
+                    SELECT m.HerdID, m.NewPasture, m.DateRecorded
+                    FROM HerdMovementRecords m
+                    INNER JOIN (
+                        SELECT HerdID, MAX(DateRecorded) AS LatestDate
+                        FROM HerdMovementRecords
+                        GROUP BY HerdID
+                    ) latest ON latest.HerdID = m.HerdID AND latest.LatestDate = m.DateRecorded
+                `)
+            ]);
+
+            const movementByHerd = {};
+            for (const m of movementsResult.recordset) {
+                movementByHerd[m.HerdID] = m;
+            }
+
+            const now = new Date();
+
+            const herds = herdsResult.recordset.map(herd => {
+                const movement = movementByHerd[herd.HerdID];
+                const daysOnPasture = movement
+                    ? Math.floor((now - new Date(movement.DateRecorded)) / (1000 * 60 * 60 * 24))
+                    : null;
+
+                return {
+                    herdName: herd.HerdName,
+                    currentPasture: herd.CurrentPasture,
+                    daysOnPasture
+                };
+            });
+
+            return { herds };
+        } catch (error) {
+            console.error('Error fetching herds:', error);
+            throw new Error(`Failed to fetch herds: ${error.message}`);
+        }
+    }
+
+    /**
+     * Set herd membership for cows and/or goats. If this causes a herd to become empty, disable it.
+     * Accepts cowTags and/or goatTags (arrays).
+     */
+    async setAnimalsHerd(params) {
+        const { cowTags, goatTags, herdName } = params;
+        await this.ensureConnection();
+
+        const now = new Date();
+        const transaction = this.pool.transaction();
+
+        try {
+            await transaction.begin();
+
+            // Resolve herdName to active HerdID
+            const herdResult = await transaction.request()
+                .input('herdName', sql.NVarChar, herdName)
+                .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+            if (herdResult.recordset.length === 0) {
+                await transaction.rollback();
+                throw new Error(`No active herd found with name: ${herdName}`);
+            }
+
+            const herdID = herdResult.recordset[0].HerdID;
+
+            // Update cow herd membership
+            if (cowTags?.length) {
+                await transaction.request()
+                    .input('herdID', sql.Int, herdID)
+                    .input('cowTags', sql.NVarChar, cowTags.join(','))
+                    .query(`
+                        UPDATE CowTable
+                        SET HerdID = @herdID
+                        WHERE CowTag IN (SELECT value FROM STRING_SPLIT(@cowTags, ','))
+                    `);
+
+                // Insert cow history records
+                await transaction.request()
+                    .input('herdID', sql.Int, herdID)
+                    .input('cowTags', sql.NVarChar, cowTags.join(','))
+                    .input('dateJoined', sql.DateTime, now)
+                    .query(`
+                        INSERT INTO HerdMembershipHistory (HerdID, CowTag, DateJoined)
+                        SELECT @herdID, value, @dateJoined
+                        FROM STRING_SPLIT(@cowTags, ',')
+                    `);
+            }
+
+            // Update goat herd membership
+            if (goatTags?.length) {
+                await transaction.request()
+                    .input('herdID', sql.Int, herdID)
+                    .input('goatTags', sql.NVarChar, goatTags.join(','))
+                    .query(`
+                        UPDATE Goats
+                        SET HerdID = @herdID
+                        WHERE GoatTag IN (SELECT value FROM STRING_SPLIT(@goatTags, ','))
+                    `);
+
+                // GoatMembershipHistory table does not exist yet -- insert history records here when created
+            }
+
+            // Deactivate any active herd that now has zero active animals
+            await transaction.request()
+                .query(`
+                    UPDATE Herds
+                    SET Active = 0
+                    WHERE Active = 1
+                    AND HerdID NOT IN (
+                        SELECT DISTINCT HerdID FROM CowTable
+                        WHERE HerdID IS NOT NULL
+                        AND ${STATUS_ACTIVE}
+                        UNION
+                        SELECT DISTINCT HerdID FROM Goats
+                        WHERE HerdID IS NOT NULL
+                        AND ${STATUS_ACTIVE}
+                    )
+                `);
+
+            await transaction.commit();
+
+            return {
+                success: true,
+                movedCount: (cowTags?.length ?? 0) + (goatTags?.length ?? 0),
+                herdName
+            };
+        } catch (error) {
+            await transaction.rollback();
+            console.error('Error in setAnimalsHerd:', error);
+            throw new Error(`Failed to set animal herd: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Create a herd with the given name and cows
+     */
+    async createHerd(params) {
+        const { herdName, cowTags, currentPasture } = params;
+        await this.ensureConnection();
+
+        try {
+            // Reject if an active herd with this name already exists
+            const conflictResult = await this.pool.request()
+                .input('herdName', sql.NVarChar, herdName)
+                .query(`SELECT 1 FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+            if (conflictResult.recordset.length > 0) {
+                throw new Error(`An active herd named "${herdName}" already exists`);
+            }
+
+            // Create herd
+            await this.pool.request()
+                .input('herdName', sql.NVarChar, herdName)
+                .input('currentPasture', sql.NVarChar, currentPasture)
+                .query(`INSERT INTO Herds (HerdName, CurrentPasture, Active) VALUES (@herdName, @currentPasture, 1)`);
+
+            // Batch move cows to new herd
+            if (cowTags && cowTags.length > 0) {
+                await this.setAnimalsHerd({ cowTags, herdName });
+            }
+
+            return { success: true, herdName };
+        } catch (error) {
+            console.error('Error creating herd:', error);
+            throw error;
+        }
+    }
+
+
+
+
+    /**
+     * Get all animals in a specific herd. excludes inactive animals by default
+     * @param {Object} params - { herdName, getInactive=false, cattleOnly=false }
+     */
+    async getHerdAnimals(params) {
+        const { herdName, getInactive = false, cattleOnly = false } = params;
+        await this.ensureConnection();
+
+        try {
+            const statusFilter = getInactive ? '' : `AND ${STATUS_ACTIVE}`;
+
+            let herdID = null;
+            if (herdName && herdName !== 'All active') {
+                const herdResult = await this.pool.request()
+                    .input('herdName', sql.NVarChar, herdName)
+                    .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+                if (herdResult.recordset.length === 0) {
+                    throw new Error(`No active herd found with name: ${herdName}`);
+                }
+
+                herdID = herdResult.recordset[0].HerdID;
+            }
+
+            // Build cows query
+            const cowsRequest = this.pool.request();
+            let cowsQuery;
+
+            if (herdID) {
+                cowsRequest.input('herdID', sql.Int, herdID);
+                cowsQuery = `
+                    SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
+                        CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
+                    FROM CowTable
+                    WHERE HerdID = @herdID
+                    AND CowTag IS NOT NULL
+                    ${statusFilter}
+                    ORDER BY CowTag`;
+            } else {
+                cowsQuery = `
+                    SELECT c.CowTag, c.DateOfBirth AS DOB, c.Sex, c.Status, c.Description,
+                        CONVERT(varchar, c.DateOfBirth, 120) AS FormattedDOB
+                    FROM CowTable c
+                    INNER JOIN Herds h ON h.HerdID = c.HerdID AND h.Active = 1
+                    WHERE c.CowTag IS NOT NULL
+                    ${statusFilter}
+                    ORDER BY c.CowTag`;
+            }
+
+            const cowsResult = await cowsRequest.query(cowsQuery);
+
+            if (cattleOnly) {
+                return cowsResult.recordset.map(r => r.CowTag);
+            }
+
+            // Build goats query
+            const goatsRequest = this.pool.request();
+            let goatsQuery;
+
+            if (herdID) {
+                goatsRequest.input('herdID', sql.Int, herdID);
+                goatsQuery = `
+                    SELECT GoatTag AS CowTag, DateOfBirth AS DOB, Sex, Status, Description,
+                        NULL AS FormattedDOB
+                    FROM Goats
+                    WHERE HerdID = @herdID
+                    AND GoatTag IS NOT NULL
+                    ${statusFilter}
+                    ORDER BY GoatTag`;
+            } else {
+                goatsQuery = `
+                    SELECT g.GoatTag AS CowTag, g.DateOfBirth AS DOB, g.GoatType, g.Status, g.[Color Markings],
+                        NULL AS FormattedDOB
+                    FROM Goats g
+                    INNER JOIN Herds h ON h.HerdID = g.HerdID AND h.Active = 1
+                    WHERE g.GoatTag IS NOT NULL
+                    ${statusFilter}
+                    ORDER BY g.GoatTag`;
+            }
+
+            const goatsResult = await goatsRequest.query(goatsQuery);
+
+            return {
+                animals: [
+                    ...cowsResult.recordset,
+                    ...goatsResult.recordset
+                ]
+            };
+        } catch (error) {
+            console.error('Error fetching herd animals:', error);
+            throw new Error(`Failed to fetch herd animals: ${error.message}`);
+        }
+    }
+
+
+
+
+    /**
+     * Move herd to a pasture
+     * @param {Object} params - { herdName, newPastureName }
+     */
+    async moveHerd(params) {
+        const { herdName, newPastureName } = params;
+        await this.ensureConnection();
+
+        try {
+            // Resolve herdName to active HerdID
+            const herdResult = await this.pool.request()
+                .input('herdName', sql.NVarChar, herdName)
+                .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+            if (herdResult.recordset.length === 0) {
+                throw new Error(`No active herd found with name: ${herdName}`);
+            }
+
+            const herdID = herdResult.recordset[0].HerdID;
+
+            // Update herd's current pasture
+            await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .input('newPasture', sql.NVarChar, newPastureName)
+                .query(`UPDATE Herds SET CurrentPasture = @newPasture WHERE HerdID = @herdID`);
+
+            // Record the movement
+            await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .input('newPasture', sql.NVarChar, newPastureName)
+                .input('dateRecorded', sql.DateTime, new Date())
+                .query(`
+                    INSERT INTO HerdMovementRecords (HerdID, NewPasture, DateRecorded)
+                    VALUES (@herdID, @newPasture, @dateRecorded)
+                `);
+
+            return { success: true, message: 'Herd moved successfully' };
+        } catch (error) {
+            console.error('Error moving herd:', error);
+            throw new Error(`Failed to move herd: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Get all herd events
+     */
+    async getHerdEvents(params) {
+        const { herdName } = params;
+        await this.ensureConnection();
+
+        try {
+            const herdResult = await this.pool.request()
+                .input('herdName', sql.NVarChar, herdName)
+                .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+            if (herdResult.recordset.length === 0) {
+                throw new Error(`No active herd found with name: ${herdName}`);
+            }
+
+            const herdID = herdResult.recordset[0].HerdID;
+
+            const result = await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .query(`
+                    SELECT 'movement' AS eventType, DateRecorded AS dateRecorded,
+                        CONCAT('Herd moved to ', NewPasture) AS description, NULL AS notes, NULL AS username
+                    FROM HerdMovementRecords
+                    WHERE HerdID = @herdID
+
+                    UNION ALL
+
+                    SELECT 'membership' AS eventType, DateJoined AS dateRecorded,
+                        CONCAT('Added ', CowTag, ' to herd') AS description, NULL AS notes, NULL AS username
+                    FROM HerdMembershipHistory
+                    WHERE HerdID = @herdID
+
+                    ORDER BY dateRecorded DESC
+                `);
+
+            return { events: result.recordset };
+        } catch (error) {
+            console.error('Error fetching herd events:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Add an event
+     */
+    async addHerdEvent(params) {
+        throw new Error('Not yet implemented');
+
+        // const { herdName, eventType, description, notes, username } = params;
+        // await this.ensureConnection();
+
+        // try {
+        //     const herdResult = await this.pool.request()
+        //         .input('herdName', sql.NVarChar, herdName)
+        //         .query(`SELECT HerdID FROM Herds WHERE HerdName = @herdName AND Active = 1`);
+
+        //     if (herdResult.recordset.length === 0) {
+        //         throw new Error(`No active herd found with name: ${herdName}`);
+        //     }
+
+        //     const herdID = herdResult.recordset[0].HerdID;
+
+        //     const result = await this.pool.request()
+        //         .input('herdID', sql.Int, herdID)
+        //         .input('eventDate', sql.DateTime, new Date())
+        //         .input('description', sql.NVarChar, `${herdName}: ${description}`)
+        //         .query(`INSERT INTO Events (HerdID, EventDate, Description) VALUES (@herdID, @eventDate, @description)`);
+
+        //     return { success: true, rowsAffected: result.rowsAffected[0] };
+        // } catch (error) {
+        //     console.error('Error adding herd event:', error);
+        //     throw error;
+        // }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /**
+     * Get all available pastures
+     */
+    async getAllPastures() {
+        await this.ensureConnection();
+
+        try {
+            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
+            const result = await this.pool.request().query(query);
+            return {
+                pastures: result.recordset.map(row => row.PastureName)
+            };
+        } catch (error) {
+            console.error('Error fetching pastures:', error);
+            throw new Error(`Failed to fetch pastures: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Get all available feed types from PastureFeedOptions
+     */
+    async getAllFeedTypes() {
+        await this.ensureConnection();
+
+        try {
+            const query = `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`;
+            const result = await this.pool.request().query(query);
+            return {
+                feedTypes: result.recordset.map(row => row.Feed)
+            };
+        } catch (error) {
+            console.error('Error fetching feed types:', error);
+            throw new Error(`Failed to fetch feed types: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Add new feed type to PastureFeedOptions
+     * @param {Object} params - { feedType }
+     */
+    async addFeedType(params) {
+        const { feedType } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('feedType', sql.NVarChar, feedType);
+
+            const query = `INSERT INTO PastureFeedOptions (Feed) VALUES (@feedType)`;
+            const result = await request.query(query);
+
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                message: 'Feed type added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding feed type:', error);
+
+            // Handle duplicate key constraint violation
+            if (error.number === 2627) {
+                return {
+                    success: false,
+                    operationalError: true,
+                    message: `Feed type '${feedType}' already exists`
+                };
+            }
+
+            throw new Error(`Failed to add feed type: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Get feed status for a specific herd, optionally filtered by feed types
+     * @param {Object} params - { herdName, feeds? }
+     */
+    async getHerdFeedStatus(params) {
+        const { herdName, feeds } = params;
+        await this.ensureConnection();
+
+        try {
+            const herdID = await this._resolveHerdID(herdName);
+
+            const herdResult = await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
+
+            const pastureName = herdResult.recordset[0].CurrentPasture;
+            if (!pastureName) {
+                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
+            }
+
+            // Get all feed types (or filtered list)
+            let feedTypesResult;
+            if (feeds && feeds.length > 0) {
+                const feedTypesRequest = this.pool.request();
+                const feedPlaceholders = feeds.map((_, index) => `@feed${index}`).join(',');
+                feeds.forEach((feed, index) => {
+                    feedTypesRequest.input(`feed${index}`, sql.NVarChar, feed);
+                });
+                feedTypesResult = await feedTypesRequest.query(
+                    `SELECT Feed FROM PastureFeedOptions WHERE Feed IN (${feedPlaceholders}) ORDER BY Feed`
+                );
+            } else {
+                feedTypesResult = await this.pool.request()
+                    .query(`SELECT Feed FROM PastureFeedOptions ORDER BY Feed`);
+            }
+
+            const feedStatus = [];
+
+            for (const feedType of feedTypesResult.recordset) {
+                const feed = feedType.Feed;
+
+                const activityResult = await this.pool.request()
+                    .input('pasture', sql.NVarChar, pastureName)
+                    .input('feedType', sql.NVarChar, feed)
+                    .query(`
+                        SELECT TOP 1 DateCompleted, WasRefilled, WasEmpty
+                        FROM PastureFeedRecords
+                        WHERE Pasture = @pasture AND FeedType = @feedType
+                        ORDER BY DateCompleted DESC
+                    `);
+
+                let lastActivityDate = null;
+                let daysAgo = null;
+                let lastActivity = null;
+
+                if (activityResult.recordset.length > 0) {
+                    const record = activityResult.recordset[0];
+                    lastActivityDate = record.DateCompleted;
+                    daysAgo = Math.floor((new Date() - new Date(record.DateCompleted)) / (1000 * 60 * 60 * 24));
+
+                    if (record.WasRefilled) {
+                        lastActivity = "refilled";
+                    } else if (record.WasEmpty) {
+                        lastActivity = "checked_empty";
+                    } else {
+                        lastActivity = "checked_not_empty";
+                    }
+                }
+
+                feedStatus.push({
+                    feedType: feed,
+                    lastActivityDate,
+                    daysAgo,
+                    lastActivity,
+                    displayText: daysAgo !== null ? `${daysAgo} days ago` : "never"
+                });
+            }
+
+            return { pastureName, feedStatus };
+        } catch (error) {
+            console.error('Error fetching herd feed status:', error);
+            throw new Error(`Failed to fetch feed status: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Record feed activity for a pasture
+     * @param {Object} params - { herdName, feedType, activityType, wasEmpty?, username }
+     */
+    async recordFeedActivity(params) {
+        const { herdName, feedType, activityType, wasEmpty, levelAtRefill, username } = params;
+        await this.ensureConnection();
+
+        try {
+            const herdID = await this._resolveHerdID(herdName);
+
+            const herdResult = await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
+
+            const pastureName = herdResult.recordset[0].CurrentPasture;
+            if (!pastureName) {
+                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
+            }
+
+            const now = new Date();
+
+            const insertRecord = async (wasRefilled, isEmpty, level) => {
+                await this.pool.request()
+                    .input('pasture', sql.NVarChar, pastureName)
+                    .input('dateCompleted', sql.DateTime, now)
+                    .input('username', sql.NVarChar, username)
+                    .input('feedType', sql.NVarChar, feedType)
+                    .input('wasRefilled', sql.Bit, wasRefilled)
+                    .input('wasEmpty', sql.Bit, isEmpty)
+                    .input('levelAtRefill', sql.Int, level)
+                    .query(`
+                        INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
+                        VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)
+                    `);
+            };
+
+            if (activityType === "refilled") {
+                await insertRecord(false, wasEmpty, wasEmpty ? 0 : 100);
+                await insertRecord(true, false, 100);
+            } else if (activityType === "level_check") {
+                await insertRecord(false, levelAtRefill < 5, levelAtRefill);
+            } else {
+                const isEmpty = activityType === "checked_empty";
+                await insertRecord(false, isEmpty, isEmpty ? 0 : 100);
+            }
+
+            return { success: true, message: 'Feed activity recorded successfully' };
+        } catch (error) {
+            console.error('Error recording feed activity:', error);
+            throw error;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     //              BREEDING PLAN  //////////////////////////////////////////////////////////////////////////////////////////
 
     async getBreedingPlans() {
@@ -1827,11 +2562,12 @@ class DatabaseOperations {
 
             // Get unassigned animals (active cows without breeding records for this plan)
             const unassignedQuery = `
-            SELECT c.CowTag, c.CurrentHerd
+            SELECT c.CowTag, h.HerdName
             FROM CowTable c
+            LEFT JOIN Herds h ON h.HerdID = c.HerdID
             LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @planId
             WHERE ${STATUS_ACTIVE}
-              AND br.ID IS NULL
+            AND br.ID IS NULL
             ORDER BY c.CowTag`;
             const unassignedResult = await request.query(unassignedQuery);
 
@@ -1934,7 +2670,7 @@ class DatabaseOperations {
                     c.Sex,
                     c.DateOfBirth,
                     c.Description,
-                    c.CurrentHerd,
+                    h.HerdName,
                     c.Castrated,
                     c.Status,
                     DATEDIFF(month, c.DateOfBirth, GETDATE()) AS AgeInMonths,
@@ -1967,8 +2703,9 @@ class DatabaseOperations {
                 FROM CowTable c
                 LEFT JOIN WeaningRecords wr ON c.CowTag = wr.CowTag
                 LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @currentPlanId
+                LEFT JOIN Herds h ON h.HerdID = c.HerdID
                 WHERE ${STATUS_ACTIVE}
-                ORDER BY c.CowTag`;
+                ORDER BY c.CowTag`
 
             const result = await request.query(query);
             
@@ -2020,6 +2757,7 @@ class DatabaseOperations {
             throw error;
         }
     }
+
 
     async findBreedingRecordForDam(damTag, breedingYear) {
         await this.ensureConnection();
@@ -2158,30 +2896,36 @@ class DatabaseOperations {
      * Get breeding candidates for pregnancy check
      * @param {Object} params - { herdName }
      */
-     async getHerdBreedingCandidates(params) {
+    async getHerdBreedingCandidates(params) {
         const { herdName } = params;
         await this.ensureConnection();
 
         try {
-            const request = this.pool.request();
+            let herdID = null;
             if (herdName && herdName !== 'ALL ACTIVE') {
-                request.input('herdName', sql.NVarChar, herdName);
+                herdID = await this._resolveHerdID(herdName);
+            }
+
+            const request = this.pool.request();
+            if (herdID) {
+                request.input('herdID', sql.Int, herdID);
             }
 
             const query = `
-            SELECT DISTINCT 
-                c.CowTag,
-                br.PrimaryBulls,
-                br.CleanupBulls,
-                br.ExposureStartDate,
-                br.ExposureEndDate,
-                CASE WHEN pc.ID IS NULL THEN 0 ELSE 1 END AS HasPregCheck
-            FROM CowTable c
-            INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
-            LEFT JOIN PregancyCheck pc ON br.ID = pc.BreedingRecordID
-            WHERE ${herdName && herdName !== 'ALL ACTIVE' ? 'c.CurrentHerd = @herdName AND' : ''}
-                ${STATUS_ACTIVE}
-            ORDER BY c.CowTag`;
+                SELECT DISTINCT
+                    c.CowTag,
+                    br.PrimaryBulls,
+                    br.CleanupBulls,
+                    br.ExposureStartDate,
+                    br.ExposureEndDate,
+                    CASE WHEN pc.ID IS NULL THEN 0 ELSE 1 END AS HasPregCheck
+                FROM CowTable c
+                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
+                LEFT JOIN PregancyCheck pc ON br.ID = pc.BreedingRecordID
+                ${herdID ? 'INNER JOIN Herds h ON h.HerdID = c.HerdID AND h.Active = 1' : ''}
+                WHERE ${herdID ? 'c.HerdID = @herdID AND' : ''}
+                    ${STATUS_ACTIVE}
+                ORDER BY c.CowTag`;
 
             const result = await request.query(query);
             return { candidates: result.recordset };
@@ -2190,6 +2934,7 @@ class DatabaseOperations {
             throw new Error(`Failed to fetch breeding candidates: ${error.message}`);
         }
     }
+
 
     /**
      * Submit pregnancy check results
@@ -2263,29 +3008,35 @@ class DatabaseOperations {
         await this.ensureConnection();
 
         try {
-            const request = this.pool.request();
+            let herdID = null;
             if (herdName && herdName !== 'ALL ACTIVE') {
-                request.input('herdName', sql.NVarChar, herdName);
+                herdID = await this._resolveHerdID(herdName);
+            }
+
+            const request = this.pool.request();
+            if (herdID) {
+                request.input('herdID', sql.Int, herdID);
             }
 
             const query = `
-            SELECT 
-                c.CowTag,
-                COALESCE(br.PrimaryBulls, br.CleanupBulls) AS Bull,
-                CASE 
-                    WHEN pc.IsPregnant = 1 THEN 'Pregnant'
-                    WHEN pc.IsPregnant = 0 THEN 'Open'
-                    ELSE 'Exposed'
-                END AS Status,
-                cr.CalfTag,
-                cr.ID AS CalvingRecordId
-            FROM CowTable c
-            INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
-            LEFT JOIN PregancyCheck pc ON br.ID = pc.BreedingRecordID
-            LEFT JOIN CalvingRecords cr ON br.ID = cr.BreedingRecordID
-            WHERE ${herdName && herdName !== 'ALL ACTIVE' ? 'c.CurrentHerd = @herdName AND' : ''}
-                ${STATUS_ACTIVE}
-            ORDER BY c.CowTag`;
+                SELECT 
+                    c.CowTag,
+                    COALESCE(br.PrimaryBulls, br.CleanupBulls) AS Bull,
+                    CASE 
+                        WHEN pc.IsPregnant = 1 THEN 'Pregnant'
+                        WHEN pc.IsPregnant = 0 THEN 'Open'
+                        ELSE 'Exposed'
+                    END AS Status,
+                    cr.CalfTag,
+                    cr.ID AS CalvingRecordId
+                FROM CowTable c
+                INNER JOIN BreedingRecords br ON c.CowTag = br.CowTag
+                LEFT JOIN PregancyCheck pc ON br.ID = pc.BreedingRecordID
+                LEFT JOIN CalvingRecords cr ON br.ID = cr.BreedingRecordID
+                ${herdID ? 'INNER JOIN Herds h ON h.HerdID = c.HerdID AND h.Active = 1' : ''}
+                WHERE ${herdID ? 'c.HerdID = @herdID AND' : ''}
+                    ${STATUS_ACTIVE}
+                ORDER BY c.CowTag`;
 
             const result = await request.query(query);
             return { calvingStatus: result.recordset };
@@ -2347,21 +3098,27 @@ class DatabaseOperations {
         await this.ensureConnection();
 
         try {
-            const request = this.pool.request();
+            let herdID = null;
             if (herdName && herdName !== 'ALL ACTIVE') {
-                request.input('herdName', sql.NVarChar, herdName);
+                herdID = await this._resolveHerdID(herdName);
+            }
+
+            const request = this.pool.request();
+            if (herdID) {
+                request.input('herdID', sql.Int, herdID);
             }
 
             const query = `
-            SELECT 
-                c.CowTag,
-                CASE WHEN wr.ID IS NULL THEN 0 ELSE 1 END AS IsWeaned
-            FROM CowTable c
-            LEFT JOIN WeaningRecords wr ON c.CowTag = wr.CowTag
-            WHERE ${herdName && herdName !== 'ALL ACTIVE' ? 'c.CurrentHerd = @herdName AND' : ''}
-                ${STATUS_ACTIVE}
-                AND c.DateOfBirth >= DATEADD(month, -24, GETDATE()) -- Calves less than 2 years old
-            ORDER BY c.CowTag`;
+                SELECT 
+                    c.CowTag,
+                    CASE WHEN wr.ID IS NULL THEN 0 ELSE 1 END AS IsWeaned
+                FROM CowTable c
+                LEFT JOIN WeaningRecords wr ON c.CowTag = wr.CowTag
+                ${herdID ? 'INNER JOIN Herds h ON h.HerdID = c.HerdID AND h.Active = 1' : ''}
+                WHERE ${herdID ? 'c.HerdID = @herdID AND' : ''}
+                    ${STATUS_ACTIVE}
+                    AND c.DateOfBirth >= DATEADD(month, -24, GETDATE())
+                ORDER BY c.CowTag`;
 
             const result = await request.query(query);
             return { weaningCandidates: result.recordset };
@@ -2689,684 +3446,6 @@ class DatabaseOperations {
 
 
 
-
-
-
-
-    //                  HERD MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
-
-    /**
-     * Set a cow's herd
-     */
-    async setHerd(params) {
-        const { cowTag, herdName } = params;
-        await this.ensureConnection();
-
-        try {
-            // Update cow's herd
-            const result = await this.pool.request()
-                .input('cowTag', sql.NVarChar, cowTag)
-                .input('herdName', sql.NVarChar, herdName)
-                .query('UPDATE CowTable SET CurrentHerd = @herdName WHERE CowTag = @cowTag');
-
-            if (result.rowsAffected[0] === 0) {
-                throw new Error('Cow or Herd not found');
-            }
-
-            // Record in HerdMembershipHistory
-            const historyRequest = this.pool.request();
-            historyRequest.input('herdName', sql.NVarChar, herdName);
-            historyRequest.input('cowTag', sql.NVarChar, cowTag);
-            historyRequest.input('dateJoined', sql.DateTime, new Date());
-            const historyQuery = `
-                INSERT INTO HerdMembershipHistory (HerdName, CowTag, DateJoined)
-                VALUES (@herdName, @cowTag, @dateJoined)`;
-            await historyRequest.query(historyQuery);
-
-            return { success: true, message: 'Herd updated successfully' };
-        } catch (error) {
-            console.error('Error setting herd:', error);
-            throw new Error(`Failed to set herd: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all herd names
-     */
-    async getAllHerds() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT HerdName FROM Herds ORDER BY HerdName`;
-            const result = await this.pool.request().query(query);
-            return result.recordset.map(row => row.HerdName);
-        } catch (error) {
-            console.error('Error fetching herds:', error);
-            throw new Error(`Failed to fetch herds: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all herds with detailed information including animal counts and current status
-     * @returns {Object} - { herds: [...] }
-     */
-    async getAllHerdsWithDetails() {
-        await this.ensureConnection();
-
-        try {
-            // Get all herds with their current pastures
-            const herdsQuery = `
-                SELECT HerdName, CurrentPasture 
-                FROM Herds 
-                ORDER BY HerdName`;
-            const herdsResult = await this.pool.request().query(herdsQuery);
-
-            const herdsWithDetails = [];
-
-            for (const herd of herdsResult.recordset) {
-                const herdName = herd.HerdName;
-
-                // Get cows in this herd
-                const cowsRequest = this.pool.request();
-                cowsRequest.input('herdName', sql.NVarChar, herdName);
-                const cowsQuery = `
-                    SELECT CowTag, DateOfBirth, Sex, Status, Description
-                    FROM CowTable 
-                    WHERE CurrentHerd = @herdName
-                    ORDER BY CowTag`;
-                const cowsResult = await cowsRequest.query(cowsQuery);
-
-                // Get goats in this herd
-                const goatsRequest = this.pool.request();
-                goatsRequest.input('herdName', sql.NVarChar, herdName);
-                const goatsQuery = `
-                    SELECT GoatTag, Herd 
-                    FROM Goats 
-                    WHERE Herd = @herdName
-                    ORDER BY GoatTag`;
-                const goatsResult = await goatsRequest.query(goatsQuery);
-
-                // Calculate days on current pasture
-                let daysOnPasture = null;
-                if (herd.CurrentPasture) {
-                    const movementRequest = this.pool.request();
-                    movementRequest.input('herdName', sql.NVarChar, herdName);
-                    movementRequest.input('pasture', sql.NVarChar, herd.CurrentPasture);
-                    const movementQuery = `
-                        SELECT TOP 1 DateRecorded
-                        FROM HerdMovementRecords 
-                        WHERE Herd = @herdName AND NewPasture = @pasture
-                        ORDER BY DateRecorded DESC`;
-                    const movementResult = await movementRequest.query(movementQuery);
-
-                    if (movementResult.recordset.length > 0) {
-                        const moveDate = new Date(movementResult.recordset[0].DateRecorded);
-                        const now = new Date();
-                        daysOnPasture = Math.floor((now - moveDate) / (1000 * 60 * 60 * 24));
-                    }
-                }
-
-                herdsWithDetails.push({
-                    herdName: herdName,
-                    currentPasture: herd.CurrentPasture,
-                    cowCount: cowsResult.recordset.length,
-                    goatCount: goatsResult.recordset.length,
-                    daysOnPasture: daysOnPasture,
-                    cows: cowsResult.recordset,
-                    goats: goatsResult.recordset
-                });
-            }
-
-            return { herds: herdsWithDetails };
-        } catch (error) {
-            console.error('Error fetching herds with details:', error);
-            throw new Error(`Failed to fetch herd details: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get feed status for a specific herd, optionally filtered by feed types
-     * @param {Object} params - { herdName, feeds? }
-     */
-    async getHerdFeedStatus(params) {
-        const { herdName, feeds } = params;
-        await this.ensureConnection();
-
-        try {
-            // Get herd's current pasture
-            const herdRequest = this.pool.request();
-            herdRequest.input('herdName', sql.NVarChar, herdName);
-            const herdQuery = `SELECT CurrentPasture FROM Herds WHERE HerdName = @herdName`;
-            const herdResult = await herdRequest.query(herdQuery);
-
-            if (herdResult.recordset.length === 0) {
-                throw new Error(`Herd '${herdName}' not found`);
-            }
-
-            const pastureName = herdResult.recordset[0].CurrentPasture;
-            if (!pastureName) {
-                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
-            }
-
-            // Get all feed types (or filtered list)
-            let feedTypesQuery = `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`;
-            let feedTypesResult;
-
-            if (feeds && feeds.length > 0) {
-                const feedTypesRequest = this.pool.request();
-                const feedPlaceholders = feeds.map((_, index) => `@feed${index}`).join(',');
-                feeds.forEach((feed, index) => {
-                    feedTypesRequest.input(`feed${index}`, sql.NVarChar, feed);
-                });
-                feedTypesQuery = `SELECT Feed FROM PastureFeedOptions WHERE Feed IN (${feedPlaceholders}) ORDER BY Feed`;
-                feedTypesResult = await feedTypesRequest.query(feedTypesQuery);
-            } else {
-                feedTypesResult = await this.pool.request().query(feedTypesQuery);
-            }
-
-            const feedStatus = [];
-
-            for (const feedType of feedTypesResult.recordset) {
-                const feed = feedType.Feed;
-
-                // Get most recent activity for this feed type in this pasture
-                const activityRequest = this.pool.request();
-                activityRequest.input('pasture', sql.NVarChar, pastureName);
-                activityRequest.input('feedType', sql.NVarChar, feed);
-                const activityQuery = `
-                    SELECT TOP 1 DateCompleted, WasRefilled, WasEmpty
-                    FROM PastureFeedRecords 
-                    WHERE Pasture = @pasture AND FeedType = @feedType
-                    ORDER BY DateCompleted DESC`;
-                const activityResult = await activityRequest.query(activityQuery);
-
-                let lastActivityDate = null;
-                let daysAgo = null;
-                let lastActivity = null;
-
-                if (activityResult.recordset.length > 0) {
-                    const record = activityResult.recordset[0];
-                    lastActivityDate = record.DateCompleted;
-                    const activityDate = new Date(record.DateCompleted);
-                    const now = new Date();
-                    daysAgo = Math.floor((now - activityDate) / (1000 * 60 * 60 * 24));
-
-                    // Determine activity type
-                    if (record.WasRefilled) {
-                        lastActivity = "refilled";
-                    } else if (record.WasEmpty) {
-                        lastActivity = "checked_empty";
-                    } else {
-                        lastActivity = "checked_not_empty";
-                    }
-                }
-
-                feedStatus.push({
-                    feedType: feed,
-                    lastActivityDate: lastActivityDate,
-                    daysAgo: daysAgo,
-                    lastActivity: lastActivity,
-                    displayText: daysAgo !== null ? `${daysAgo} days ago` : "never"
-                });
-            }
-
-            return {
-                pastureName: pastureName,
-                feedStatus: feedStatus
-            };
-        } catch (error) {
-            console.error('Error fetching herd feed status:', error);
-            throw new Error(`Failed to fetch feed status: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all available feed types from PastureFeedOptions
-     */
-    async getAllFeedTypes() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`;
-            const result = await this.pool.request().query(query);
-            return {
-                feedTypes: result.recordset.map(row => row.Feed)
-            };
-        } catch (error) {
-            console.error('Error fetching feed types:', error);
-            throw new Error(`Failed to fetch feed types: ${error.message}`);
-        }
-    }
-
-    /**
-     * Add new feed type to PastureFeedOptions
-     * @param {Object} params - { feedType }
-     */
-    async addFeedType(params) {
-        const { feedType } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('feedType', sql.NVarChar, feedType);
-
-            const query = `INSERT INTO PastureFeedOptions (Feed) VALUES (@feedType)`;
-            const result = await request.query(query);
-
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Feed type added successfully'
-            };
-        } catch (error) {
-            console.error('Error adding feed type:', error);
-
-            // Handle duplicate key constraint violation
-            if (error.number === 2627) {
-                return {
-                    success: false,
-                    operationalError: true,
-                    message: `Feed type '${feedType}' already exists`
-                };
-            }
-
-            throw new Error(`Failed to add feed type: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Record feed activity for a pasture
-     * @param {Object} params - { herdName, feedType, activityType, wasEmpty?, username }
-     */
-    async recordFeedActivity(params) {
-        const { herdName, feedType, activityType, wasEmpty, levelAtRefill, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // Get herd's current pasture
-            const herdRequest = this.pool.request();
-            herdRequest.input('herdName', sql.NVarChar, herdName);
-            const herdQuery = `SELECT CurrentPasture FROM Herds WHERE HerdName = @herdName`;
-            const herdResult = await herdRequest.query(herdQuery);
-
-            if (herdResult.recordset.length === 0) {
-                throw new Error(`Herd '${herdName}' not found`);
-            }
-
-            const pastureName = herdResult.recordset[0].CurrentPasture;
-            if (!pastureName) {
-                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
-            }
-
-            const now = new Date();
-
-            if (activityType === "refilled") {
-                // Legacy refill handling - create two records
-                const statusRequest = this.pool.request();
-                statusRequest.input('pasture', sql.NVarChar, pastureName);
-                statusRequest.input('dateCompleted', sql.DateTime, now);
-                statusRequest.input('username', sql.NVarChar, username);
-                statusRequest.input('feedType', sql.NVarChar, feedType);
-                statusRequest.input('wasRefilled', sql.Bit, false);
-                statusRequest.input('wasEmpty', sql.Bit, wasEmpty);
-                statusRequest.input('levelAtRefill', sql.Int, wasEmpty ? 0 : 100);
-
-                const statusQuery = `
-              INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
-              VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)`;
-                await statusRequest.query(statusQuery);
-
-                const refillRequest = this.pool.request();
-                refillRequest.input('pasture', sql.NVarChar, pastureName);
-                refillRequest.input('dateCompleted', sql.DateTime, now);
-                refillRequest.input('username', sql.NVarChar, username);
-                refillRequest.input('feedType', sql.NVarChar, feedType);
-                refillRequest.input('wasRefilled', sql.Bit, true);
-                refillRequest.input('wasEmpty', sql.Bit, false);
-                refillRequest.input('levelAtRefill', sql.Int, 100);
-
-                const refillQuery = `
-              INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
-              VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)`;
-                await refillRequest.query(refillQuery);
-
-            } else if (activityType === "level_check") {
-                // New level check system
-                const request = this.pool.request();
-                request.input('pasture', sql.NVarChar, pastureName);
-                request.input('dateCompleted', sql.DateTime, now);
-                request.input('username', sql.NVarChar, username);
-                request.input('feedType', sql.NVarChar, feedType);
-                request.input('wasRefilled', sql.Bit, false);
-                request.input('wasEmpty', sql.Bit, levelAtRefill < 5);
-                request.input('levelAtRefill', sql.Int, levelAtRefill);
-
-                const query = `
-              INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
-              VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)`;
-                await request.query(query);
-            } else {
-                // Legacy check activities
-                const isEmpty = activityType === "checked_empty";
-
-                const request = this.pool.request();
-                request.input('pasture', sql.NVarChar, pastureName);
-                request.input('dateCompleted', sql.DateTime, now);
-                request.input('username', sql.NVarChar, username);
-                request.input('feedType', sql.NVarChar, feedType);
-                request.input('wasRefilled', sql.Bit, false);
-                request.input('wasEmpty', sql.Bit, isEmpty);
-                request.input('levelAtRefill', sql.Int, isEmpty ? 0 : 100);
-
-                const query = `
-              INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
-              VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)`;
-                await request.query(query);
-            }
-
-            return { success: true, message: 'Feed activity recorded successfully' };
-        } catch (error) {
-            console.error('Error recording feed activity:', error);
-            throw error;
-        }
-    }
-
-
-
-    /**
-     * Get all animals in a specific herd. Default excludes inactive animals
-     * @param {Object} params - { herdName, getInactive=false, cattleOnly=false }
-     */
-    async getHerdAnimals(params) {
-        const { herdName, cattleOnly = false } = params;
-        await this.ensureConnection();
-
-        try {
-            // Get cows
-            const cowsRequest = this.pool.request();
-            
-            let cowsQuery;
-            if (herdName && herdName !== 'All active') {
-                cowsRequest.input('herdName', sql.NVarChar, herdName);
-                cowsQuery = `
-                    SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
-                        CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
-                    FROM CowTable 
-                    WHERE CurrentHerd = @herdName
-                    AND CowTag IS NOT NULL
-                    AND ${STATUS_ACTIVE}
-                    ORDER BY CowTag`;
-            } else {
-                cowsQuery = `
-                    SELECT CowTag, DateOfBirth AS DOB, Sex, Status, Description,
-                        CONVERT(varchar, DateOfBirth, 120) AS FormattedDOB
-                    FROM CowTable 
-                    WHERE CowTag IS NOT NULL
-                    AND ${STATUS_ACTIVE}
-                    ORDER BY CowTag`;
-            }
-            
-            const cowsResult = await cowsRequest.query(cowsQuery);
-
-            // If cattleOnly, just return cow tags
-            if (cattleOnly) {
-                return cowsResult.recordset.map(r => r.CowTag);
-            }
-
-            // Get goats if not cattleOnly
-            const goatsRequest = this.pool.request();
-            let goatsQuery;
-            
-            if (herdName && herdName !== 'All active') {
-                goatsRequest.input('herdName', sql.NVarChar, herdName);
-                goatsQuery = `
-                    SELECT GoatTag AS CowTag, NULL AS DOB, NULL AS Sex, NULL AS Status, NULL AS Description,
-                        NULL AS FormattedDOB
-                    FROM Goats 
-                    WHERE Herd = @herdName
-                    ORDER BY GoatTag`;
-            } else {
-                goatsQuery = `
-                    SELECT GoatTag AS CowTag, NULL AS DOB, NULL AS Sex, NULL AS Status, NULL AS Description,
-                        NULL AS FormattedDOB
-                    FROM Goats 
-                    ORDER BY GoatTag`;
-            }
-            
-            const goatsResult = await goatsRequest.query(goatsQuery);
-
-            // Combine results
-            const animals = [
-                ...cowsResult.recordset,
-                ...goatsResult.recordset
-            ];
-
-            return { animals };
-        } catch (error) {
-            console.error('Error fetching herd animals:', error);
-            throw new Error(`Failed to fetch herd animals: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Move herd to a new pasture
-     * @param {Object} params - { herdName, newPastureName, username }
-     */
-    async moveHerdToPasture(params) {
-        const { herdName, newPastureName, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // Verify herd exists
-            const herdCheckRequest = this.pool.request();
-            herdCheckRequest.input('herdName', sql.NVarChar, herdName);
-            const herdCheckQuery = `SELECT COUNT(*) as Count FROM Herds WHERE HerdName = @herdName`;
-            const herdCheckResult = await herdCheckRequest.query(herdCheckQuery);
-
-            if (herdCheckResult.recordset[0].Count === 0) {
-                throw new Error(`Herd '${herdName}' not found`);
-            }
-
-            // Verify pasture exists
-            const pastureCheckRequest = this.pool.request();
-            pastureCheckRequest.input('pastureName', sql.NVarChar, newPastureName);
-            const pastureCheckQuery = `SELECT COUNT(*) as Count FROM Pastures WHERE PastureName = @pastureName`;
-            const pastureCheckResult = await pastureCheckRequest.query(pastureCheckQuery);
-
-            if (pastureCheckResult.recordset[0].Count === 0) {
-                throw new Error(`Pasture '${newPastureName}' not found`);
-            }
-
-            // Update herd's current pasture
-            const updateRequest = this.pool.request();
-            updateRequest.input('herdName', sql.NVarChar, herdName);
-            updateRequest.input('newPasture', sql.NVarChar, newPastureName);
-            const updateQuery = `UPDATE Herds SET CurrentPasture = @newPasture WHERE HerdName = @herdName`;
-            await updateRequest.query(updateQuery);
-
-            // Record the movement
-            const movementRequest = this.pool.request();
-            movementRequest.input('dateRecorded', sql.DateTime, new Date());
-            movementRequest.input('herd', sql.NVarChar, herdName);
-            movementRequest.input('newPasture', sql.NVarChar, newPastureName);
-            const movementQuery = `
-                INSERT INTO HerdMovementRecords (DateRecorded, Herd, NewPasture)
-                VALUES (@dateRecorded, @herd, @newPasture)`;
-            await movementRequest.query(movementQuery);
-
-            return {
-                success: true,
-                message: 'Herd moved successfully'
-            };
-        } catch (error) {
-            console.error('Error moving herd:', error);
-            throw new Error(`Failed to move herd: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get all available pastures
-     */
-    async getAllPastures() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
-            const result = await this.pool.request().query(query);
-            return {
-                pastures: result.recordset.map(row => row.PastureName)
-            };
-        } catch (error) {
-            console.error('Error fetching pastures:', error);
-            throw new Error(`Failed to fetch pastures: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get events related to a herd
-     */
-    async getHerdEvents(params) {
-        const { herdName } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('herdName', sql.NVarChar, herdName);
-
-            const query = `
-            SELECT 'movement' AS eventType, DateRecorded AS dateRecorded, 
-                   CONCAT('Herd moved to ', NewPasture) AS description, NULL AS notes, NULL AS username
-            FROM HerdMovementRecords 
-            WHERE Herd = @herdName
-            
-            UNION ALL
-            
-            SELECT 'membership' AS eventType, DateJoined AS dateRecorded,
-                   CONCAT('Added ', CowTag, ' to herd') AS description, NULL AS notes, NULL AS username
-            FROM HerdMembershipHistory
-            WHERE HerdName = @herdName
-            
-            ORDER BY dateRecorded DESC`;
-
-            const result = await request.query(query);
-            return { events: result.recordset };
-        } catch (error) {
-            console.error('Error fetching herd events:', error);
-            throw error;
-        }
-    }
-
-    async addHerdEvent(params) {
-        const { herdName, eventType, description, notes, username } = params;
-        await this.ensureConnection();
-
-        try {
-            // For now, just add to Events table with generic entry
-            const request = this.pool.request();
-            request.input('eventDate', sql.DateTime, new Date());
-            request.input('description', sql.NVarChar, `${herdName}: ${description}`);
-
-            const query = `INSERT INTO Events (EventDate, Description) VALUES (@eventDate, @description)`;
-            const result = await request.query(query);
-
-            return { success: true, rowsAffected: result.rowsAffected[0] };
-        } catch (error) {
-            console.error('Error adding herd event:', error);
-            throw error;
-        }
-    }
-
-    async createHerd(params) {
-        const { herdName, cows, currentPasture } = params;
-        await this.ensureConnection();
-
-        try {
-            // Create herd
-            const herdRequest = this.pool.request();
-            herdRequest.input('herdName', sql.NVarChar, herdName);
-            herdRequest.input('currentPasture', sql.NVarChar, currentPasture);
-
-            const herdQuery = `INSERT INTO Herds (HerdName, CurrentPasture) VALUES (@herdName, @currentPasture)`;
-            await herdRequest.query(herdQuery);
-
-            // Move cows to new herd
-            if (cows && cows.length > 0) {
-                for (const cowTag of cows) {
-                    await this.setHerd({ cowTag, herdName });
-                }
-            }
-
-            return { success: true, herdName };
-        } catch (error) {
-            console.error('Error creating herd:', error);
-            throw error;
-        }
-    }
-
-    async batchMoveCows(params) {
-        const { cowTags, targetHerd, sourceHerd } = params;
-        await this.ensureConnection();
-
-        try {
-            const results = [];
-            for (const cowTag of cowTags) {
-                const result = await this.setHerd({ cowTag, herdName: targetHerd });
-                results.push(result);
-            }
-
-            return { success: true, movedCount: results.length };
-        } catch (error) {
-            console.error('Error batch moving cows:', error);
-            throw error;
-        }
-    }
-
-    async getCowsByHerd() {
-        await this.ensureConnection();
-
-        try {
-            const query = `
-            SELECT CowTag, DateOfBirth, CurrentHerd, Sex, Status, Description
-            FROM CowTable 
-            WHERE CowTag IS NOT NULL
-            ORDER BY CurrentHerd, CowTag`;
-
-            const result = await this.pool.request().query(query);
-            return { cows: result.recordset };
-        } catch (error) {
-            console.error('Error fetching cows by herd:', error);
-            throw error;
-        }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     //                   PASTURE MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
 
     async getPastureMaintenanceEvents(params) {
@@ -3530,6 +3609,10 @@ class DatabaseOperations {
 
 
 
+
+
+
+        //  STOPPED EDITING / FIXING HERDNAME CHANGES HERE, TODO FIX HERDNAME DIFFERENCE  ----------------------------
 
 
 
@@ -6249,8 +6332,7 @@ module.exports = {
 
 
     addCow: (params) => dbOps.addCow(params),
-    getAllCows: (params) => dbOps.getAllCows(params),
-    setHerd: (params) => dbOps.setHerd(params),
+    getAllAnimals: (params) => dbOps.getAllAnimals(params),
 
 
     // Medical records
@@ -6273,15 +6355,13 @@ module.exports = {
     addPastureMaintenanceEvent: (params) => dbOps.addPastureMaintenanceEvent(params),
 
     // Herd Managment
-    getAllHerds: () => dbOps.getAllHerds(),
-    getAllHerdsWithDetails: () => dbOps.getAllHerdsWithDetails(),
+    getHerds: () => dbOps.getHerds(),
+    setAnimalsHerd: (params) => dbOps.setAnimalsHerd(params),
     getHerdAnimals: (params) => dbOps.getHerdAnimals(params),
-    moveHerdToPasture: (params) => dbOps.moveHerdToPasture(params),
+    moveHerd: (params) => dbOps.moveHerd(params),
     getHerdEvents: (params) => dbOps.getHerdEvents(params),
     addHerdEvent: (params) => dbOps.addHerdEvent(params),
     createHerd: (params) => dbOps.createHerd(params),
-    batchMoveCows: (params) => dbOps.batchMoveCows(params),
-    getCowsByHerd: () => dbOps.getCowsByHerd(),
 
     // sheet management
     getAllSheetTemplates: () => dbOps.getAllSheetTemplates(),

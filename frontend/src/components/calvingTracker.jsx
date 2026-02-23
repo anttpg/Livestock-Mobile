@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Form from './forms';
 import AddAnimal from './addAnimal';
 import Popup from './popup';
@@ -6,72 +7,76 @@ import AnimalFolder from './animalFolder';
 import '../screenSizing.css';
 
 function CalvingTracker({ breedingPlanId, breedingYear }) {
-  const [showAddAnimal, setShowAddAnimal] = useState(false);
-  const [showAnimalPopup, setShowAnimalPopup] = useState(false);
-  const [selectedMother, setSelectedMother] = useState(null);
-  const [selectedFather, setSelectedFather] = useState(null);
+    const [showAddAnimal, setShowAddAnimal] = useState(false);
+    const [showAnimalPopup, setShowAnimalPopup] = useState(false);
+    const [selectedMother, setSelectedMother] = useState(null);
+    const [selectedFather, setSelectedFather] = useState(null);
+    const [selectedAnimalTag, setSelectedAnimalTag] = useState(null);
+    const [, setSearchParams] = useSearchParams();
 
-  const handleAddCalf = (mother, father) => {
-    setSelectedMother(mother);
-    setSelectedFather(father);
-    setShowAddAnimal(true);
-  };
+    const handleAddCalf = (mother, father) => {
+        setSelectedMother(mother);
+        setSelectedFather(father);
+        setShowAddAnimal(true);
+    };
 
-  const handleViewAnimal = (animalTag) => {
-    setShowAnimalPopup(true);
-  };
+    const handleViewAnimal = (animalTag) => {
+        setSelectedAnimalTag(animalTag);
+        setSearchParams({ search: animalTag, tab: 'general' });
+        setShowAnimalPopup(true);
+    };
 
-  const handleAddAnimalClose = () => {
-    setShowAddAnimal(false);
-    setSelectedMother(null);
-    setSelectedFather(null);
-  };
+    const handleAddAnimalClose = () => {
+        setShowAddAnimal(false);
+        setSelectedMother(null);
+        setSelectedFather(null);
+    };
 
-  const refresh = () => {
-    handleAddAnimalClose();
-    window.location.reload();
-  }
-
-  const handleCloseAnimalPopup = () => {
-    setShowAnimalPopup(false);
-  };
-
-  // This function determines what happens when action button is clicked
-  const handleActionClick = (row, rowIndex) => {
-    const cowTag = row.CowTag;
-    const calfTag = row.CalfTag || row.calf_tag; // Check both possible field names
-    const bull = row.bull || row.primary_bull || '';
-
-    if (calfTag && calfTag.trim() !== '') {
-      // Cow has a calf - open animal records
-      handleViewAnimal(calfTag);
-    } else {
-      // Cow has no calf - open add animal form
-      handleAddCalf(cowTag, bull);
+    const refresh = () => {
+        handleAddAnimalClose();
+        window.location.reload();
     }
-  };
 
-  // This function determines the action button text
-  const getActionButtonText = (row) => {
-    const calfTag = row.CalfTag || row.calf_tag;
-    
-    if (calfTag && calfTag.trim() !== '') {
-      return `View ${calfTag}`;
-    } else {
-      return '+ Add Calf';
-    }
-  };
+    const handleCloseAnimalPopup = () => {
+        setShowAnimalPopup(false);
+    };
 
-  // This function determines the action button color
-  const getActionButtonColor = (row) => {
-    const calfTag = row.CalfTag || row.calf_tag;
-    
-    if (calfTag && calfTag.trim() !== '') {
-      return '#3bb558'; // Green for existing calves
-    } else {
-      return '#007bff'; // Default blue for add calf
-    }
-  };
+    // This function determines what happens when action button is clicked
+    const handleActionClick = (row, rowIndex) => {
+        const cowTag = row.CowTag;
+        const calfTag = row.CalfTag || row.calf_tag; // Check both possible field names
+        const bull = row.bull || row.primary_bull || '';
+
+        if (calfTag && calfTag.trim() !== '') {
+            // Cow has a calf - open animal records
+            handleViewAnimal(calfTag);
+        } else {
+            // Cow has no calf - open add animal form
+            handleAddCalf(cowTag, bull);
+        }
+    };
+
+    // This function determines the action button text
+    const getActionButtonText = (row) => {
+        const calfTag = row.CalfTag || row.calf_tag;
+
+        if (calfTag && calfTag.trim() !== '') {
+            return `View ${calfTag}`;
+        } else {
+            return '+ Add Calf';
+        }
+    };
+
+    // This function determines the action button color
+    const getActionButtonColor = (row) => {
+        const calfTag = row.CalfTag || row.calf_tag;
+
+        if (calfTag && calfTag.trim() !== '') {
+            return '#3bb558'; // Green for existing calves
+        } else {
+            return '#007bff'; // Default blue for add calf
+        }
+    };
 
     const headerContent = (
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -101,41 +106,36 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 breedingYear={breedingYear}
             />
 
-      {/* Add Animal Popup */}
-      <Popup
-        isOpen={showAddAnimal}
-        onClose={handleAddAnimalClose}
-        title="Add Calf"
-        maxWidth="800px"
-        maxHeight="100vh"
-      >
-        <AddAnimal
-          motherTag={selectedMother}
-          fatherTag={selectedFather}
-          showTwinsOption={true}
-          onClose={handleAddAnimalClose}
-          onSuccess={refresh}
-          createCalvingRecord={true}
-          breedingYear={breedingYear}
-        />
-      </Popup>
+            {/* Add Animal Popup */}
+            <Popup
+                isOpen={showAddAnimal}
+                onClose={handleAddAnimalClose}
+                title="Add Calf"
+                maxWidth="800px"
+                maxHeight="100vh"
+            >
+                <AddAnimal
+                    motherTag={selectedMother}
+                    fatherTag={selectedFather}
+                    showTwinsOption={true}
+                    onClose={handleAddAnimalClose}
+                    onSuccess={refresh}
+                    createCalvingRecord={true}
+                    breedingYear={breedingYear}
+                />
+            </Popup>
 
-      {/* Animal Details Popup */}
-      <Popup
-        isOpen={showAnimalPopup}
-        onClose={handleCloseAnimalPopup}
-        title={`Animal Details - TODO FIX`}
-        fullscreen={true}
-      >
-        <div style={{ width: '100%', height: '100%' }}>
-          <AnimalFolder
-            enableDefaultSearch={true}
-            hideSearchBar={false}
-          />
-        </div>
-      </Popup>
-    </>
-  );
+            {/* Animal Details Popup */}
+            <Popup
+                isOpen={showAnimalPopup}
+                onClose={handleCloseAnimalPopup}
+                title={`Animal Details - ${selectedAnimalTag} TODO FIX`}
+                fullscreen={true}
+            >
+                <AnimalFolder />
+            </Popup>
+        </>
+    );
 }
 
 export default CalvingTracker;

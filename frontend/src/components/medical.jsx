@@ -9,7 +9,7 @@ import MedicationViewer from './MedicationViewer';
 const BREAKPOINT_HIDE_USER = 800;
 const BREAKPOINT_HIDE_TREATMENT = 600;
 
-function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDataUpdate }) {
+function Medical({ cowTag, cowData, loading = false, onRefresh }) {
   const [expandedMedicines, setExpandedMedicines] = useState(new Set());
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showIssueDetails, setShowIssueDetails] = useState(false);
@@ -203,8 +203,8 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.log('Medical record saved:', result);
       
       // Refresh cow data
-      if (onDataUpdate) {
-        await onDataUpdate();
+      if (onRefresh) {
+        await onRefresh();
       }
       
       return result;
@@ -212,7 +212,7 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.error('Error saving medical record:', error);
       throw error;
     }
-  }, [cowTag, onDataUpdate]);
+  }, [cowTag, onRefresh]);
 
   const updateMedicalRecord = useCallback(async (recordID, updateData) => {
     try {
@@ -235,8 +235,8 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.log('Medical record updated:', result);
       
       // Refresh cow data
-      if (onDataUpdate) {
-        await onDataUpdate();
+      if (onRefresh) {
+        await onRefresh();
       }
       
       return result;
@@ -244,7 +244,7 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.error('Error updating medical record:', error);
       throw error;
     }
-  }, [onDataUpdate]);
+  }, [onRefresh]);
 
   const resolveIssue = useCallback(async (recordID, resolutionNote) => {
     try {
@@ -268,8 +268,8 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.log('Issue resolved:', result);
       
       // Refresh cow data
-      if (onDataUpdate) {
-        await onDataUpdate();
+      if (onRefresh) {
+        await onRefresh();
       }
       
       return result;
@@ -277,7 +277,7 @@ function Medical({ cowTag, cowData, loading = false, hideSearchBar = false, onDa
       console.error('Error resolving issue:', error);
       throw error;
     }
-  }, [onDataUpdate]);
+  }, [onRefresh]);
 
   const issuesData = transformIssuesData();
   const treatmentsData = transformTreatmentData();

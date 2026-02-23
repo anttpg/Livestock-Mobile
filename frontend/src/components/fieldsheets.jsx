@@ -12,12 +12,7 @@ function Fieldsheets({ sheets: filterSheets = null }) {
     { id: 'records', label: 'All Records' }
   ];
 
-  // No search needed for this folder
-  const searchConfig = {
-    enabled: false
-  };
-
-  // No data fetching needed - each tab manages its own data
+  // No data fetching needed since each tab manages its own data
   const handleDataFetch = async (searchTerm, tab) => {
     return null;
   };
@@ -49,9 +44,7 @@ function Fieldsheets({ sheets: filterSheets = null }) {
     <Folder
       title="Field Sheets"
       tabs={tabs}
-      searchConfig={searchConfig}
       defaultTab="templates"
-      enableDefaultSearch={false}
       onDataFetch={handleDataFetch}
       renderTab={renderTab}
     />

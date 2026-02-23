@@ -1,19 +1,18 @@
 const { body, param, query, validationResult } = require('express-validator');
-const { assignBreedingRecords } = require('../api/api');
 
 /**
  * Common patterns
  */
 const commonPatterns = {
-    cowTag: /^[A-Za-z0-9 _\-*/]+$/,  // Allow letters, numbers, spaces, underscores, hyphens, asterisks
-    dateISO: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/,
+    cowTag: /^[A-Za-z0-9 _\-#/?*]+$/,  // Allow letters, numbers, spaces AND these _ - * / #
     username: /^[A-Za-z0-9_\-]+$/
 };
 
 /**
- * Security sanitization functions
+ * General sanitization functions
  */
 const sanitizationFunctions = {
+
     /**
      * Sanitize filepath to prevent command injection and path traversal
      * @param {string} filepath - Input filepath to sanitize
@@ -60,108 +59,6 @@ const sanitizationFunctions = {
         }
 
         return sanitized;
-    },
-
-    /**
-     * Sanitize input for SQL injection prevention (defense in depth)
-     * @param {string} input - Input to sanitize for SQL
-     * @returns {string} Sanitized input
-     */
-    sanitizeForSQL: (input) => {
-        if (input === null || input === undefined) {
-            return input;
-        }
-
-        if (typeof input !== 'string') {
-            input = String(input);
-        }
-
-        // Remove/escape SQL injection patterns
-        const sqlDangerous = [
-            // SQL comment patterns
-            '--', '/*', '*/',
-            // SQL command separators
-            ';',
-            // Extended stored procedures (dangerous in SQL Server)
-            'xp_', 'sp_',
-            // Union attacks
-            'UNION', 'union',
-            // Common SQL injection patterns
-            'DROP', 'drop',
-            'DELETE', 'delete',
-            'INSERT', 'insert',
-            'UPDATE', 'update',
-            'EXEC', 'exec',
-            'EXECUTE', 'execute'
-        ];
-
-        let sanitized = input;
-
-        // Escape single quotes (most common SQL injection vector)
-        sanitized = sanitized.replace(/'/g, "''");
-
-        // Remove dangerous SQL patterns
-        sqlDangerous.forEach(pattern => {
-            const regex = new RegExp(escapeRegExp(pattern), 'gi');
-            sanitized = sanitized.replace(regex, '');
-        });
-
-        // Remove null bytes and control characters
-        sanitized = sanitized.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, '');
-
-        return sanitized;
-    },
-
-    /**
-     * Sanitize cow tag specifically
-     * @param {string} cowTag - Cow tag to sanitize
-     * @returns {string} Sanitized cow tag
-     */
-    sanitizeCowTag: (cowTag, allowEmpty = false) => {
-        if (!cowTag || typeof cowTag !== 'string') {
-            if (allowEmpty) {
-                return "";
-            }
-            else {
-                throw new Error('Cow tag must be a non-empty string');
-            }
-        }
-
-        // Only sanitize for SQL, skip filepath sanitization otherwise forward slashes are removed '268/1'
-        let sanitized = sanitizationFunctions.sanitizeForSQL(cowTag);
-        sanitized = sanitized.trim();
-
-        if (!commonPatterns.cowTag.test(sanitized)) {
-            throw new Error('Cow tag contains invalid characters after sanitization');
-        }
-
-        return sanitized;
-    },
-
-    /**
-     * Sanitize field name for file operations
-     * @param {string} fieldName - Field name to sanitize
-     * @returns {string} Sanitized field name
-     */
-    sanitizeFieldName: (fieldName) => {
-        if (!fieldName || typeof fieldName !== 'string') {
-            throw new Error('Field name must be a non-empty string');
-        }
-
-        // Sanitize for filepath
-        let sanitized = sanitizationFunctions.sanitizeFilepath(fieldName);
-
-        // Additional field name specific rules
-        // Allow letters, numbers, spaces, hyphens, underscores, parentheses
-        sanitized = sanitized.replace(/[^A-Za-z0-9 \-_(),.…]/g, '');
-
-        sanitized = sanitized.trim();
-
-        if (sanitized.length === 0) {
-            throw new Error('Field name cannot be empty after sanitization');
-        }
-
-        return sanitized;
     }
 };
 
@@ -172,54 +69,100 @@ function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function cowTagValidator(fieldName, allowEmpty = false) {
-    if (allowEmpty) {
-        return [
-            body(fieldName)
-                .optional({ nullable: true })
-                .isString()
-                .isEmpty()
-                .withMessage('Cow tag must be a string')
-        ];
-    }
-
-    return [
-        body(fieldName)
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Cow tag is required')
-            .customSanitizer((value) => sanitizationFunctions.sanitizeCowTag(value, allowEmpty))
-            .matches(commonPatterns.cowTag)
-            .withMessage('Cow tag must contain only letters, numbers, spaces, underscores, hyphens, and asterisks')
-            .isLength({ min: 1, max: 50 })
-            .withMessage('Cow tag must be 1-50 characters')
-    ];
-}
-
 /**
  * Reusable field validators with sanitization
  */
 const fieldValidators = {
 
-    cowTag: () => [
-        cowTagValidator('cowTag')
+    cowTag: (source = body, field = 'cowTag', allowEmpty = false) => {
+        if (allowEmpty) {
+            return [
+                source(field)
+                    .optional({ nullable: true })
+                    .isString()
+                    .withMessage('Cow tag must be a string')
+            ];
+        }
+
+        return [
+            source(field)
+                .isString()
+                .trim()
+                .notEmpty()
+                .withMessage('Cow tag is required')
+                .matches(commonPatterns.cowTag)
+                .withMessage('Cow tag contains invalid characters')
+                .isLength({ min: 1, max: 50 })
+                .withMessage('Cow tag must be 1-50 characters')
+        ];
+    },
+
+    cowTags: (source = body, field = 'cowTags') => [
+        source(field)
+            .custom((value) => {
+                const tags = Array.isArray(value) ? value : [value];
+
+                if (tags.length === 0) {
+                    throw new Error('At least one cow tag is required');
+                }
+
+                tags.forEach(tag => {
+                    if (!commonPatterns.cowTag.test(tag)) {
+                        throw new Error(`Invalid cow tag: ${tag}`);
+                    }
+                });
+
+                return true;
+            })
     ],
 
-    cowTagParam: () => [
-        param('tag')
+    goatTags: (source = body, field = 'goatTags') => [
+        source(field)
+            .custom((value) => {
+                const tags = Array.isArray(value) ? value : [value];
+
+                if (tags.length === 0) {
+                    throw new Error('At least one goat tag is required');
+                }
+
+                tags.forEach(tag => {
+                    if (!commonPatterns.cowTag.test(tag)) {
+                        throw new Error(`Invalid goat tag: ${tag}`);
+                    }
+                });
+
+                return true;
+            })
+    ],
+
+    date: (field = 'date') => [
+        body(field)
+            .isISO8601()
+            .withMessage('Date must be in ISO 8601 format')
+            .toDate()
+    ],
+
+    dateOptional: (field = 'date') => [
+        body(field)
+            .optional()
+            .isISO8601()
+            .withMessage('Date must be in ISO 8601 format')
+            .toDate()
+    ],
+
+    herdName: (source = body, field = 'herdName') => [
+        source(field)
             .isString()
             .trim()
             .notEmpty()
-            .withMessage('Cow tag is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
-            .matches(commonPatterns.cowTag)
-            .withMessage('Cow tag must contain only letters, numbers, spaces, underscores, hyphens, and asterisks')
-            .isLength({ min: 1, max: 50 })
-            .withMessage('Cow tag must be 1-50 characters')
+            .withMessage('Herd name is required!')
+            .isLength({ min: 1, max: 100 })
+            .withMessage('Herd name must be 1-100 characters')
     ],
+
+
+
+
 
     nParam: () => [
         param('n')
@@ -234,27 +177,9 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Note is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 1000 })
             .withMessage('Note must be 1-1000 characters')
-    ],
-
-    dateOfEntry: () => [
-        body('dateOfEntry')
-            .optional()
-            .isISO8601()
-            .withMessage('Date must be in ISO 8601 format')
-            .toDate()
-    ],
-
-    treatmentDate: () => [
-        body('treatmentDate')
-            .optional()
-            .isISO8601()
-            .withMessage('Treatment date must be in ISO 8601 format')
-            .toDate()
     ],
 
     medicineApplied: () => [
@@ -263,9 +188,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Medicine applied is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 200 })
             .withMessage('Medicine name must be 1-200 characters')
     ],
@@ -275,9 +198,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
             .withMessage('Observation must be less than 1000 characters')
     ],
@@ -287,9 +208,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
             .withMessage('Treatment must be less than 1000 characters')
     ],
@@ -299,9 +218,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
             .withMessage('Treatment response must be less than 1000 characters')
     ],
@@ -319,9 +236,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Username is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .matches(/^[a-zA-Z0-9_-]+$/)
             .withMessage('Username must contain only letters, numbers, underscores, and hyphens')
             .isLength({ min: 3, max: 50 })
@@ -342,9 +257,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
             .withMessage('Description must be less than 1000 characters')
     ],
@@ -356,7 +269,7 @@ const fieldValidators = {
             .notEmpty()
             .withMessage('Field name is required')
             .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeFieldName(value);
+                return sanitizationFunctions.sanitizeFilepath(value);
             })
             .isLength({ min: 1, max: 100 })
             .withMessage('Field name must be 1-100 characters')
@@ -369,7 +282,7 @@ const fieldValidators = {
             .notEmpty()
             .withMessage('Field name is required')
             .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeFieldName(decodeURIComponent(value));
+                return sanitizationFunctions.sanitizeFilepath(decodeURIComponent(value));
             })
             .isLength({ min: 1, max: 100 })
             .withMessage('Field name must be 1-100 characters')
@@ -414,39 +327,16 @@ const fieldValidators = {
         body('search').optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : '';
-            })
             .isLength({ max: 200 })
             .withMessage('Search term must be less than 200 characters')
     ],
 
 
-    herdName: () => [
-        body('herdName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Herd name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Herd name must be 1-100 characters')
-    ],
+    
 
-    herdNameParam: () => [
-        param('herdName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Herd name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Herd name must be 1-100 characters')
-    ],
+
+    
+
 
     feedType: () => [
         body('feedType')
@@ -454,9 +344,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Feed type is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 50 })
             .withMessage('Feed type must be 1-50 characters')
     ],
@@ -483,9 +371,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('New pasture name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 100 })
             .withMessage('Pasture name must be 1-100 characters')
     ],
@@ -495,9 +381,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .matches(commonPatterns.username)
             .withMessage('Username must contain only letters, numbers, underscores, and hyphens')
             .isLength({ max: 50 })
@@ -508,9 +392,7 @@ const fieldValidators = {
         query('feeds')
             .optional()
             .isString()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .withMessage('Feeds must be a comma-separated string')
     ],
 
@@ -530,28 +412,13 @@ const fieldValidators = {
             .toInt()
     ],
 
-    herdNameParam: () => [
-        param('herdName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Herd name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Herd name must be 1-100 characters')
-    ],
-
     pastureNameParam: () => [
         param('pastureName')
             .isString()
             .trim()
             .notEmpty()
             .withMessage('Pasture name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 100 })
             .withMessage('Pasture name must be 1-100 characters')
     ],
@@ -562,9 +429,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Username is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .matches(commonPatterns.username)
             .withMessage('Username must contain only letters, numbers, underscores, and hyphens')
     ],
@@ -583,20 +448,6 @@ const fieldValidators = {
             .trim()
             .isIn(['movement', 'membership', 'health', 'breeding', 'general'])
             .withMessage('Event type must be valid')
-    ],
-
-    cowTagsArray: () => [
-        body('cowTags')
-            .isArray()
-            .withMessage('Cow tags must be an array')
-            .custom((value) => {
-                value.forEach(tag => {
-                    if (!commonPatterns.cowTag.test(tag)) {
-                        throw new Error('Invalid cow tag in array');
-                    }
-                });
-                return true;
-            })
     ],
 
     recordType: () => [
@@ -619,9 +470,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -630,17 +479,8 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 255 })
-    ],
-
-    issueObservationDate: () => [
-        body('issueObservationDate')
-            .optional()
-            .isISO8601()
-            .toDate()
     ],
 
     issueSerious: () => [
@@ -655,9 +495,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 255 })
     ],
 
@@ -666,9 +504,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -691,9 +527,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 255 })
     ],
 
@@ -702,9 +536,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -721,72 +553,36 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Resolution note is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 1000 })
             .withMessage('Resolution note must be 1-1000 characters')
     ],
 
-    resolutionDate: () => [
-        body('resolutionDate')
-            .optional()
-            .isISO8601()
-            .toDate()
-    ],
-
-    dam: () => [
-        body('dam')
-            .optional()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeCowTag(value) : value;
-            })
-            .matches(commonPatterns.cowTag)
-            .withMessage('Dam (mother) tag must contain only valid cow tag characters')
-    ],
-
-    sire: () => [
-        body('sire')
-            .optional()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeCowTag(value) : value;
-            })
-            .matches(commonPatterns.cowTag)
-            .withMessage('Sire (father) tag must contain only valid cow tag characters')
-    ],
 
     sheetColumns: () => [
         body('dataColumns.*.name')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 100 }),
         body('dataColumns.*.dataPath')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 200 }),
         body('fillableColumns.*.name')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 100 }),
         body('fillableColumns.*.dataPath')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 200 })
     ],
 
@@ -796,9 +592,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Sheet name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 100 })
             .withMessage('Sheet name must be 1-100 characters')
     ],
@@ -827,13 +621,6 @@ const fieldValidators = {
             .toBoolean()
     ],
 
-    dateRequired: () => [
-        body('date')
-            .isISO8601()
-            .withMessage('Date must be in ISO 8601 format')
-            .toDate()
-    ],
-
     records: () => [
         body('records')
             .isArray({ min: 1 })
@@ -846,9 +633,6 @@ const fieldValidators = {
         body('records.*.cowTag')
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
             .matches(commonPatterns.cowTag),
         body('records.*.result')
             .isString()
@@ -868,9 +652,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -882,17 +664,11 @@ const fieldValidators = {
         body('calfTag')
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
             .matches(commonPatterns.cowTag)
             .isLength({ min: 1, max: 50 }),
         body('damTag')
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
             .matches(commonPatterns.cowTag)
             .isLength({ min: 1, max: 50 }),
         body('birthDate')
@@ -914,17 +690,12 @@ const fieldValidators = {
         body('records.*.cowTag')
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
             .matches(commonPatterns.cowTag),
         body('records.*.notes')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -932,9 +703,6 @@ const fieldValidators = {
         body('records.*.cowTag')
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeCowTag(value);
-            })
             .matches(commonPatterns.cowTag),
         body('records.*.weight')
             .isFloat({ min: 0, max: 5000 })
@@ -944,9 +712,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 1000 })
     ],
 
@@ -1020,9 +786,6 @@ const fieldValidators = {
         body('updates.*.value')
             .exists()
             .withMessage('Each update needs a value')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(String(value));
-            })
             .isLength({ max: 1000 })
             .withMessage('Update value must be less than 1000 characters')
     ],
@@ -1058,9 +821,6 @@ const fieldValidators = {
         body('value')
             .exists()
             .withMessage('Value is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(String(value));
-            })
             .isLength({ max: 1000 })
             .withMessage('Value must be less than 1000 characters')
     ],
@@ -1087,9 +847,6 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Description is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
             .isLength({ min: 1, max: 500 })
             .withMessage('Description must be 1-500 characters')
     ],
@@ -1099,9 +856,6 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
             .withMessage('Notes must be less than 1000 characters')
     ],
@@ -1112,9 +866,6 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Pasture name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
             .isLength({ min: 1, max: 100 })
             .withMessage('Pasture name must be 1-100 characters')
     ],
@@ -1125,9 +876,6 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Target of maintenance is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
             .isLength({ min: 1, max: 200 })
             .withMessage('Target of maintenance must be 1-200 characters')
     ],
@@ -1138,9 +886,7 @@ const fieldValidators = {
             .trim()
             .notEmpty()
             .withMessage('Action performed is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 1000 })
             .withMessage('Action performed must be 1-1000 characters')
     ],
@@ -1153,58 +899,23 @@ const fieldValidators = {
             .toBoolean()
     ],
 
-    cowsArray: () => [
-        body('cows')
-            .optional()
-            .isArray()
-            .withMessage('Cows must be an array')
-    ],
-
     currentPasture: () => [
         body('currentPasture')
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
+            
             .isLength({ max: 100 })
             .withMessage('Current pasture must be less than 100 characters')
     ],
 
-    targetHerd: () => [
-        body('targetHerd')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Target herd is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Target herd must be 1-100 characters')
-    ],
 
-    sourceHerd: () => [
-        body('sourceHerd')
-            .optional()
-            .isString()
-            .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
-            .isLength({ max: 100 })
-            .withMessage('Source herd must be less than 100 characters')
-    ],
 
     treatmentMedicineOptional: () => [
         body('treatmentMedicine')
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 255 })
     ],
 
@@ -1213,9 +924,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1224,9 +932,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1235,9 +940,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 255 })
     ],
 
@@ -1246,9 +948,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1257,9 +956,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true }) // Allow empty strings
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : null;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1268,9 +964,6 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1279,17 +972,7 @@ const fieldValidators = {
             .optional()
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 255 })
-    ],
-
-    updateIssueObservationDate: () => [
-        body('IssueObservationDate')
-            .optional()
-            .isISO8601()
-            .toDate()
     ],
 
     updateIssueSerious: () => [
@@ -1304,17 +987,7 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 255 })
-    ],
-
-    updateTreatmentDate: () => [
-        body('TreatmentDate')
-            .optional()
-            .isISO8601()
-            .toDate()
     ],
 
     updateTreatmentMethod: () => [
@@ -1322,9 +995,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1333,9 +1003,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1358,9 +1025,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 255 })
     ],
 
@@ -1369,9 +1033,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1380,9 +1041,6 @@ const fieldValidators = {
             .optional({ nullable: true, checkFalsy: true })
             .isString()
             .trim()
-            .customSanitizer((value) => {
-                return value ? sanitizationFunctions.sanitizeForSQL(value) : value;
-            })
             .isLength({ max: 1000 })
     ],
 
@@ -1418,21 +1076,21 @@ const validationSchemas = {
 
     // Cow data operations
     getCowData: [
-        ...fieldValidators.cowTagParam()
+        ...fieldValidators.cowTag(param, 'tag')
     ],
 
     getCowEpds: [
-        ...fieldValidators.cowTagParam()
+        ...fieldValidators.cowTag(param, 'tag')
     ],
 
     getNthCowImage: [
-        ...fieldValidators.cowTagParam(),
+        ...fieldValidators.cowTag(param, 'tag'),
         ...fieldValidators.imageTypeParam(),
         ...fieldValidators.nParam()
     ],
 
     getCowImageCount: [
-        ...fieldValidators.cowTagParam()
+        ...fieldValidators.cowTag(param, 'tag')
     ],
 
     getMedicalRecord: [
@@ -1447,10 +1105,10 @@ const validationSchemas = {
         ...fieldValidators.eventId(),
         ...fieldValidators.issueDescription(),
         ...fieldValidators.issueObservedBy(),
-        ...fieldValidators.issueObservationDate(),
+        ...fieldValidators.dateOptional('issueObservationDate'),
         ...fieldValidators.issueSerious(),
         ...fieldValidators.treatmentMedicineOptional(), 
-        ...fieldValidators.treatmentDate(),
+        ...fieldValidators.dateOptional('treatmentDate'),
         ...fieldValidators.treatmentResponseOptional(),
         ...fieldValidators.treatmentMethodOptional(), 
         ...fieldValidators.treatmentIsImmunization(),
@@ -1464,10 +1122,10 @@ const validationSchemas = {
         ...fieldValidators.recordIdParam(),
         ...fieldValidators.updateIssueDescription(),
         ...fieldValidators.updateIssueObservedBy(),
-        ...fieldValidators.updateIssueObservationDate(),
+        ...fieldValidators.dateOptional('IssueObservationDate'),
         ...fieldValidators.updateIssueSerious(),
         ...fieldValidators.updateTreatmentMedicine(),
-        ...fieldValidators.updateTreatmentDate(),
+        ...fieldValidators.dateOptional('TreatmentDate'),
         ...fieldValidators.updateTreatmentResponse(),
         ...fieldValidators.updateTreatmentMethod(),
         ...fieldValidators.updateTreatmentIsImmunization(),
@@ -1484,9 +1142,7 @@ const validationSchemas = {
             .trim()
             .notEmpty()
             .withMessage('Medicine name is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 255 })
             .withMessage('Medicine name must be 1-255 characters'),
         body('applicationMethod')
@@ -1494,9 +1150,7 @@ const validationSchemas = {
             .trim()
             .notEmpty()
             .withMessage('Application method is required')
-            .customSanitizer((value) => {
-                return sanitizationFunctions.sanitizeForSQL(value);
-            })
+
             .isLength({ min: 1, max: 255 })
             .withMessage('Application method must be 1-255 characters'),
         body('isImmunization')
@@ -1522,15 +1176,15 @@ const validationSchemas = {
     resolveIssue: [
         ...fieldValidators.recordIdParam(),
         ...fieldValidators.resolutionNote(),
-        ...fieldValidators.resolutionDate()
+        ...fieldValidators.dateOptional('resolutionDate')
     ],
 
     addCow: [
         ...fieldValidators.cowTag(),
-        ...fieldValidators.dateOfEntry(),
+        ...fieldValidators.dateOptional('dateOfEntry'),
         ...fieldValidators.description(),
-        ...fieldValidators.dam(),
-        ...fieldValidators.sire(),
+        ...fieldValidators.cowTag(body, 'dam'),
+        ...fieldValidators.cowTag(body, 'sire'),
         body('createCalvingRecord')
             .optional()
             .isBoolean().withMessage('createCalvingRecord must be true or false')
@@ -1544,21 +1198,21 @@ const validationSchemas = {
     ],
 
     deleteCow: [
-        ...fieldValidators.cowTagParam()
+        ...fieldValidators.cowTag(param, 'tag')
     ],
 
     uploadCowImage: [
-        ...fieldValidators.cowTagParam(),
+        ...fieldValidators.cowTag(param, 'tag'),
         ...fieldValidators.imageType()
     ],
 
     getCowImage: [
-        ...fieldValidators.cowTagParam(),
+        ...fieldValidators.cowTag(param, 'tag'),
         ...fieldValidators.imageTypeParam()
     ],
 
     getCowImages: [
-        ...fieldValidators.cowTagParam()
+        ...fieldValidators.cowTag(param, 'tag')
     ],
 
     getMinimap: [
@@ -1569,13 +1223,21 @@ const validationSchemas = {
         ...fieldValidators.fieldName()
     ],
 
-    setHerd: [
-        ...fieldValidators.cowTag(),
-        ...fieldValidators.herdName(),
+
+    setCowsHerd: [
+        ...fieldValidators.cowTags(),
+        ...fieldValidators.herdName()
     ],
 
+    setGoatsHerd: [
+        ...fieldValidators.goatTags(),
+        ...fieldValidators.herdName()
+    ],
+
+
+
     getHerdFeedStatus: [
-        ...fieldValidators.herdNameParam(),
+        ...fieldValidators.herdName(param),
         ...fieldValidators.feedsQuery()
     ],
 
@@ -1590,10 +1252,6 @@ const validationSchemas = {
 
     addFeedType: [
         ...fieldValidators.feedType()
-    ],
-
-    getHerdAnimals: [
-        ...fieldValidators.herdNameParam()
     ],
 
     moveHerd: [
@@ -1626,7 +1284,7 @@ const validationSchemas = {
     ],
 
     getHerdEvents: [
-        ...fieldValidators.herdNameParam()
+        ...fieldValidators.herdName(param)
     ],
 
     getPastureMaintenanceEvents: [
@@ -1634,7 +1292,7 @@ const validationSchemas = {
     ],
 
     addHerdEvent: [
-        ...fieldValidators.herdNameParam(),
+        ...fieldValidators.herdName(param),
         ...fieldValidators.eventType(),
         ...fieldValidators.eventDescription(),
         ...fieldValidators.optionalNotes(),
@@ -1651,15 +1309,15 @@ const validationSchemas = {
 
     createHerd: [
         ...fieldValidators.herdName(),
-        ...fieldValidators.cowsArray(),
+        ...fieldValidators.cowTags(),
         ...fieldValidators.currentPasture()
     ],
 
-    batchMoveCows: [
-        ...fieldValidators.cowTagsArray(),
-        ...fieldValidators.targetHerd(),
-        ...fieldValidators.sourceHerd()
-    ],
+
+
+
+
+
 
     getUserPreferences: [
         ...fieldValidators.usernameParam()
@@ -1692,18 +1350,18 @@ const validationSchemas = {
     ],
 
     getHerdBreedingCandidates: [
-        ...fieldValidators.herdNameParam()
+        ...fieldValidators.herdName(param)
     ],
 
     submitPregancyCheck: [
         ...fieldValidators.herdName(),
-        ...fieldValidators.dateRequired(),
+        ...fieldValidators.date('date'),
         ...fieldValidators.records(),
         ...fieldValidators.pregnancyRecord()
     ],
 
     getCalvingStatus: [
-        ...fieldValidators.herdNameParam()
+        ...fieldValidators.herdName(param)
     ],
 
     addCalvingRecord: [
@@ -1712,22 +1370,22 @@ const validationSchemas = {
     ],
 
     getWeaningCandidates: [
-        ...fieldValidators.herdNameParam()
+        ...fieldValidators.herdName(param)
     ],
 
     recordWeaning: [
-        ...fieldValidators.dateRequired(),
+        ...fieldValidators.date('date'),
         ...fieldValidators.records(),
         ...fieldValidators.weaningRecord()
     ],
 
     generateTagSuggestions: [
-        ...fieldValidators.cowTagParam(),
+        ...fieldValidators.cowTag(param, 'tag'),
         ...fieldValidators.reusableQuery()
     ],
 
     recordBatchWeights: [
-        ...fieldValidators.dateRequired(),
+        ...fieldValidators.date('date'),
         ...fieldValidators.records(),
         ...fieldValidators.weightRecord()
     ],
@@ -1754,15 +1412,15 @@ const validationSchemas = {
 
     
     findBreedingRecordForDam: [
-        cowTagValidator('damTag'),
+        ...fieldValidators.cowTag(body, 'damTag'),
         ...fieldValidators.breedingYear()
     ],
 
     assignBreedingRecords: [
         body('planId').isInt({ min: 1 }).withMessage('Plan ID must be a positive integer').toInt(),
-        cowTagValidator('primaryBull'),
-        cowTagValidator('cleanupBull', allowEmpty = true),
-        ...fieldValidators.cowTagsArray(),
+        ...fieldValidators.cowTag(body, 'primaryBull'),
+        ...fieldValidators.cowTag(body, 'cleanupBull', allowEmpty = true),
+        ...fieldValidators.cowTags(),
         body('exposureStartDate').isISO8601().withMessage('Exposure start date must be valid').toDate(),
         body('exposureEndDate').isISO8601().withMessage('Exposure end date must be valid').toDate(),
         body('pasture').optional().isString().trim()
@@ -1932,36 +1590,14 @@ const getValidationRules = (schemaName) => {
     return schema;
 };
 
-/**
- * Custom validation helpers
- */
-const customValidators = {
-    // Check if cow tag exists in database
-    cowTagExists: async (cowTag) => {
-        // TODO: Implement database check
-        return true;
-    },
-
-    // Check if date is not in the future
-    dateNotFuture: (date) => {
-        return new Date(date) <= new Date();
-    },
-
-    // Sanitize and normalize cow tag
-    normalizeCowTag: (cowTag) => {
-        return cowTag.trim().toUpperCase();
-    }
-};
 
 module.exports = {
     validationSchemas,
     createValidationMiddleware,
     getValidationRules,
     fieldValidators,
-    customValidators,
     sanitizationFunctions, // Export sanitization functions for API layer
     commonPatterns,        // Export patterns for reference
-    cowTagValidator,
 
     // Legacy exports for backward compatibility
     setupInputValidation: () => createValidationMiddleware('login'),

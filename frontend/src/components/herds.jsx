@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import Minimap from './minimap';
 import Popup from './popup';
-import MultiCowTable from './multiCowTable';
+import MultiAnimalTable from './multiAnimalTable';
 import HerdLog from './herdLog';
 import PastureLog from './pastureLog';
 import HerdSplitter from './herdSplitter';
@@ -165,7 +165,7 @@ function TimeSinceLabel({ date }) {
     }
 }
 
-function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisplayOptions}) {
+function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisplayOptions }) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [showRefillPopup, setShowRefillPopup] = useState(false);
     const [showMobileActionPopup, setShowMobileActionPopup] = useState(false);
@@ -393,8 +393,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                 credentials: 'include',
                 body: JSON.stringify({
                     herdName: herdData.herdName,
-                    newPastureName: newPasture,
-                    username: currentUser
+                    newPastureName: newPasture
                 })
             });
 
@@ -448,7 +447,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
 
                 {/* Content Window  */}
                 {isExpanded && (
-                        <>
+                    <>
                         <div style={{
                             display: 'flex',
                             padding: '15px',
@@ -456,7 +455,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                             minHeight: '400px',
                             overflow: 'hidden'
                         }}>
-                            
+
                             {/* Left Half */}
                             <div style={{
                                 width: 'var(--herd-minimap)',
@@ -591,7 +590,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                                         flex: '1',
                                         display: 'flex',
                                         justifyContent: 'center',
-                                        alignItems: 'center', 
+                                        alignItems: 'center',
                                         maxWidth: '435px'
                                     }}>
                                         <button
@@ -767,11 +766,9 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                     width="80vw"
                     maxHeight="80vh"
                 >
-                    <MultiCowTable
-                        data={herdData.cows || []}
-                        columns={animalColumns}
-                        onViewClick={handleAnimalView}
-                        title={`Animals in ${herdData.herdName}`}
+                    <MultiAnimalTable
+                        cows={herdData.cows || []}
+                        goats={herdData.goats || []}
                         emptyMessage="No animals in this herd"
                     />
                 </Popup>
@@ -870,6 +867,132 @@ function StatusRow({ label, lastActivityDate, onRefill, onAction, onMobileAction
     );
 }
 
+function UnassignedAnimalsBubble({ cows, goats, onFixNow }) {
+    const [isExpanded, setIsExpanded] = useState(true);
+
+    const cowCount = cows.length;
+    const goatCount = goats.length;
+
+    const animalListStyle = {
+        maxHeight: '140px', // roughly 5 entries
+        overflowY: 'auto',
+        border: '1px solid #ddd',
+        borderRadius: '4px',
+        padding: '6px 8px',
+        backgroundColor: '#fff',
+        fontSize: '13px',
+        lineHeight: '1.7'
+    };
+
+    const tagStyle = {
+        display: 'inline-block',
+        fontFamily: 'monospace',
+        backgroundColor: '#f0f0f0',
+        borderRadius: '3px',
+        padding: '1px 5px',
+        marginRight: '4px'
+    };
+
+    return (
+        <div className="bubble-container" style={{ borderColor: '#f0ad4e', opacity: 1, padding: '0px', overflowX: 'hidden' }}>
+            {/* Header bar */}
+            <div
+                onClick={() => setIsExpanded(e => !e)}
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 15px',
+                    backgroundColor: '#fff8ee',
+                    borderBottom: isExpanded ? '1px solid #f0ad4e' : 'none',
+                    borderRadius: isExpanded ? '5px 5px 0 0' : '5px',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                }}
+            >
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#7a5000' }}>
+                    Animals not assigned to a herd
+                </h3>
+                <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#7a5000' }}>
+                    {isExpanded ? 'collapse_content' : 'expand_content'}
+                </span>
+            </div>
+
+            {isExpanded && (
+                <div style={{ display: 'flex', padding: '20px', gap: '30px', alignItems: 'flex-start' }}>
+                    {/* Left side — counts + action */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                        flexShrink: 0,
+                        minWidth: '160px'
+                    }}>
+                        <div style={{ fontSize: '23px', fontWeight: 'bold' }}>
+                            {cowCount} cattle
+                        </div>
+                        <div style={{ fontSize: '23px', fontWeight: 'bold' }}>
+                            {goatCount} goats
+                        </div>
+                        <div style={{ color: '#666', fontSize: '13px', marginTop: '4px' }}>
+                            not assigned to a herd
+                        </div>
+                        <button
+                            onClick={onFixNow}
+                            style={{
+                                ...buttonStyles.base,
+                                ...buttonStyles.medium,
+                                backgroundColor: buttonColors.warning,
+                                color: '#000',
+                                fontWeight: 'bold',
+                                marginTop: '10px',
+                                alignSelf: 'flex-start'
+                            }}
+                        >
+                            Fix now
+                        </button>
+                    </div>
+
+                    {/* Right side — animal lists */}
+                    <div style={{ flex: 1, display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                        {cowCount > 0 && (
+                            <div style={{ flex: '1 1 140px', minWidth: '120px' }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>
+                                    Cattle ({cowCount})
+                                </div>
+                                <div style={animalListStyle}>
+                                    {cows.map((cow, i) => (
+                                        <div key={i}>
+                                            <span style={tagStyle}>{cow.CowTag}</span>
+                                            {cow.Sex && <span style={{ color: '#888', fontSize: '12px' }}>{cow.Sex}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {goatCount > 0 && (
+                            <div style={{ flex: '1 1 140px', minWidth: '120px' }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>
+                                    Goats ({goatCount})
+                                </div>
+                                <div style={animalListStyle}>
+                                    {goats.map((goat, i) => (
+                                        <div key={i}>
+                                            <span style={tagStyle}>{goat.GoatTag}</span>
+                                            {goat.GoatType && <span style={{ color: '#888', fontSize: '12px' }}>{goat.GoatType}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function Herds() {
     const [herds, setHerds] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -883,6 +1006,10 @@ function Herds() {
     const [newFeedType, setNewFeedType] = useState('');
     const [showAddFeedInput, setShowAddFeedInput] = useState(false);
     const [addingFeedType, setAddingFeedType] = useState(false);
+    const [unassignedCows, setUnassignedCows] = useState([]);
+    const [unassignedGoats, setUnassignedGoats] = useState([]);
+    const [showFixNow, setShowFixNow] = useState(false);
+
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -986,12 +1113,36 @@ function Herds() {
 
     const fetchHerds = async () => {
         try {
-            const response = await fetch('/api/herds', { credentials: 'include' });
-            if (response.ok) {
-                const data = await response.json();
-                setHerds(data.herds || []);
+            const [herdsResponse, animalsResponse] = await Promise.all([
+                fetch('/api/herds', { credentials: 'include' }),
+                fetch('/api/animals/active', { credentials: 'include' })
+            ]);
+
+            if (herdsResponse.ok && animalsResponse.ok) {
+                const herdsData = await herdsResponse.json();
+                const animalsData = await animalsResponse.json();
+
+                // Animals with null HerdName are either unassigned or belong to an inactive herd —
+                // either way they are unreachable and need attention.
+                setUnassignedCows(animalsData.cows.filter(c => !c.HerdName));
+                setUnassignedGoats(animalsData.goats.filter(g => !g.HerdName));
+
+                const herds = (herdsData.herds || []).map(herd => {
+                    const cows = animalsData.cows.filter(c => c.HerdName === herd.herdName);
+                    const goats = animalsData.goats.filter(g => g.HerdName === herd.herdName);
+
+                    return {
+                        ...herd,
+                        cows,
+                        goats,
+                        cowCount: cows.length,
+                        goatCount: goats.length
+                    };
+                });
+
+                setHerds(herds);
             } else {
-                console.error('Failed to fetch herds');
+                console.error('Failed to fetch herds or animals');
                 setHerds([]);
             }
         } catch (error) {
@@ -1033,6 +1184,14 @@ function Herds() {
             <div style={{ ...layoutStyles.flexBetween, marginBottom: '20px' }}>
                 <h1>Herd Management</h1>
             </div>
+
+            {(unassignedCows.length > 0 || unassignedGoats.length > 0) && (
+                <UnassignedAnimalsBubble
+                    cows={unassignedCows}
+                    goats={unassignedGoats}
+                    onFixNow={() => setShowFixNow(true)}
+                />
+            )}
 
             {herds.length > 0 ? (
                 herds.map((herdData, index) => (
@@ -1180,6 +1339,8 @@ function Herds() {
                     onClose={() => setShowHerdSplitter(false)}
                     title="Split Herd"
                     fullscreen={true}
+                    headerStyle={{ padding: 'var(--layout-padding)' }}
+                    contentStyle={{ padding: 'var(--layout-padding)' }}
                 >
                     <HerdSplitter
                         leftHerd={herdSplitterHerd}
@@ -1189,6 +1350,27 @@ function Herds() {
                         onSave={() => {
                             setShowHerdSplitter(false);
                             handleHerdUpdate();
+                        }}
+                    />
+                </Popup>
+            )}
+
+
+            {showFixNow && (
+                <Popup
+                    isOpen={showFixNow}
+                    onClose={() => setShowFixNow(false)}
+                    title="Assign Unassigned Animals"
+                    fullscreen={true}
+                    headerStyle={{ padding: 'var(--layout-padding)' }}
+                    contentStyle={{ padding: 'var(--layout-padding)' }}
+                >
+                    <HerdSplitter
+                        unassignedMode={true}
+                        onClose={() => setShowFixNow(false)}
+                        onSave={() => {
+                            setShowFixNow(false);
+                            fetchHerds();
                         }}
                     />
                 </Popup>

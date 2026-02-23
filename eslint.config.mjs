@@ -9,13 +9,13 @@ export default [
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.node,  // Add Node.js globals like require, process, __dirname, etc.
+        ...globals.node,
       },
     },
     rules: {
       "no-undef": "error",
       "no-unused-vars": "warn",
-      "prop-types": "warn",
+      "react/prop-types": "warn",
     },
   },
   pluginReact.configs.flat.recommended,

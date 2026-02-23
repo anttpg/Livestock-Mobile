@@ -24,20 +24,6 @@ FUTURE DBOPERATION OPTIMIZATIONS
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 BIG IDEA GOALS
 -Importing / exporting event data & fieldsheets... should be made easy
 -Fix page switching / general tab bug.

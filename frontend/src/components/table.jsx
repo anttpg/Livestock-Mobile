@@ -6,7 +6,6 @@ function Table({
   columns = [], 
   title = "",
   emptyMessage = "No data found",
-  maxRows = null, // If set, limits visible rows and shows "view all" button
   onRowClick = null, // Function to call when row is clicked
   onActionClick = null, // Function to call when action button is clicked
   actionButtonText = "VIEW",
@@ -19,17 +18,18 @@ function Table({
   oddRowColor = "#f9f9f9", // Color for odd rows (1, 3, 5, etc.)
   hoverColor = "#f0f0f0" // Color when hovering over rows
 }) {
-  
-  const [showPopup, setShowPopup] = useState(false);
   const [scrollDirection, setScrollDirection] = useState(null);
   const [hoveredRow, setHoveredRow] = useState(null);
   const tableRef = useRef(null);
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
+    const normalized = String(dateString).includes('T') 
+        ? dateString 
+        : `${dateString.slice(0, 10)}T12:00:00`;
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-  };
+    return new Date(normalized).toLocaleDateString(undefined, options);
+};
 
   const formatValue = (value, type = 'text') => {
     if (value === null || value === undefined) return 'N/A';
@@ -46,9 +46,7 @@ function Table({
   };
 
   // Determine which data to show
-  const shouldLimitRows = maxRows && data.length > maxRows;
-  const displayData = shouldLimitRows ? data.slice(0, maxRows) : data;
-  const hasMoreRows = shouldLimitRows;
+  const displayData = data;
 
   // Function to get row background color
   const getRowBackgroundColor = (rowIndex) => {
@@ -328,44 +326,6 @@ function Table({
           ))}
         </tbody>
       </table>
-      
-      {/* View All Records Button */}
-      {hasMoreRows && (
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          paddingTop: '15px',
-          borderTop: '1px solid #eee',
-          marginTop: '10px'
-        }}>
-          <button
-            onClick={() => setShowPopup(true)}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 'bold'
-            }}
-          >
-            View all records ({data.length} total)
-          </button>
-        </div>
-      )}
-
-      {/* Popup for all records */}
-      <Popup
-        isOpen={showPopup}
-        onClose={() => setShowPopup(false)}
-        title={`All ${title || 'Records'} (${data.length} total)`}
-        width="90vw"
-        maxHeight="90vh"
-      >
-        <PopupTable />
-      </Popup>
     </>
   );
 }

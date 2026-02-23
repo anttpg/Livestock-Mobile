@@ -378,7 +378,7 @@ function Notes({ cowTag, currentUser }) {
                 key: 'DateOfEntry',
                 header: 'Info',
                 type: 'custom',
-                width: '80px',
+                width: '110px',
                 align: 'left',
                 customRender: (value, row) => {
                     return (

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import SearchBar from './searchBar';
 import Notes from './notes';
 import Minimap from './minimap';
-import MultiCowTable from './multiCowTable';
+import MultiAnimalTable from './multiAnimalTable';
 import PhotoViewer from './photoViewer';
 import HerdSplitter from './herdSplitter';
 import Popup from './popup';
@@ -11,21 +11,12 @@ import PopupConfirm from './popupConfirm';
 import PopupNotify from './popupNotify';
 import { useUser } from '../UserContext';
 
-function General({
-    cowTag: propCowTag,
-    cowData: propCowData,
-    allCows: propAllCows,
-    onRefresh: propOnRefresh,
-    hideSearchBar = false,
-    onNavigate,
-}) {
+function General({ cowTag, cowData, onRefresh }) {
     const { user } = useUser();
     const currentUser = user?.username;
+    const [, setSearchParams] = useSearchParams();
 
-    const [cowTag, setCowTag] = useState(propCowTag || '');
-    const [cowData, setCowData] = useState(propCowData || null);
     const [statuses, setStatuses] = useState([]);
-    const [allCows, setAllCows] = useState(propAllCows || []);
     const [allHerds, setAllHerds] = useState([]);
     const [showHerdSplitter, setShowHerdSplitter] = useState(false);
     const [temperaments, setTemperaments] = useState([]);
@@ -37,198 +28,48 @@ function General({
     const [pendingUpdate, setPendingUpdate] = useState(null);
     const [editableDescription, setEditableDescription] = useState('');
 
-    // TOGGLE: Set this to true to enable default cow navigation, false to disable
-    const enableDefaultCow = true;
-    const defaultCowTag = '46';
-
     const formatDate = (dateString) => {
         if (!dateString) return 'Not recorded';
         const options = { year: 'numeric', month: 'long', day: 'numeric' };
         return new Date(dateString).toLocaleDateString(undefined, options);
     };
 
-    // REMOVED: No longer need to fetch user - it comes from context
-
-    // Fetch temperaments
     useEffect(() => {
-        const fetchTemperaments = async () => {
+        const fetchDropdownData = async () => {
             try {
-                const response = await fetch('/api/form-dropdown-data', {
-                    credentials: 'include'
-                });
+                const response = await fetch('/api/form-dropdown-data', { credentials: 'include' });
                 if (response.ok) {
                     const data = await response.json();
                     setTemperaments(data.temperaments || []);
-                    setStatuses(data.statuses || [])
+                    setStatuses(data.statuses || []);
                 }
             } catch (error) {
-                console.error('Error fetching temperaments:', error);
+                console.error('Error fetching dropdown data:', error);
             }
         };
-        fetchTemperaments();
+        fetchDropdownData();
     }, []);
 
-    // NEW: Fetch all cows for autocomplete
     useEffect(() => {
-        const fetchAllCows = async () => {
-            try {
-                const response = await fetch('/api/cows/by-herd', {
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setAllCows(data.cows || []);
-                }
-            } catch (error) {
-                console.error('Error fetching all cows:', error);
-            }
-        };
-        fetchAllCows();
-    }, []);
-
-    // Sync allHerds from propCowData
-    useEffect(() => {
-        if (propCowData?.availableHerds) {
-            setAllHerds(propCowData.availableHerds);
+        if (cowData?.availableHerds) {
+            setAllHerds(cowData.availableHerds);
         }
-    }, [propCowData]);
-
-    // Debug logging
-    useEffect(() => {
-        if (cowData && cowTag) {
-            console.log(`=== Data for cow ${cowTag} ===`);
-            console.log('Full cowData:', cowData);
-            console.log('Extracted cow:', cowData?.cowData);
-            console.log('CurrentHerd:', cowData?.cowData?.CurrentHerd);
-            console.log('Available herds:', allHerds);
-        }
-    }, [cowTag, cowData]);
+    }, [cowData]);
 
     useEffect(() => {
-        // Don't auto-fetch if we're being controlled by parent (folder system)
-        if (propCowTag && propCowData) {
-            return; // Skip auto-fetching when props are provided
-        }
-
-        // Don't auto-fetch if we have onNavigate prop (means we're controlled by animalFolder)
-        if (onNavigate) {
-            return;
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const searchParam = urlParams.get('search');
-
-        if (searchParam) {
-            handleSearch(searchParam);
-        } else if (enableDefaultCow) {
-            handleSearch(defaultCowTag);
-        }
-    }, [enableDefaultCow, defaultCowTag, propCowTag, propCowData, onNavigate]);
-
-    useEffect(() => {
-        if (propCowTag) {
-            setCowTag(propCowTag);
-        }
-    }, [propCowTag]);
-
-    useEffect(() => {
-        if (propCowData) {
-            setCowData(propCowData);
-            setEditableDescription(propCowData?.cowData?.Description || '');
-        }
-    }, [propCowData]);
-
-    const handleSearch = async (searchTag) => {
-        // If we have onNavigate prop (controlled by animalFolder), use it
-        if (onNavigate) {
-            onNavigate(searchTag);
-            return;
-        }
-
-        // Don't search if searchTag is empty, null, or undefined
-        if (!searchTag || searchTag.trim() === '') {
-            return;
-        }
-
-        // If we're being controlled by props AND this is a user-initiated search, delegate to parent
-        if (propCowTag && propOnRefresh && searchTag !== propCowTag) {
-            propOnRefresh();
-            return;
-        }
-
-        // If we have props but the search tag matches what parent already has, just update local state
-        if (propCowTag && propCowData && searchTag === propCowTag) {
-            setCowTag(propCowTag);
-            setCowData(propCowData);
-            return;
-        }
-
-        // Only do actual fetching if we're in standalone mode (no props and no onNavigate)
-        if (propCowTag || propCowData || onNavigate) {
-            return; // Let parent handle all data fetching
-        }
-
-        // Original standalone fetching logic
-        setCowTag(searchTag);
-        try {
-            const response = await fetch(`/api/cow/${encodeURIComponent(searchTag)}`, {
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                if (response.status === 401) {
-                    window.location.href = '/login';
-                    return;
-                }
-                throw new Error('Failed to fetch cow data');
-            }
-
-            const data = await response.json();
-
-            if (data.cowData) {
-                setCowData(data);
-                setEditableDescription(data.cowData?.Description || '');
-                if (data.availableHerds) {
-                    setAllHerds(data.availableHerds);
-                }
-            } else {
-                alert(`Cow ${searchTag} not found`);
-                setCowData(null);
-            }
-        } catch (error) {
-            console.error('Error fetching cow data:', error);
-            alert('Error fetching cow data');
-            setCowData(null);
-        }
-    };
-
-
-    // Function to refresh cow data after changing a value
-    const handleRefresh = () => {
-        if (propOnRefresh) {
-            propOnRefresh();
-        } else if (cowTag) {
-            handleSearch(cowTag);
-        }
-    };
+        setEditableDescription(cowData?.cowData?.Description || '');
+    }, [cowData]);
 
     const handleHerdChange = async (newHerd) => {
         try {
-            const response = await fetch('/api/set-herd', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+            const response = await fetch('/api/cows/herd', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({
-                    cowTag: cowTag,
-                    herdName: newHerd
-                })
+                body: JSON.stringify({ cowTags: cowTag, herdName: newHerd })
             });
-
             if (response.ok) {
-                // Refresh cow data to show updated herd
-                handleRefresh();
+                onRefresh();
             } else {
                 const errorData = await response.json();
                 alert(`Failed to update herd: ${errorData.error || 'Unknown error'}`);
@@ -243,9 +84,8 @@ function General({
         if (newStatus === 'Dead') {
             setShowDeathPopup(true);
         } else if (newStatus === 'Sold') {
-            window.location.href = `/animal?tab=sales&search=${encodeURIComponent(cowTag)}`
+            setSearchParams({ tab: 'sales', search: cowTag });
         } else {
-            // For other statuses, update directly
             await updateCowData({ Status: newStatus });
         }
     };
@@ -255,13 +95,11 @@ function General({
             alert('Please provide both date of death and cause of death');
             return;
         }
-
         await updateCowData({
             Status: 'Dead',
             DateOfDeath: deathData.dateOfDeath,
             CauseOfDeath: deathData.causeOfDeath
         });
-
         setShowDeathPopup(false);
         setDeathData({ dateOfDeath: '', causeOfDeath: '' });
     };
@@ -285,32 +123,19 @@ function General({
 
     const handleConfirmNewTemperament = async () => {
         try {
-            // Add new temperament to dropdown
             const response = await fetch('/api/form-dropdown-data', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({
-                    table: 'Temperament',
-                    value: newTemperament
-                })
+                body: JSON.stringify({ table: 'Temperament', value: newTemperament })
             });
-
             if (response.ok) {
-                // Refresh temperaments list
-                const tempResponse = await fetch('/api/form-dropdown-data', {
-                    credentials: 'include'
-                });
+                const tempResponse = await fetch('/api/form-dropdown-data', { credentials: 'include' });
                 if (tempResponse.ok) {
                     const data = await tempResponse.json();
                     setTemperaments(data.temperaments || []);
                 }
-
-                // Update cow with new temperament
                 await updateCowData({ Temperament: newTemperament });
-
                 setShowNewTemperamentPopup(false);
                 setNewTemperament('');
             } else {
@@ -334,15 +159,12 @@ function General({
         try {
             const response = await fetch(`/api/cow/${encodeURIComponent(cowTag)}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify(updates)
             });
-
             if (response.ok) {
-                handleRefresh();
+                onRefresh();
             } else {
                 const errorData = await response.json();
                 alert(`Failed to update: ${errorData.error || 'Unknown error'}`);
@@ -355,49 +177,21 @@ function General({
 
     const handleCalfView = (calfData) => {
         if (!calfData?.CalfTag) return;
-
-        // Use onNavigate if available (when controlled by animalFolder)
-        if (onNavigate) {
-            onNavigate(calfData.CalfTag);
-        } else {
-            // Fallback to handleSearch for standalone mode
-            handleSearch(calfData.CalfTag);
-        }
+        setSearchParams({ tab: 'general', search: calfData.CalfTag });
     };
 
-
-    const cow = cowData?.cowData; // FIXED: No longer using [0]
+    const cow = cowData?.cowData;
     const minimap = cowData?.minimap;
     const currentWeight = cowData?.currentWeight;
 
-    // Define columns for the calf table
     const calfColumns = [
-        {
-            key: 'CalfTag',
-            header: 'Calf Tag',
-            width: '120px',
-            type: 'text'
-        },
-        {
-            key: 'DOB',
-            header: 'DOB',
-            type: 'date'
-        }
+        { key: 'CalfTag', header: 'Calf Tag', width: '120px', type: 'text' },
+        { key: 'DOB', header: 'DOB', type: 'date' }
     ];
+
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', zIndex: -1 }}>
-            {!hideSearchBar && <h1 style={{ marginTop: '0px' }}>Animal Records</h1>}
-
-            {!hideSearchBar && (
-                <div id="search-container">
-                    <SearchBar
-                        onSearch={handleSearch}
-                        value={cowTag}
-                        cowOptions={allCows}
-                    />
-                </div>
-            )}
 
             {/* Images and Basic Info */}
             <div className="bubble-container" style={{ display: 'flex', minHeight: '420px' }}>
@@ -444,9 +238,9 @@ function General({
                 }}>
                     {/* Minimap Component */}
                     <div style={{
-                    width: 'var(--minimap)',
-                    height: 'var(--minimap)'
-                }}>
+                        width: 'var(--minimap)',
+                        height: 'var(--minimap)'
+                    }}>
                         <Minimap
                             pastureName={cow?.PastureName}
                             minimapSrc={minimap?.path}
@@ -512,51 +306,51 @@ function General({
                                 borderRadius: '3px'
                             }}
                         >
-                                <option value="">Select Status</option>
-    {statuses
-        .filter(status => status !== 'CULL LIST, Current')
-        .map((status, index) => (
-            <option key={index} value={status}>
-                {status}
-            </option>
-        ))
-    }
+                            <option value="">Select Status</option>
+                            {statuses
+                                .filter(status => status !== 'CULL LIST, Current')
+                                .map((status, index) => (
+                                    <option key={index} value={status}>
+                                        {status}
+                                    </option>
+                                ))
+                            }
                         </select>
                         <br /><br />
 
 
-<b>Sex:</b>
-<br/>
-<span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-    {cow?.Sex ? (
-        cow.Sex === 'Male' ? (
-            cow.Castrated ? 'Steer' : 'Bull'
-        ) : 'Heifer'
-    ) : 'Not recorded'}
-</span>
-<br /><br />
+                        <b>Sex:</b>
+                        <br />
+                        <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+                            {cow?.Sex ? (
+                                cow.Sex === 'Male' ? (
+                                    cow.Castrated ? 'Steer' : 'Bull'
+                                ) : 'Heifer'
+                            ) : 'Not recorded'}
+                        </span>
+                        <br /><br />
 
                         <b>Date of Birth:</b>
-                        <br/>
+                        <br />
                         <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
                             {cow?.DateOfBirth ? formatDate(cow.DateOfBirth) : 'Not recorded'}
                         </span>
                         <br /><br />
 
                         <b>Last Weight:</b>
-                        <br/>
-<span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
-    {currentWeight ? (
-        <>
-            {currentWeight.weight} lbs
-            <br />
-            ({formatDate(currentWeight.date)})
-        </>
-    ) : (
-        'No weight recorded'
-    )}
-</span>
-                        <br/><br />
+                        <br />
+                        <span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
+                            {currentWeight ? (
+                                <>
+                                    {currentWeight.weight} lbs
+                                    <br />
+                                    ({formatDate(currentWeight.date)})
+                                </>
+                            ) : (
+                                'No weight recorded'
+                            )}
+                        </span>
+                        <br /><br />
 
                         <b>Temperament:</b>
                         <select
@@ -602,7 +396,7 @@ function General({
                 </div>
             </div>
 
-            {/* SECTION 2: Notes */}
+            {/* Notes */}
             <div className="bubble-container">
                 <Notes
                     cowTag={cowTag}
@@ -610,10 +404,11 @@ function General({
                 />
             </div>
 
-            {/* SECTION 3: Current Calves - Using MultiCowTable */}
+
+            {/*  Current Calves */}
             <div className="bubble-container">
                 <h3 style={{ margin: '0px', paddingBottom: '10px' }}>Calves:</h3>
-                <MultiCowTable
+                <MultiAnimalTable
                     data={cowData?.calves || []}
                     columns={calfColumns}
                     onViewClick={handleCalfView}

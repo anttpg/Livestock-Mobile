@@ -706,6 +706,15 @@ app.post('/api/weaning-record',
 
 
 
+// All animals (including inactive)
+app.get('/api/animals', async (req, res) => {
+    return apiWrapper.getAllAnimals(req, res, { activeOnly: false });
+});
+
+// Active animals only
+app.get('/api/animals/active', async (req, res) => {
+    return apiWrapper.getAllAnimals(req, res, { activeOnly: true });
+});
 
 // Add new cow
 app.post('/api/add-cow',
@@ -715,30 +724,15 @@ app.post('/api/add-cow',
   }
 );
 
-// Get all cows
-app.get('/api/cows', async (req, res) => {
-  return apiWrapper.getAllCows(req, res);
-});
 
 
-app.post('/api/set-herd',
-  createValidationMiddleware('setHerd'), 
-  async (req, res) => {
-    return apiWrapper.setHerd(req, res);
-  }
-);
 
 
-// Get all herds with details
+
+// All active herds
 app.get('/api/herds', async (req, res) => {
-  return apiWrapper.getHerdsWithDetails(req, res);
+    return apiWrapper.getHerds(req, res);
 });
-
-// Get list of herds... is unessicary..? TODO look at.
-app.get('/api/herds/list', async (req, res) => {
-  return apiWrapper.getHerdsList(req, res);
-});
-
 
 // Get feed status for a specific herd
 app.get('/api/herd/:herdName/feed-status', 
@@ -769,13 +763,6 @@ app.post('/api/record-feed-activity',
   }
 );
 
-// Get animals in a specific herd
-app.get('/api/herd/:herdName/animals',
-  createValidationMiddleware('getHerdAnimals'),
-  async (req, res) => {
-    return apiWrapper.getHerdAnimals(req, res);
-  }
-);
 
 // Move herd to new pasture
 app.post('/api/move-herd',
@@ -828,19 +815,13 @@ app.post('/api/herds/create',
   }
 );
 
-app.post('/api/herds/batch-move',
-  createValidationMiddleware('batchMoveCows'),
-  async (req, res) => {
-    return apiWrapper.batchMoveCows(req, res);
-  }
-);
 
-// Cows organized by herd
-app.get('/api/cows/by-herd', 
-  async (req, res) => {
-    return apiWrapper.getCowsByHerd(req, res);
-  }
-);
+
+
+
+
+
+
 
 // User preferences
 app.get('/api/users/:username/preferences',
@@ -872,6 +853,23 @@ app.post('/api/form-dropdown-data',
 );
 
 
+
+
+// Move one or more cows to a different herd
+app.patch('/api/cows/herd',
+  createValidationMiddleware('setCowsHerd'),
+  async (req, res) => {
+    return apiWrapper.setCowsHerd(req, res);
+  }
+);
+
+// Move one or more goat to a different herd
+app.patch('/api/goats/herd',
+  createValidationMiddleware('setGoatsHerd'),
+  async (req, res) => {
+    return apiWrapper.setGoatsHerd(req, res);
+  }
+);
 
 
 // Get cow image count

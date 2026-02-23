@@ -100,6 +100,25 @@ class APIWrapper {
     }
 
 
+
+
+
+
+
+
+
+
+
+
+
+    /**
+    * All animals and basic info
+    */
+    async getAllAnimals(req, res, options = {}) {
+        return this.executeDBOperation(req, res, 'getAllAnimals', () => options);
+    }
+
+
     /**
      * Returns primary cow data
      */
@@ -141,7 +160,7 @@ class APIWrapper {
                 }
             }
 
-            const allHerds = await dbOperations.getAllHerds();
+            const allHerds = await dbOperations.getHerds();
 
             // Build response
             const responseData = {
@@ -151,7 +170,7 @@ class APIWrapper {
                 calves: calves,
                 images: images,
                 minimap: minimap,
-                availableHerds: allHerds
+                availableHerds: allHerds.herds.map(h => h.herdName)
             };
 
             return res.status(200).json(responseData);
@@ -173,6 +192,10 @@ class APIWrapper {
 
 
 
+
+    /**
+     * TODO, NOT YET WORKING, NEEDS TO BE FINISHED.....  <-------------------------------------------------------
+     */
     async renameCow(req, res) {
         // Parse initial tag, resultingTag
         var cowTag = req.params.cowTag;
@@ -281,12 +304,31 @@ class APIWrapper {
     }
 
 
-    async setHerd(req, res) {
-        return this.executeDBOperation(req, res, 'setHerd', (req) => ({
-            cowTag: req.body.cowTag,
-            herdName: req.body.herdName
-        }));
+    /**
+     * Move one or more cows to a herd.
+     * Body: { cowTags: string[] | string, herdName: string }
+     */
+    async setCowsHerd(req, res) {
+        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
+            const { cowTags, herdName } = req.body;
+            const tags = Array.isArray(cowTags) ? cowTags : [cowTags];
+            return { cowTags: tags, herdName };
+        });
     }
+
+    /**
+     * Move one or more goats to a herd.
+     * Body: { goatTags: string[] | string, herdName: string }
+     */
+    async setGoatsHerd(req, res) {
+        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
+            const { goatTags, herdName } = req.body;
+            const tags = Array.isArray(goatTags) ? goatTags : [goatTags];
+            return { goatTags: tags, herdName };
+        });
+    }
+
+
 
 
     async getNotes(req, res) {
@@ -713,12 +755,6 @@ class APIWrapper {
         }
     }
 
-    async getAllCows(req, res) {
-        return this.executeDBOperation(req, res, 'getAllCows', (req) => ({}));
-    }
-
-
-
 
 
     /**
@@ -1035,22 +1071,16 @@ class APIWrapper {
         }
     }
 
-    /**
-     * Get all herds with detailed information
-     */
-    async getHerdsWithDetails(req, res) {
-        return this.executeDBOperation(req, res, 'getAllHerdsWithDetails', (req) => ({}));
-    }
 
     /**
     * Only the herd names
     */
-    async getHerdsList(req, res) {
-        return this.executeDBOperation(req, res, 'getAllHerds', (req) => ({}));
+    async getHerds(req, res) {
+        return this.executeDBOperation(req, res, 'getHerds', (req) => ({}));
     }
 
 
-    
+
 
     /**
      * Get feed status for a specific herd
@@ -1092,25 +1122,18 @@ class APIWrapper {
         }));
     }
 
-    /**
-     * Get all animals in a specific herd
-     */
-    async getHerdAnimals(req, res) {
-        return this.executeDBOperation(req, res, 'getHerdAnimals', (req) => ({
-            herdName: req.params.herdName
-        }));
-    }
 
     /**
      * Move herd to a new pasture
      */
     async moveHerd(req, res) {
-        return this.executeDBOperation(req, res, 'moveHerdToPasture', (req) => ({
+        return this.executeDBOperation(req, res, 'moveHerd', (req) => ({
             herdName: req.body.herdName,
-            newPastureName: req.body.newPastureName,
-            username: req.body.username || req.session?.user?.username || 'Unknown'
+            newPastureName: req.body.newPastureName
         }));
     }
+
+    
 
     /**
      * Get all available pastures
@@ -1159,17 +1182,7 @@ class APIWrapper {
         }));
     }
 
-    async batchMoveCows(req, res) {
-        return this.executeDBOperation(req, res, 'batchMoveCows', (req) => ({
-            cowTags: req.body.cowTags,
-            targetHerd: req.body.targetHerd,
-            sourceHerd: req.body.sourceHerd || null
-        }));
-    }
 
-    async getCowsByHerd(req, res) {
-        return this.executeDBOperation(req, res, 'getCowsByHerd', (req) => ({}));
-    }
 
 
     async getUserPreferences(req, res) {

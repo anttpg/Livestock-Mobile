@@ -46,19 +46,18 @@ function FieldsheetRecords({  }) {
   };
 
   const fetchHerds = async () => {
-    try {
-      const response = await fetch('/api/herds/list', {
-        credentials: 'include'
-      });
+      try {
+          const response = await fetch('/api/herds', { credentials: 'include' });
 
-      if (response.ok) {
-        const herdsData = await response.json();
-        const herdsList = Array.isArray(herdsData) ? herdsData : (herdsData.herds || []);
-        setHerds(herdsList); // Remove the ['All active', ...] if you don't need it
+          if (response.ok) {
+              const herdsData = await response.json();
+              setHerds((herdsData.herds || []).map(h => h.herdName));
+          } else {
+              console.error('Failed to fetch herds');
+          }
+      } catch (error) {
+          console.error('Error fetching herds:', error);
       }
-    } catch (error) {
-      console.error('Error fetching herds:', error);
-    }
   };
 
   const fetchInstances = async () => {
