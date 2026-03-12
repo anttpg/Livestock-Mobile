@@ -2,9 +2,9 @@ import React from 'react';
 import Table from './table';
 
 function MultiAnimalTable({
-  cows = [],
+  cattle = [],
   goats = [],
-  cowColumns = null,
+  cattleColumns = null,
   goatColumns = null,
   title = "Animals",
   emptyMessage = "No animals found"
@@ -14,7 +14,7 @@ function MultiAnimalTable({
     if (tag) window.location.href = `/animal?tab=general&search=${encodeURIComponent(tag)}`;
   };
 
-  const defaultCowColumns = [
+  const defaultCattleColumns = [
     { key: 'CowTag',       header: 'Tag',  width: '120px', type: 'text', clickable: true, onClick: (row) => navigateTo(row.CowTag) },
     { key: 'DateOfBirth',  header: 'DOB',  type: 'date' },
   ];
@@ -24,13 +24,13 @@ function MultiAnimalTable({
     { key: 'DateOfBirth',  header: 'DOB',  type: 'date' },
   ];
 
-  const resolvedCowColumns  = cowColumns  || defaultCowColumns;
+  const resolvedCattleColumns  = cattleColumns  || defaultCattleColumns;
   const resolvedGoatColumns = goatColumns || defaultGoatColumns;
 
-  const hasCows  = cows.length  > 0;
+  const hasCattle  = cattle.length  > 0;
   const hasGoats = goats.length > 0;
 
-  if (!hasCows && !hasGoats) {
+  if (!hasCattle && !hasGoats) {
     return (
       <div style={{
         padding: '20px', textAlign: 'center',
@@ -44,14 +44,14 @@ function MultiAnimalTable({
 
   return (
     <div>
-      {hasCows && (
+      {hasCattle && (
         <div style={{ marginBottom: hasGoats ? '24px' : '0' }}>
           <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold', color: '#555' }}>
-            Cattle ({cows.length})
+            Cattle ({cattle.length})
           </h4>
           <Table
-            data={cows}
-            columns={resolvedCowColumns}
+            data={cattle}
+            columns={resolvedCattleColumns}
             emptyMessage="No cattle in this herd"
             onActionClick={(row) => navigateTo(row.CowTag)}
             actionButtonText="VIEW"

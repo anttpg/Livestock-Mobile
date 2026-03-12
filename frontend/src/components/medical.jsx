@@ -530,7 +530,6 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           evenRowColor="#fff"
           oddRowColor="#f4f4f4"
           emptyMessage={cowTag ? "No issues or injuries on record" : "Select a cow to view medical issues"}
-          maxWidth="1000px"
           ShortenDate={true}
           // Conditional coloring - Description gets darker red, others get lighter red
           conditionalColors={{
@@ -593,7 +592,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
       </div>
 
       {/* Section 3: Medicine Database */}
-      <div className="bubble-container" style={{maxWidth:"1000px"}}>
+      <div className="bubble-container">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h3 style={{ margin: '0' }}>Medicine Database</h3>
           <button

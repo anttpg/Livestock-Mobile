@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import SearchBar from './searchBar';
 import Notes from './notes';
 import Minimap from './minimap';
-import MultiAnimalTable from './multiAnimalTable';
+import ColorTable from './colorTable';
 import PhotoViewer from './photoViewer';
 import HerdSplitter from './herdSplitter';
 import Popup from './popup';
@@ -19,14 +19,20 @@ function General({ cowTag, cowData, onRefresh }) {
     const [statuses, setStatuses] = useState([]);
     const [allHerds, setAllHerds] = useState([]);
     const [showHerdSplitter, setShowHerdSplitter] = useState(false);
-    const [temperaments, setTemperaments] = useState([]);
-    const [showDeathPopup, setShowDeathPopup] = useState(false);
-    const [deathData, setDeathData] = useState({ dateOfDeath: '', causeOfDeath: '' });
-    const [showNewTemperamentPopup, setShowNewTemperamentPopup] = useState(false);
+
     const [newTemperament, setNewTemperament] = useState('');
+    const [temperaments, setTemperaments] = useState([]);
+    const [showNewTemperamentPopup, setShowNewTemperamentPopup] = useState(false);
+
+    const [showDeathPopup, setShowDeathPopup] = useState(false);
+    const [regCerts, setRegCerts] = useState([]);
+    
+    const [deathData, setDeathData] = useState({ dateOfDeath: '', causeOfDeath: '' });
     const [showConfirmPopup, setShowConfirmPopup] = useState(false);
     const [pendingUpdate, setPendingUpdate] = useState(null);
+
     const [editableDescription, setEditableDescription] = useState('');
+    const [editableRegCertNumber, setEditableRegCertNumber] = useState('');
 
     const formatDate = (dateString) => {
         if (!dateString) return 'Not recorded';
@@ -42,6 +48,7 @@ function General({ cowTag, cowData, onRefresh }) {
                     const data = await response.json();
                     setTemperaments(data.temperaments || []);
                     setStatuses(data.statuses || []);
+                    setRegCerts(data.regCerts || []);
                 }
             } catch (error) {
                 console.error('Error fetching dropdown data:', error);
@@ -58,6 +65,7 @@ function General({ cowTag, cowData, onRefresh }) {
 
     useEffect(() => {
         setEditableDescription(cowData?.cowData?.Description || '');
+        setEditableRegCertNumber(cowData?.cowData?.RegCertNumber || '');
     }, [cowData]);
 
     const handleHerdChange = async (newHerd) => {
@@ -89,6 +97,7 @@ function General({ cowTag, cowData, onRefresh }) {
             await updateCowData({ Status: newStatus });
         }
     };
+
 
     const handleDeathSubmit = async () => {
         if (!deathData.dateOfDeath || !deathData.causeOfDeath) {
@@ -298,13 +307,6 @@ function General({ cowTag, cowData, onRefresh }) {
                         <select
                             value={cow?.Status || ''}
                             onChange={(e) => handleStatusChange(e.target.value)}
-                            style={{
-                                marginLeft: '10px',
-                                padding: '2px 5px',
-                                fontSize: '14px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
                         >
                             <option value="">Select Status</option>
                             {statuses
@@ -356,13 +358,6 @@ function General({ cowTag, cowData, onRefresh }) {
                         <select
                             value={cow?.Temperament || ''}
                             onChange={(e) => handleTemperamentChange(e.target.value)}
-                            style={{
-                                marginLeft: '10px',
-                                padding: '2px 5px',
-                                fontSize: '14px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
                         >
                             <option value="">Select...</option>
                             {temperaments.map((temp, index) => (
@@ -396,6 +391,42 @@ function General({ cowTag, cowData, onRefresh }) {
                 </div>
             </div>
 
+            {/* Reg / Cert status */}
+            <div className="bubble-container">
+                <h3 style={{ margin: 0 }}>Registration & Certification</h3>
+                <div style={{ marginTop: ".4rem" }}>
+                    <span>Status:</span>
+                    <select
+                        value={cow?.RegCert || ''}
+                        onChange={(e) => updateCowData({RegCert: e.target.value})}
+                    >
+                        <option value="">None</option>
+                        {regCerts
+                            .filter((val) => val != "None")
+                            .map((temp, index) => (
+                                <option key={index} value={temp}>
+                                    {temp}
+                                </option>
+                            ))}
+                    </select>
+
+                    <span style={{ marginLeft: '2rem' }}> Number:</span>
+                    <input
+                        type="text"
+                        value={editableRegCertNumber}
+                        onChange={(e) => setEditableRegCertNumber(e.target.value)}
+                        onBlur={() => {
+                            if (editableRegCertNumber !== cow?.RegCertNumber) {
+                                updateCowData({ RegCertNumber: editableRegCertNumber });
+                            }
+                        }}
+                        placeholder="Enter value..."
+                    />
+
+                </div>
+            </div>
+
+
             {/* Notes */}
             <div className="bubble-container">
                 <Notes
@@ -408,12 +439,16 @@ function General({ cowTag, cowData, onRefresh }) {
             {/*  Current Calves */}
             <div className="bubble-container">
                 <h3 style={{ margin: '0px', paddingBottom: '10px' }}>Calves:</h3>
-                <MultiAnimalTable
+
+                <ColorTable
                     data={cowData?.calves || []}
                     columns={calfColumns}
-                    onViewClick={handleCalfView}
-                    title="Current Calves"
+                    showActionColumn={false}
+                    alternatingRows={true}
+                    evenRowColor="#fff"
+                    oddRowColor="#f4f4f4"
                     emptyMessage="No calves on record for selected cow"
+                    maxWidth="100%"
                 />
             </div>
 

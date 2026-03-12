@@ -245,11 +245,12 @@ h1, h3 {
     color: #444;
 }
 
-input[type="text"] {
-    padding: 8px;
-    margin-right: 10px;
-    border: 2px solid #ccc;
-    border-radius: 4px;
+select, input[type="text"] {
+    margin-left: 10px;
+    padding: 2px 5px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
 }
 
 
@@ -326,7 +327,7 @@ button:hover {
     box-sizing: border-box;
   }
   
-  #search-button {
+#search-button {
     position: relative;
     width: 40px;
     height: 40px;

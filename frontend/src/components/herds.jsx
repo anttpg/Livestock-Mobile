@@ -767,7 +767,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                     maxHeight="80vh"
                 >
                     <MultiAnimalTable
-                        cows={herdData.cows || []}
+                        cattle={herdData.cows || []}
                         goats={herdData.goats || []}
                         emptyMessage="No animals in this herd"
                     />

@@ -26,13 +26,11 @@ function Fieldsheets({ sheets: filterSheets = null }) {
         return (
           <FieldsheetTemplates
             filterSheets={filterSheets}
-            hideSearchBar={helpers.hideSearchBar}
           />
         );
       case 'records':
         return (
           <FieldsheetRecords
-            hideSearchBar={helpers.hideSearchBar}
           />
         );
       default:
