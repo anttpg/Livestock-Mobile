@@ -529,7 +529,18 @@ class APIWrapper {
         }));
     }
 
-    async updateCowWeight(req, res) {
+
+    async createWeightRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createWeightRecord', (req) => ({
+            cowTag: req.body.cowTag,
+            weight: req.body.weight,
+            date: req.body.date,
+            eventId: req.body.eventId,
+            notes: req.body.notes
+        }));
+    }
+
+    async updateWeightRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateWeightRecord', (req) => ({
             cowTag: req.body.cowTag,
             weight: req.body.weight

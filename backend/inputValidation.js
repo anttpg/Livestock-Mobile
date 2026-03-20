@@ -160,6 +160,16 @@ const fieldValidators = {
             .withMessage('Herd name must be 1-100 characters')
     ],
 
+        pastureName: (source = body, field = 'pastureName') => [
+            source(field)
+                .isString()
+                .trim()
+                .notEmpty()
+                .withMessage('Pasture name is required')
+                .isLength({ min: 1, max: 100 })
+                .withMessage('Pasture name must be 1-100 characters')
+        ],
+
 
 
 
@@ -365,17 +375,6 @@ const fieldValidators = {
             .toBoolean()
     ],
 
-    pastureName: () => [
-        body('newPastureName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('New pasture name is required')
-
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Pasture name must be 1-100 characters')
-    ],
-
     optionalUsername: () => [
         body('username')
             .optional()
@@ -410,17 +409,6 @@ const fieldValidators = {
             .notEmpty()
             .withMessage('Sheet ID is required')
             .toInt()
-    ],
-
-    pastureNameParam: () => [
-        param('pastureName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Pasture name is required')
-
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Pasture name must be 1-100 characters')
     ],
 
     usernameParam: () => [
@@ -860,16 +848,6 @@ const fieldValidators = {
             .withMessage('Notes must be less than 1000 characters')
     ],
 
-    pastureNameBody: () => [
-        body('pastureName')
-            .isString()
-            .trim()
-            .notEmpty()
-            .withMessage('Pasture name is required')
-            .isLength({ min: 1, max: 100 })
-            .withMessage('Pasture name must be 1-100 characters')
-    ],
-
     targetOfMaintenance: () => [
         body('targetOfMaintenance')
             .isString()
@@ -1192,7 +1170,7 @@ const validationSchemas = {
         ...fieldValidators.breedingYear(),
     ],
 
-    updateCowWeight: [
+    updateWeightRecord: [
         ...fieldValidators.cowTag(),
         ...fieldValidators.weight()
     ],
@@ -1256,7 +1234,7 @@ const validationSchemas = {
 
     moveHerd: [
         ...fieldValidators.herdName(),
-        ...fieldValidators.pastureName(),
+        ...fieldValidators.pastureName(body, "newPastureName"),
         ...fieldValidators.optionalUsername()
     ],
 
@@ -1279,7 +1257,7 @@ const validationSchemas = {
         ...fieldValidators.sheetIdParam()
     ],
 
-    deleteSheet: [
+    deleteSheetTemplate: [
         ...fieldValidators.sheetIdParam()
     ],
 
@@ -1288,7 +1266,7 @@ const validationSchemas = {
     ],
 
     getPastureMaintenanceEvents: [
-        ...fieldValidators.pastureNameParam()
+        ...fieldValidators.pastureName(param)
     ],
 
     addHerdEvent: [
@@ -1300,7 +1278,7 @@ const validationSchemas = {
     ],
 
     addPastureMaintenanceEvent: [
-        ...fieldValidators.pastureNameBody(),
+        ...fieldValidators.pastureName(),
         ...fieldValidators.targetOfMaintenance(),
         ...fieldValidators.actionPerformed(),
         ...fieldValidators.needsFollowUp(),
@@ -1353,7 +1331,7 @@ const validationSchemas = {
         ...fieldValidators.herdName(param)
     ],
 
-    submitPregancyCheck: [
+    createPregancyCheck: [
         ...fieldValidators.herdName(),
         ...fieldValidators.date('date'),
         ...fieldValidators.records(),
@@ -1364,7 +1342,7 @@ const validationSchemas = {
         ...fieldValidators.herdName(param)
     ],
 
-    addCalvingRecord: [
+    createCalvingRecord: [
         ...fieldValidators.calvingRecord(),
         ...fieldValidators.note()
     ],
@@ -1384,7 +1362,7 @@ const validationSchemas = {
         ...fieldValidators.reusableQuery()
     ],
 
-    recordBatchWeights: [
+    createWeightRecordBatch: [
         ...fieldValidators.date('date'),
         ...fieldValidators.records(),
         ...fieldValidators.weightRecord()

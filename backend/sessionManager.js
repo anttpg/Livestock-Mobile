@@ -624,18 +624,26 @@ app.put('/api/purchases/:ID',
 
 
 // Update cow weight
-app.post('/api/update-weight',
-  createValidationMiddleware('updateCowWeight'),
+app.post('/api/cow/weight',
+  createValidationMiddleware('updateWeightRecord'),
   async (req, res) => {
-    return apiWrapper.updateCowWeight(req, res);
+    return apiWrapper.updateWeightRecord(req, res);
+  }
+);
+
+// Create new cow weight record
+app.put('/api/cow/weight',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.createWeightRecord(req, res);
   }
 );
 
 // Record batch weights
 app.post('/api/batch-weigh-in',
-  createValidationMiddleware('recordBatchWeights'),
+  createValidationMiddleware('createWeightRecordBatch'),
   async (req, res) => {
-    return apiWrapper.recordBatchWeights(req, res);
+    return apiWrapper.createWeightRecordBatch(req, res);
   }
 );
 
@@ -664,9 +672,9 @@ app.get('/api/breeding-candidates/:herdName',
 
 // Submit pregnancy check results
 app.post('/api/pregnancy-check',
-  createValidationMiddleware('submitPregancyCheck'),
+  createValidationMiddleware('createPregancyCheck'),
   async (req, res) => {
-    return apiWrapper.submitPregancyCheck(req, res);
+    return apiWrapper.createPregancyCheck(req, res);
   }
 );
 
@@ -680,9 +688,9 @@ app.get('/api/calving-status/:herdName',
 
 // Add calving record
 app.post('/api/calving-record',
-  createValidationMiddleware('addCalvingRecord'),
+  createValidationMiddleware('createCalvingRecord'),
   async (req, res) => {
-    return apiWrapper.addCalvingRecord(req, res);
+    return apiWrapper.createCalvingRecord(req, res);
   }
 );
 
@@ -1049,128 +1057,121 @@ app.put('/api/minimap/:fieldName',
 
 
 
-// SHEET ROUTES
 
-// Get all sheets
+
+// SHEET TEMPLATE ROUTES
+
 app.get('/api/sheets/all-sheets', async (req, res) => {
-  return apiWrapper.getAllSheets(req, res);
+    return apiWrapper.getAllSheets(req, res);
 });
 
-// Get available columns
-app.get('/api/sheets/available-columns', async (req, res) => {
-  return apiWrapper.getAvailableColumns(req, res);
-});
-
-// Load sheet data
-app.post('/api/sheets/load',
-  createValidationMiddleware('loadSheet'),
-  async (req, res) => {
-    return apiWrapper.loadSheet(req, res);
-  }
-);
-
-// Update individual sheet cell
-app.post('/api/sheets/update-cell',
-  createValidationMiddleware('updateSheetCell'),
-  async (req, res) => {
-    return apiWrapper.updateSheetCell(req, res);
-  }
-);
-
-// Update multiple cells at once
-app.post('/api/sheets/batch-update',
-  createValidationMiddleware('batchUpdateSheet'),
-  async (req, res) => {
-    return apiWrapper.batchUpdateSheetCells(req, res);
-  }
-)
-
-
-
-// Sheet structure
 app.get('/api/sheets/structure/:sheetId',
-  createValidationMiddleware('getSheetStructure'),
-  async (req, res) => {
-    return apiWrapper.getSheetStructure(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.getSheet(req, res);
+    }
 );
 
-// Update existing sheet structure
-app.put('/api/sheets/update-structure/:sheetId',
-  createValidationMiddleware('updateSheet'),
-  async (req, res) => {
-    return apiWrapper.updateSheet(req, res);
-  }
-);
+app.get('/api/sheets/available-columns', async (req, res) => {
+    return apiWrapper.getAvailableColumns(req, res);
+});
 
-// Create new sheet
+app.get('/api/sheets/:templateId/preview-columns', async (req, res) => {
+    return apiWrapper.getTemplatePreviewColumns(req, res);
+});
+
+
 app.post('/api/sheets/create',
-  createValidationMiddleware('createSheet'),
-  async (req, res) => {
-    return apiWrapper.createSheet(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.createSheet(req, res);
+    }
 );
 
-// Delete sheet
+app.put('/api/sheets/update-structure/:sheetId',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.updateSheet(req, res);
+    }
+);
+
 app.delete('/api/sheets/delete/:sheetId',
-  createValidationMiddleware('deleteSheet'),
-  async (req, res) => {
-    return apiWrapper.deleteSheet(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.deleteSheetTemplate(req, res);
+    }
 );
 
 
-// Get all instances across all sheets
+// SHEET INSTANCE ROUTES
+
+
 app.get('/api/sheets/instances/all', async (req, res) => {
-  return apiWrapper.getAllInstances(req, res);
+    return apiWrapper.getAllSheetInstances(req, res);
 });
 
-// Get all instances for a specific sheet
-app.get('/api/sheets/:sheetId/instances', async (req, res) => {
-  return apiWrapper.getSheetInstances(req, res);
-});
-
-// Load a specific instance with all data
-app.get('/api/sheets/instances/:instanceId', async (req, res) => {
-  return apiWrapper.loadSheetInstance(req, res);
-});
-
-// Create a new instance
-app.post('/api/sheets/:sheetId/instances/create',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.createSheetInstance(req, res);
-  }
+app.get('/api/sheets/:templateId/instances',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.getTemplateInstances(req, res);
+    }
 );
 
-// Try to load instance by ID, or create new one if not found
+app.get('/api/sheets/instances/:instanceId',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.getSheetInstance(req, res);
+    }
+);
+
+app.get('/api/sheets/instances/:instanceId/load',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.loadSheetInstance(req, res);
+    }
+);
+
+app.post('/api/sheets/:templateId/instances/create',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.createSheetInstance(req, res);
+    }
+);
+
 app.post('/api/sheets/instances/try-load',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.tryLoadSheetInstance(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.tryLoadSheetInstance(req, res);
+    }
 );
 
-// Update a single cell in an instance
+app.put('/api/sheets/instances/:instanceId',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.updateSheetInstance(req, res);
+    }
+);
+
 app.put('/api/sheets/instances/:instanceId/cell',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.updateSheetInstanceCell(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.updateSheetInstanceCell(req, res);
+    }
 );
 
-// Batch update multiple cells in an instance
 app.put('/api/sheets/instances/:instanceId/cells',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.batchUpdateSheetInstanceCells(req, res);
-  }
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.batchUpdateSheetInstanceCells(req, res);
+    }
 );
 
-// Delete an instance
-app.delete('/api/sheets/instances/:instanceId', async (req, res) => {
-  return apiWrapper.deleteSheetInstance(req, res);
-});
+app.delete('/api/sheets/instances/:instanceId',
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.deleteSheetInstance(req, res);
+    }
+);
 
 
 
