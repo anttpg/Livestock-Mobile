@@ -9,6 +9,7 @@ import HerdSplitter from './herdSplitter';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
 import PopupNotify from './popupNotify';
+import AddWeightRecord from './addWeightRecord';
 import { useUser } from '../UserContext';
 
 function General({ cowTag, cowData, onRefresh }) {
@@ -19,6 +20,7 @@ function General({ cowTag, cowData, onRefresh }) {
     const [statuses, setStatuses] = useState([]);
     const [allHerds, setAllHerds] = useState([]);
     const [showHerdSplitter, setShowHerdSplitter] = useState(false);
+    const [showAddWeightPopup, setShowAddWeightPopup] = useState(false);
 
     const [newTemperament, setNewTemperament] = useState('');
     const [temperaments, setTemperaments] = useState([]);
@@ -307,6 +309,7 @@ function General({ cowTag, cowData, onRefresh }) {
                         <select
                             value={cow?.Status || ''}
                             onChange={(e) => handleStatusChange(e.target.value)}
+                            style={{marginLeft: '10px'}}
                         >
                             <option value="">Select Status</option>
                             {statuses
@@ -351,6 +354,21 @@ function General({ cowTag, cowData, onRefresh }) {
                             ) : (
                                 'No weight recorded'
                             )}
+                            <span
+                                className="material-symbols-outlined"
+                                onClick={() => setShowAddWeightPopup(true)}
+                                title="Add weight record"
+                                style={{
+                                    marginLeft: '8px',
+                                    fontSize: '18px',
+                                    verticalAlign: 'middle',
+                                    cursor: 'pointer',
+                                    color: '#4CAF50',
+                                    userSelect: 'none'
+                                }}
+                            >
+                                add_circle
+                            </span>
                         </span>
                         <br /><br />
 
@@ -399,6 +417,7 @@ function General({ cowTag, cowData, onRefresh }) {
                     <select
                         value={cow?.RegCert || ''}
                         onChange={(e) => updateCowData({RegCert: e.target.value})}
+                        style={{marginLeft: '.8rem'}}
                     >
                         <option value="">None</option>
                         {regCerts
@@ -409,10 +428,11 @@ function General({ cowTag, cowData, onRefresh }) {
                                 </option>
                             ))}
                     </select>
-
-                    <span style={{ marginLeft: '2rem' }}> Number:</span>
+                    <br/>
+                    <span> Number:</span>
                     <input
                         type="text"
+                        style={{width: "8.5rem", marginLeft: '.8rem'}}
                         value={editableRegCertNumber}
                         onChange={(e) => setEditableRegCertNumber(e.target.value)}
                         onBlur={() => {
@@ -639,6 +659,24 @@ function General({ cowTag, cowData, onRefresh }) {
                 confirmText="Add Temperament"
                 cancelText="Cancel"
             />
+
+
+            {/* Weight Record Popup */}
+            <Popup
+                isOpen={showAddWeightPopup}
+                onClose={() => setShowAddWeightPopup(false)}
+                title="Add Weight Record"
+                width="420px"
+            >
+                <AddWeightRecord
+                    cowTag={cowTag}
+                    onSuccess={() => {
+                        setShowAddWeightPopup(false);
+                        onRefresh();
+                    }}
+                    onCancel={() => setShowAddWeightPopup(false)}
+                />
+            </Popup>
         </div>
     );
 }
