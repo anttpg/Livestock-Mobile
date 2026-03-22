@@ -47,18 +47,18 @@ function FieldsheetRecords() {
   };
 
   const fetchHerds = async () => {
-      try {
-          const response = await fetch('/api/herds', { credentials: 'include' });
+    try {
+      const response = await fetch('/api/herds', { credentials: 'include' });
 
-          if (response.ok) {
-              const herdsData = await response.json();
-              setHerds((herdsData.herds || []).map(h => h.herdName));
-          } else {
-              console.error('Failed to fetch herds');
-          }
-      } catch (error) {
-          console.error('Error fetching herds:', error);
+      if (response.ok) {
+        const herdsData = await response.json();
+        setHerds((herdsData.herds || []).map(h => h.herdName));
+      } else {
+        console.error('Failed to fetch herds');
       }
+    } catch (error) {
+      console.error('Error fetching herds:', error);
+    }
   };
 
   const fetchInstances = async () => {
@@ -115,7 +115,7 @@ function FieldsheetRecords() {
         setNewInstanceHerd('');
         setNewInstanceYear(new Date().getFullYear());
         await fetchInstances();
-        
+
         // Select the newly created instance
         const newInstance = instances.find(i => i.id === data.id);
         if (newInstance) {
@@ -164,8 +164,8 @@ function FieldsheetRecords() {
     return date.toLocaleDateString();
   };
 
-  const filteredInstances = filterSheet === 'all' 
-    ? instances 
+  const filteredInstances = filterSheet === 'all'
+    ? instances
     : instances.filter(i => i.templateId === parseInt(filterSheet));
 
   if (loading) {
@@ -188,9 +188,9 @@ function FieldsheetRecords() {
       {/* Split div 50/50 */}
       <div className="multibubble-row" style={{ minHeight: '200px' }}>
         {/* Left side - Instance list */}
-        <div className="bubble-container" style={{flex: 1}}>
+        <div className="bubble-container" style={{ flex: 1 }}>
           <h3 style={{ margin: '0 0 15px 0' }}>Saved Records</h3>
-          
+
           {/* Filter dropdown */}
           <div style={{ marginBottom: '15px' }}>
             <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Filter by Sheet:</label>
@@ -244,7 +244,7 @@ function FieldsheetRecords() {
         </div>
 
         {/* Right side - Actions */}
-        <div className="bubble-container" style={{flex: 1}}>
+        <div className="bubble-container" style={{ flex: 1 }}>
           <h3 style={{ margin: '0 0 15px 0' }}>Actions</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div
@@ -299,7 +299,7 @@ function FieldsheetRecords() {
       </div>
 
       {/* Display/Edit block */}
-      <div className="bubble-container" style={{flex: 1, overflow: 'hidden', padding: '0px'}}>
+      <div className="bubble-container" style={{ flex: 1, overflow: 'hidden', padding: '0px' }}>
         {selectedInstance ? (
           <Sheet
             key={selectedInstance.id}
@@ -325,12 +325,12 @@ function FieldsheetRecords() {
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
         onCreated={async (data) => {
-            await fetchInstances();
-            // data.instanceId comes back from the create endpoint
-            const fresh = instances.find(i => i.id === data.instanceId);
-            if (fresh) setSelectedInstance(fresh);
+          await fetchInstances();
+          // data.instanceId comes back from the create endpoint
+          const fresh = instances.find(i => i.id === data.instanceId);
+          if (fresh) setSelectedInstance(fresh);
         }}
-    />
+      />
 
       {/* Delete Confirmation Popup */}
       <ConfirmPopup

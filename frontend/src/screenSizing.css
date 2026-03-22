@@ -228,7 +228,8 @@ body {
       color: #272727 !important;
     }
   }
-  
+
+
   /* Ensure timeline wrapper doesn't clip content */
   .timeline-wrapper {
     overflow-x: visible !important;

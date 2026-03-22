@@ -640,20 +640,20 @@ class LocalFileOperations {
 
 
 
-    /**
-     * Delete a medical issue image by its recency index.
-     * Resolves the nth most recent ISSUE image and deletes it by filename.
-     * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
-     * @param {number} params.n        - 1-based index (1 = most recent)
-     * @returns {Object} { success, message }
-     */
-    async deleteMedicalImageByIndex({ recordId, n }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`);
-        const found = await this.readFile(directory, 'ISSUE', n, false);
-        if (!found.success) return found;
-        return this.deleteMedicalImage({ recordId, filename: found.filename });
-    }
+    // /**
+    //  * Delete a medical issue image by its recency index.
+    //  * Resolves the nth most recent ISSUE image and deletes it by filename.
+    //  * @param {Object} params
+    //  * @param {string} params.recordId - Medical record ID
+    //  * @param {number} params.n        - 1-based index (1 = most recent)
+    //  * @returns {Object} { success, message }
+    //  */
+    // async deleteMedicalImageByIndex({ recordId, n }) {
+    //     const directory = path.join(this.medicalDir, `Record_${recordId}`);
+    //     const found = await this.readFile(directory, 'ISSUE', n, false);
+    //     if (!found.success) return found;
+    //     return this.deleteMedicalImage({ recordId, filename: found.filename });
+    // }
 
 
 
@@ -2442,14 +2442,14 @@ module.exports = {
     getAllCowImages: (params) => localOps.getAllCowImages(params),
     numCowImages: (params) => localOps.numCowImages(params),
     deleteCowImage: (params) => localOps.deleteCowImage(params),
-    deleteCowImageByIndex: (params) => localOps.deleteCowImageByIndex(params),
+    // deleteCowImageByIndex: (params) => localOps.deleteCowImageByIndex(params),
 
     // Medical images
     saveMedicalImage: (params) => localOps.saveMedicalImage(params),
     getMedicalImage: (params) => localOps.getMedicalImage(params),
     getMedicalImageCount: (params) => localOps.getMedicalImageCount(params),
     deleteMedicalImage: (params) => localOps.deleteMedicalImage(params),
-    deleteMedicalImageByIndex: (params) => localOps.deleteMedicalImageByIndex(params),
+    // deleteMedicalImageByIndex: (params) => localOps.deleteMedicalImageByIndex(params),
 
 
     // Medical uploads
