@@ -45,7 +45,7 @@ function Layout({ children, user }) {  // Accept user prop
 
   return (
     <div style={styles.container}>
-      <Header user={user} />  {/* Pass user to Header */}
+      <Header/>  {/* Pass user to Header */}
       <div className="layout-content" style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {children}
       </div>

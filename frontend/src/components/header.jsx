@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useUser } from '../UserContext';
 import { Link } from 'react-router-dom';
+import Settings from './settings';
 
-function Header({ user }) {  // Accept user prop
+function Header() {  // Accept user prop
+  const { user } = useUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   
@@ -168,17 +171,20 @@ function Header({ user }) {  // Accept user prop
         </h1>
 
         {/* Logout Button */}
-        <button
-          style={{
-            ...styles.logoutButton,
-            ...(logoutHover ? styles.logoutButtonHover : {})
-          }}
-          onMouseEnter={() => setLogoutHover(true)}
-          onMouseLeave={() => setLogoutHover(false)}
-          onClick={handleLogout}
-        >
-          Logout
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Settings />
+          <button
+            style={{
+              ...styles.logoutButton,
+              ...(logoutHover ? styles.logoutButtonHover : {})
+            }}
+            onMouseEnter={() => setLogoutHover(true)}
+            onMouseLeave={() => setLogoutHover(false)}
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* Dropdown Menu */}
@@ -246,43 +252,6 @@ function Header({ user }) {  // Accept user prop
               Print Field Sheets
             </a>
           </li>
-          
-          
-          {/* User Management */}
-          {user?.permissions?.includes('admin') && (
-            <li style={styles.menuItem}>
-              <Link
-                to="/user-management"
-                style={{
-                  ...styles.menuLink,
-                  ...(hoveredItem === 'user-management' ? styles.menuLinkHover : {})
-                }}
-                onMouseEnter={() => setHoveredItem('user-management')}
-                onMouseLeave={() => setHoveredItem(null)}
-                onClick={closeMenu}
-              >
-                User Management
-              </Link>
-            </li>
-            )}
-
-          {/* Dev Console - Only show if dev */}
-          {user?.permissions?.includes('dev') && (
-            <li style={styles.menuItem}>
-              <Link
-                to="/dev-console"
-                style={{
-                  ...styles.menuLink,
-                  ...(hoveredItem === 'dev-console' ? styles.menuLinkHover : {})
-                }}
-                onMouseEnter={() => setHoveredItem('dev-console')}
-                onMouseLeave={() => setHoveredItem(null)}
-                onClick={closeMenu}
-              >
-                Dev Console
-              </Link>
-            </li>
-          )}
             
         </ul>
       </nav>
