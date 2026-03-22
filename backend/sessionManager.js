@@ -5,6 +5,8 @@ const bodyParser = require("body-parser");
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cors = require('cors');
+const multer = require('multer');
+
 
 const apiWrapper = require('../api/api');
 const { createValidationMiddleware } = require('./inputValidation');
@@ -482,27 +484,73 @@ app.put('/api/medical/medicines/:ID',
 );
 
 
-app.post('/api/medical/:recordId/upload-image',
-    upload.single('image'), // Your existing multer middleware
-    createValidationMiddleware('uploadMedicalImage'),
-    async (req, res) => {
-        return apiWrapper.uploadMedicalImage(req, res);
-    }
+
+
+// Medical images
+app.post('/api/medical/:recordId/images',
+  upload.single('image'),
+  createValidationMiddleware('', true), async (req, res) => {
+    return apiWrapper.uploadMedicalImage(req, res);
+  }
 );
 
 app.get('/api/medical/:recordId/image/:imageType/:n?',
-    createValidationMiddleware('getMedicalImage'),
-    async (req, res) => {
-        return apiWrapper.getMedicalImage(req, res);
-    }
+  createValidationMiddleware('', true), async (req, res) => {
+    return apiWrapper.getMedicalImage(req, res);
+  }
 );
 
 app.get('/api/medical/:recordId/image-count',
-    createValidationMiddleware('getMedicalImageCount'),
-    async (req, res) => {
-        return apiWrapper.getMedicalImageCount(req, res);
-    }
+  createValidationMiddleware('', true), async (req, res) => {
+    return apiWrapper.getMedicalImageCount(req, res);
+  }
 );
+
+app.delete('/api/medical/:recordId/images/:filename',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.deleteMedicalImage(req, res);
+  }
+);
+
+
+
+const uploadAny = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024, files: 1 }
+    // No fileFilter, accepts any file type
+});
+
+// Medical file uploads
+app.post('/api/medical/:recordId/files',
+  uploadAny.single('file'),
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.saveMedicalUpload(req, res);
+  }
+);
+
+app.get('/api/medical/:recordId/files/:filename',
+  createValidationMiddleware('', true), async (req, res) => {
+    return apiWrapper.getMedicalUpload(req, res);
+  }
+);
+
+app.delete('/api/medical/:recordId/files/:filename',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.deleteMedicalUpload(req, res);
+  }
+);
+
+
+app.get('/api/medical/:recordId/files',
+  createValidationMiddleware('', true), async (req, res) => {
+    return apiWrapper.listMedicalUploads(req, res);
+  }
+);
+
+
 
 // Get all medical data for a cow
 app.get('/api/medical/*',
@@ -742,6 +790,75 @@ app.get('/api/herds', async (req, res) => {
     return apiWrapper.getHerds(req, res);
 });
 
+// Move herd to new pasture
+app.post('/api/herds/pasture',
+  createValidationMiddleware('moveHerd'),
+  async (req, res) => {
+    return apiWrapper.moveHerd(req, res);
+  }
+);
+
+// Herd splitting/creation
+app.post('/api/herds/create',
+  createValidationMiddleware('createHerd'),
+  async (req, res) => {
+    return apiWrapper.createHerd(req, res);
+  }
+);
+
+
+// Herd note routes
+app.post('/api/herds/notes',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.addHerdNote(req, res);
+  }
+);
+
+app.get('/api/herds/notes/:noteId',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getHerdNote(req, res);
+  }
+);
+
+app.put('/api/herds/notes/:noteId',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateHerdNote(req, res);
+  }
+);
+
+app.delete('/api/herds/notes/:noteId',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.deleteHerdNote(req, res);
+  }
+);
+
+
+
+
+// Herd event management
+app.get('/api/herds/:herdName/events', 
+  createValidationMiddleware('getHerdEvents'),
+  async (req, res) => {
+    return apiWrapper.getHerdEvents(req, res);
+  }
+);
+
+app.post('/api/herds/:herdName/events',
+  createValidationMiddleware('addHerdEvent'), 
+  async (req, res) => {
+    return apiWrapper.addHerdEvent(req, res);
+  }
+);
+
+
+
+
+
+
 // Get feed status for a specific herd
 app.get('/api/herd/:herdName/feed-status', 
   createValidationMiddleware('getHerdFeedStatus'),
@@ -771,34 +888,15 @@ app.post('/api/record-feed-activity',
   }
 );
 
-
-// Move herd to new pasture
-app.post('/api/move-herd',
-  createValidationMiddleware('moveHerd'),
-  async (req, res) => {
-    return apiWrapper.moveHerd(req, res);
-  }
-);
-
 // Get all available pastures
 app.get('/api/pastures', async (req, res) => {
   return apiWrapper.getAllPastures(req, res);
 });
 
-// Herd event management
-app.get('/api/herds/:herdName/events', 
-  createValidationMiddleware('getHerdEvents'),
-  async (req, res) => {
-    return apiWrapper.getHerdEvents(req, res);
-  }
-);
 
-app.post('/api/herds/:herdName/events',
-  createValidationMiddleware('addHerdEvent'), 
-  async (req, res) => {
-    return apiWrapper.addHerdEvent(req, res);
-  }
-);
+
+
+
 
 // Pasture maintenance
 app.get('/api/pastures/:pastureName/maintenance',
@@ -815,13 +913,6 @@ app.post('/api/pastures/maintenance',
   }
 );
 
-// Herd splitting/creation
-app.post('/api/herds/create',
-  createValidationMiddleware('createHerd'),
-  async (req, res) => {
-    return apiWrapper.createHerd(req, res);
-  }
-);
 
 
 
@@ -854,7 +945,7 @@ app.get('/api/form-dropdown-data', async (req, res) => {
 });
 
 app.post('/api/form-dropdown-data',
-  createValidationMiddleware('', useGenericValidation=true),
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.addFormDropdownData(req, res);
   }
@@ -925,6 +1016,20 @@ app.get('/api/cow/*/images',
     return apiWrapper.getAllCowImages(req, res);
   }
 );
+
+// Delete a cow's image (headshot or body only)
+app.delete('/api/cow/*/images/:filename',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    req.params.tag = req.params[0];
+    return apiWrapper.deleteCowImage(req, res);
+  }
+);
+
+
+
+
+
 
 // Get all of a cows' epds
 app.get('/api/cow/*/epds',

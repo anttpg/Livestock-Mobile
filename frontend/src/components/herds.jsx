@@ -387,7 +387,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
         if (newPasture === currentPasture) return;
         setLoading(true);
         try {
-            const response = await fetch('/api/move-herd', {
+            const response = await fetch('/api/herds/pasture', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -605,7 +605,13 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                         </div>
                         <div style={{ padding: '15px', marginTop: '10px' }}>
                             <div style={{ marginBottom: '20px' }}>
-                                <HerdLog herdName={herdData.herdName} maxEvents={3} showAddEvent={true} />
+                                <HerdLog 
+                                herdName={herdData.herdName}
+                                herdID={herdData.herdID}
+                                currentUser={currentUser}
+                                maxEvents={3}
+                                showAddEvent={true}
+                                />
                             </div>
                             {/* {herdData.currentPasture && (
                                             <div style={{ marginTop: '20px' }}>

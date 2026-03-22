@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import '../screenSizing.css';
 
 const FolderTabs = ({ activeTab, onTabChange, tabs = [], alertStates = {}, alertColors = {}, selectedTabColor = 'white' }) => {
     const tabWidth = '140px';

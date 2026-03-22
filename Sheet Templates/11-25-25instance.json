@@ -1,0 +1,32 @@
+[
+    {
+        "CowTag": "34",
+        "Dam": "24/6",
+        "Sire": "IC",
+        "Sex": "H",
+        "DateOfBirth": "5/22/2016",
+        "Age": "",
+        "WeaningWeight": null,
+        "PregCheck1": null,
+        "LastWeight": null,
+        "Vaxx1": null,
+        "Vaxx2": null,
+        "Vaxx3": null,
+        "Notes": "No wart vac in Oct"
+    },
+    {
+        "CowTag": "107",
+        "Dam": "1160",
+        "Sire": "K 1352 AI",
+        "Sex": "H",
+        "DateOfBirth": "4/28/2018",
+        "Age": "",
+        "WeaningWeight": null,
+        "PregCheck1": null,
+        "LastWeight": null,
+        "Vaxx1": null,
+        "Vaxx2": null,
+        "Vaxx3": null,
+        "Notes": ""
+    }
+]

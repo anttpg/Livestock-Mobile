@@ -1,0 +1,159 @@
+{
+    "animalType": "cattle",
+    "primaryKey": "CowTag",
+    "columns": [
+        {
+            "key": "CowTag",
+            "name": "Cow Tag",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "Dam",
+            "name": "Dam Tag",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "Sire",
+            "name": "Sire Tag",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "Sex",
+            "name": "Sex",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "select"
+        },
+        {
+            "key": "DateOfBirth",
+            "name": "Date of Birth",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "date"
+        },
+        {
+            "key": "Age",
+            "name": "Age",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "text"
+        },
+        {
+            "key": "WeaningWeight",
+            "name": "Weaning Weight",
+            "storage": "snapshot",
+            "editable": false,
+            "type": "number"
+        },
+        {
+            "recordSlot": "PregCheck1",
+            "name": "Preg Check",
+            "source": "PregancyCheck",
+            "storage": "record",
+            "fields": [
+                {
+                    "key": "IsPregnant",
+                    "name": "Result",
+                    "editable": false,
+                    "type": "select"
+                }
+            ]
+        },
+        {
+            "recordSlot": "LastWeight",
+            "name": "Last Weight",
+            "source": "WeightRecords",
+            "storage": "record",
+            "fields": [
+                {
+                    "key": "CurrentWeight",
+                    "name": "Weight",
+                    "editable": false,
+                    "type": "number"
+                },
+                {
+                    "key": "CurrentWeightDate",
+                    "name": "Date",
+                    "editable": false,
+                    "type": "date"
+                }
+            ]
+        },
+        {
+            "recordSlot": "Vaxx1",
+            "name": "Vaccination 1",
+            "source": "MedicalTable",
+            "storage": "record",
+            "medicine": "Vista 5",
+            "fields": [
+                {
+                    "key": "Received",
+                    "name": "Received",
+                    "editable": true,
+                    "type": "boolean"
+                },
+                {
+                    "key": "TreatmentDate",
+                    "name": "Date",
+                    "editable": true,
+                    "type": "date"
+                }
+            ]
+        },
+        {
+            "recordSlot": "Vaxx2",
+            "name": "Vaccination 2",
+            "source": "MedicalTable",
+            "medicine": "Bovi-Shield",
+            "storage": "record",
+            "fields": [
+                {
+                    "key": "Received",
+                    "name": "Received",
+                    "editable": true,
+                    "type": "boolean"
+                },
+                {
+                    "key": "TreatmentDate",
+                    "name": "Date",
+                    "editable": true,
+                    "type": "date"
+                }
+            ]
+        },
+        {
+            "recordSlot": "Vaxx3",
+            "name": "X Wart Boost",
+            "source": "MedicalTable",
+            "medicine": "X Wart Boost",
+            "storage": "record",
+            "fields": [
+                {
+                    "key": "Received",
+                    "name": "Received",
+                    "editable": true,
+                    "type": "boolean"
+                },
+                {
+                    "key": "TreatmentDate",
+                    "name": "Date",
+                    "editable": true,
+                    "type": "date"
+                }
+            ]
+        },
+        {
+            "key": "Notes",
+            "name": "Notes",
+            "storage": "inline",
+            "editable": true,
+            "type": "text"
+        }
+    ]
+}

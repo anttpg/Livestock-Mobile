@@ -246,7 +246,6 @@ h1, h3 {
 }
 
 select, input[type="text"] {
-    margin-left: 10px;
     padding: 2px 5px;
     font-size: 14px;
     border: 1px solid #ccc;

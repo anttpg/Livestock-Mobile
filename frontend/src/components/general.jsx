@@ -4,7 +4,7 @@ import SearchBar from './searchBar';
 import Notes from './notes';
 import Minimap from './minimap';
 import ColorTable from './colorTable';
-import PhotoViewer from './photoViewer';
+import AnimalPhotoViewer from './animalPhotoViewer';
 import HerdSplitter from './herdSplitter';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
@@ -217,7 +217,7 @@ function General({ cowTag, cowData, onRefresh }) {
                     aspectRatio: '1 / 1',
                     width: '100%'
                 }}>
-                    <PhotoViewer
+                    <AnimalPhotoViewer
                         cowTag={cowTag}
                         imageType="headshot"
                         style={{
@@ -227,7 +227,7 @@ function General({ cowTag, cowData, onRefresh }) {
                             width: '100%'
                         }}
                     />
-                    <PhotoViewer
+                    <AnimalPhotoViewer
                         cowTag={cowTag}
                         imageType="body"
                         style={{

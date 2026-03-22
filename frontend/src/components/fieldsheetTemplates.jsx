@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import Sheet from './sheet';
+import SheetTemplate from './sheetTemplate';
 import SheetImporter from './sheetImporter';
+import SheetTemplateEditor from './sheetTemplateEditor';
 import Popup from './popup';
+import PopupConfirm from './popupConfirm';
 import '../screenSizing.css';
 
 function FieldsheetTemplates({ filterSheets = null }) {
@@ -186,12 +188,12 @@ function FieldsheetTemplates({ filterSheets = null }) {
   }
 
   return (
-    <div style={{ padding: '0px' }}>
+    <div className="multibubble-page" style={{ padding: '0px' }}>
       {/* Split div 50/50 */}
       <div className="multibubble-row" style={{ minHeight: '200px' }}>
         {/* Left side - Sheet list */}
         <div className="bubble-container" style={{flex: 1}}>
-          <h3 style={{ margin: '0 0 15px 0' }}>Available Sheets</h3>
+          <h3 style={{ margin: '0 0 15px 0' }}>Existing Templates</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {sheets.map((sheet) => (
               <div
@@ -219,6 +221,13 @@ function FieldsheetTemplates({ filterSheets = null }) {
                 {sheet.name}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Right side - Actions */}
+        <div className="bubble-container" style={{flex: 1}}>
+          <h3 style={{ margin: '0 0 15px 0' }}>Quick Actions</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div
               onClick={handleCreateNew}
               style={{
@@ -233,15 +242,10 @@ function FieldsheetTemplates({ filterSheets = null }) {
                 transition: 'all 0.2s ease'
               }}
             >
-              + Create New Sheet
+              + Create New Template
             </div>
-          </div>
-        </div>
 
-        {/* Right side - Actions */}
-        <div className="bubble-container" style={{flex: 1}}>
-          <h3 style={{ margin: '0 0 15px 0' }}>Actions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
             <button
               onClick={handleImport}
               className="button"
@@ -293,74 +297,33 @@ function FieldsheetTemplates({ filterSheets = null }) {
 
       {/* Display/Edit block */}
       <div className="bubble-container" style={{flex: 1, overflow: 'hidden', padding: '0px'}}>
+        <h3 style={{ margin: '15px 0px 0px 15px' }}>Template Example</h3>
         {selectedSheet ? (
-          <Sheet 
-            key={selectedSheet.id} 
-            sheetId={selectedSheet.id} 
-            sheetName={selectedSheet.name}
-            locked={selectedSheet.locked}
-          />
+          <SheetTemplate key={selectedSheet.id} sheetId={selectedSheet.id} />
         ) : (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100%',
-            color: '#666',
-            fontSize: '18px'
-          }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#666', fontSize: '18px' }}>
             Select a sheet to view
           </div>
         )}
       </div>
 
       {/* Delete Confirmation Popup */}
-      <Popup
+      <PopupConfirm
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDelete}
         title="Confirm Deletion"
-        width="400px"
-        height="200px"
-      >
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ marginBottom: '20px' }}>
-            Are you sure you want to delete "{selectedSheet?.name}"?
-          </p>
-          <p style={{ marginBottom: '30px', color: '#dc3545', fontWeight: 'bold' }}>
-            This action cannot be undone.
-          </p>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#6c757d',
-                color: 'white'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirmDelete}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#dc3545',
-                color: 'white'
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </Popup>
+        message={`Are you sure you want to delete "${selectedSheet?.name}"?<br/><br/><span style="color:#dc3545;font-weight:bold">This action cannot be undone.</span>`}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
 
       {/* Sheet Importer Popup */}
       <Popup
         isOpen={showImporter}
         onClose={handleImporterClose}
         title="Import Sheet Data"
+        contentStyle={{paddingBottom: '50px'}}
       >
         <SheetImporter 
           onClose={handleImporterClose}
@@ -373,13 +336,13 @@ function FieldsheetTemplates({ filterSheets = null }) {
 
       {/* Sheet Editor Popup */}
       {showEditor && (
-        <Sheet 
+        <SheetTemplateEditor
+          isOpen={true}
           sheetId={editingSheet?.id || null}
           sheetName={editingSheet?.name || ''}
           locked={editingSheet?.locked || false}
-          isEditor={true}
-          onEditorClose={handleEditorClose}
-        />
+          onClose={handleEditorClose}
+      />
       )}
     </div>
   );

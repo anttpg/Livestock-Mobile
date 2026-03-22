@@ -49,7 +49,6 @@ function popupConfirm({
       onClose={onClose}
       title={title}
       width="400px"
-      height="200px"
     >
       <div style={{ textAlign: 'center' }}>
         <div style={{ marginBottom: '20px' }}>

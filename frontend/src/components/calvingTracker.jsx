@@ -4,7 +4,6 @@ import Form from './forms';
 import AddAnimal from './addAnimal';
 import Popup from './popup';
 import AnimalFolder from './animalFolder';
-import '../screenSizing.css';
 
 function CalvingTracker({ breedingPlanId, breedingYear }) {
     const [showAddAnimal, setShowAddAnimal] = useState(false);

@@ -3,12 +3,13 @@ import Timeline from './timeline';
 
 function HerdLog({ 
   herdName,
+  herdID,
   maxEvents = 5,
-  showAddEvent = true 
+  showAddEvent = true,
+  currentUser = 'Unknown'
 }) {
   const [herdEvents, setHerdEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAllEvents, setShowAllEvents] = useState(false);
 
   useEffect(() => {
     if (herdName) {
@@ -25,7 +26,25 @@ function HerdLog({
 
       if (response.ok) {
         const data = await response.json();
-        setHerdEvents(data.events || []);
+
+        const movements = (data.movement || []).map(item => ({
+          ...item,
+          eventType: 'movement',
+          date: item.dateRecorded
+        }));
+
+        const notes = (data.herdNotes || []).map(item => ({
+          ...item,
+          eventType: 'note',
+          date: item.DateOfEntry,
+          description: item.Username ? `Note by ${item.Username}` : 'Note'
+        }));
+
+        const combined = [...movements, ...notes].sort(
+          (a, b) => new Date(b.date) - new Date(a.date)
+        );
+
+        setHerdEvents(combined);
       } else {
         console.error('Failed to fetch herd events');
         setHerdEvents([]);
@@ -38,28 +57,9 @@ function HerdLog({
     }
   };
 
-  const handleNewEvent = () => {
-    // TODO: Open popup or modal for adding new herd event
-    console.log('Add new event for herd:', herdName);
-    // This would typically open a form popup to add various event types:
-    // - Herd movement
-    // - Animal additions/removals  
-    // - General herd notes
-    // - Health events
-  };
-
-  const handleSeeAllEvents = () => {
-    setShowAllEvents(true);
-    // TODO: Open popup showing all events in a table or expanded timeline
-  };
-
   if (loading) {
     return (
-      <div style={{ 
-        padding: '20px', 
-        textAlign: 'center', 
-        color: '#666' 
-      }}>
+      <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
         Loading herd events...
       </div>
     );
@@ -67,36 +67,15 @@ function HerdLog({
 
   if (!herdName) {
     return (
-      <div style={{ 
-        padding: '20px', 
-        textAlign: 'center', 
-        fontStyle: 'italic',
-        color: '#666' 
-      }}>
+      <div style={{ padding: '20px', textAlign: 'center', fontStyle: 'italic', color: '#666' }}>
         Select a herd to view its timeline
       </div>
     );
   }
 
-  // Transform herd events to timeline format
-  const timelineEvents = herdEvents.map(event => ({
-    date: event.dateRecorded || event.dateJoined || event.eventDate,
-    name: event.description || event.eventType || 'Herd Event',
-    details: event.details || event.targetOfMaintenance,
-    notes: event.notes || event.actionPerformed,
-    username: event.username,
-    // Add category hints for timeline styling
-    description: event.eventType === 'movement' ? 'movement' : 
-                event.eventType === 'urgent' ? 'important' : 'regular'
-  }));
-
   return (
     <div style={{ width: '100%' }}>
-      <div className="timeline-label" style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-      }}>
+      <div className="timeline-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3>Timeline: {herdName}</h3>
         {herdEvents.length > 0 && (
           <span style={{ color: '#666', fontSize: '14px' }}>
@@ -106,12 +85,13 @@ function HerdLog({
       </div>
 
       <Timeline
-        data={timelineEvents}
+        data={herdEvents}
         maxEvents={maxEvents}
-        onSeeAll={herdEvents.length > maxEvents ? handleSeeAllEvents : null}
-        onNewEvent={showAddEvent ? handleNewEvent : null}
+        onSeeAll={herdEvents.length > maxEvents ? () => {} : null}
         title={`${herdName} Events`}
-
+        herdID={herdID}
+        username={currentUser}
+        onNotesChanged={fetchHerdEvents}
       />
     </div>
   );

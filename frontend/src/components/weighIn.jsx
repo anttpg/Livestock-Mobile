@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import Form from './forms';
-import '../screenSizing.css';
 
 function WeighIn({ onClose }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);

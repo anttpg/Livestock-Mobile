@@ -305,7 +305,7 @@ const columns = columnsData.columns || columnsData;
       }
         
       const columnsData = JSON.parse(sheetDef.Columns);
-const columns = columnsData.columns || columnsData; 
+      const columns = columnsData.columns || columnsData; 
       const editableColumns = columns.filter(col => col.editable);
       const expectedColumns = ['CowTag', ...editableColumns.map(col => col.name)];
 

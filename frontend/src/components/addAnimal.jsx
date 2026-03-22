@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Form from './forms';
 import TagGenerator from './tagGenerator';
-import '../screenSizing.css';
 
 const today = new Date().toISOString().split('T')[0];
 
 function AddAnimal({
     motherTag = null,
     fatherTag = null,
+    initialTag = null,   // Pre-fills AND locks the cowTag field
     showTwinsOption = false,
     createCalvingRecord = false,
     breedingYear = null,
@@ -15,7 +15,7 @@ function AddAnimal({
     onSuccess
 }) {
     const [formData, setFormData] = useState({
-        cowTag: '',
+        cowTag: initialTag || '',
         dateOfBirth: today,
         description: '',
         dam: motherTag || '',
@@ -253,12 +253,14 @@ function AddAnimal({
                                 type="text"
                                 value={formData.cowTag}
                                 onChange={(e) => handleInputChange('cowTag', e.target.value)}
+                                disabled={!!initialTag}
                                 style={{
                                     flex: 1,
                                     padding: '8px',
                                     border: `1px solid ${tagValidationError ? '#dc3545' : '#ccc'}`,
                                     borderRadius: '3px',
-                                    backgroundColor: tagValidationError ? '#fff5f5' : 'white'
+                                    backgroundColor: initialTag ? '#f5f5f5' : tagValidationError ? '#fff5f5' : 'white',
+                                    cursor: initialTag ? 'not-allowed' : 'text'
                                 }}
                                 placeholder="Enter unique tag"
                             />
@@ -327,7 +329,7 @@ function AddAnimal({
 
                     <div style={{ marginBottom: '15px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                            Dam (Mother)
+                            Dam
                         </label>
                         <input
                             type="text"
@@ -347,7 +349,7 @@ function AddAnimal({
 
                     <div style={{ marginBottom: '15px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                            Sire (Father)
+                            Sire
                         </label>
                         <input
                             type="text"

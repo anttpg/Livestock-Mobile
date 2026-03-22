@@ -15,6 +15,7 @@ function AutoCombobox({
   allowCustomValue = false, // If true, allows non-matching values
   required = false, // If true, reverts to last valid value when invalid selection
   renderOptionRight = null,
+  clearOnOpen = true, // If false, keeps current value visible when dropdown opens
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -73,7 +74,7 @@ function AutoCombobox({
   const handleInputClick = () => {
     if (!disabled) {
       setIsOpen(true);
-      setSearchFilter('');
+      setSearchFilter(clearOnOpen ? '' : getDisplayValue());
     }
   };
 
@@ -124,7 +125,7 @@ function AutoCombobox({
       } else if (filtered.length === 0 && !allowCustomValue && required) {
         // No matches and not allowing custom values - revert
         setInputValue(lastValidValue);
-        setSearchFilter('');
+        setSearchFilter(clearOnOpen ? '' : getDisplayValue());
       }
     }
   };

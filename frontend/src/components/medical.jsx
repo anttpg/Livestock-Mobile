@@ -4,6 +4,7 @@ import ColorTable from './colorTable';
 import Popup from './popup';
 import IssueSubform from './issueSubform';
 import MedicationViewer from './MedicationViewer';
+import SelectMedicine from './selectMedicine';
 
 // Responsive breakpoint constants
 const BREAKPOINT_HIDE_USER = 800;
@@ -18,6 +19,14 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
   const [medicines, setMedicines] = useState([]);
   const [medicinesLoading, setMedicinesLoading] = useState(false);
   const [showMedicationViewer, setShowMedicationViewer] = useState(false);
+  const [showNewTreatmentPopup, setShowNewTreatmentPopup] = useState(false);
+  const [quickTreatment, setQuickTreatment] = useState({
+    medicineID: '',
+    date: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
+  const [quickTreatmentSaving, setQuickTreatmentSaving] = useState(false);
+  const [quickTreatmentError, setQuickTreatmentError] = useState(null);
 
   // Handle screen resize for responsive behavior
   useEffect(() => {
@@ -318,6 +327,76 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
     setShowMedicationViewer(false);
   };
 
+  const toLocalInput = (utcStr) => {
+    if (!utcStr) return '';
+    const d = new Date(utcStr);
+    return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
+  const toUTC = (localDatetimeStr) => {
+    if (!localDatetimeStr) return null;
+    return new Date(localDatetimeStr).toISOString();
+  };
+
+  const nowLocal = () => toLocalInput(new Date().toISOString());
+
+  const handleCreateNewTreatment = () => {
+    setQuickTreatment({
+      medicineID: '',
+      date: nowLocal(),
+      notes: ''
+    });
+    setQuickTreatmentError(null);
+    setShowNewTreatmentPopup(true);
+  };
+
+  const handleCloseNewTreatment = () => {
+    setShowNewTreatmentPopup(false);
+    setQuickTreatmentError(null);
+  };
+
+  const handleSaveQuickTreatment = async () => {
+    if (!quickTreatment.medicineID) {
+      setQuickTreatmentError('Please select a medicine');
+      return;
+    }
+    if (!quickTreatment.date) {
+      setQuickTreatmentError('Please enter the date applied');
+      return;
+    }
+
+    setQuickTreatmentSaving(true);
+    setQuickTreatmentError(null);
+
+    try {
+      const response = await fetch('/api/medical/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cowTag,
+          recordType: 'treatment',
+          treatmentMedicineID: quickTreatment.medicineID,
+          treatmentDate: toUTC(quickTreatment.date),
+          treatmentResponse: quickTreatment.notes?.trim() || null,
+          isImmunization: false
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Failed to save treatment');
+      }
+
+      handleCloseNewTreatment();
+      if (onRefresh) await onRefresh();
+    } catch (error) {
+      console.error('Error saving quick treatment:', error);
+      setQuickTreatmentError(error.message || 'Failed to save treatment');
+    } finally {
+      setQuickTreatmentSaving(false);
+    }
+  };
+
   // Responsive Issues & Injuries columns - filter based on screen width
   const getIssuesColumns = () => {
     const baseColumns = [
@@ -421,7 +500,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
   const treatmentColumns = [
     {
       key: 'Medicine',
-      header: 'Medicine, Method',
+      header: 'Medicine',
       width: 'auto',
       customRender: (value, row, rowIndex, styling) => (
         <div style={{
@@ -454,9 +533,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           {!row.showButton && row.hasMultiple && (
             <span style={{ marginRight: '16px' }}></span>
           )}
-          <span>
-            {value && `${value}`}{row.Dose && (!value ? row.Dose : `, ${row.Dose}`)}
-          </span>
+          <span>{value}</span>
           {row.IsImmunization === 1 && (
             <span style={{
               marginLeft: '8px',
@@ -514,7 +591,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
               fontSize: '14px'
             }}
           >
-            + New Issue
+            + Add New
           </button>
         </div>
         
@@ -567,7 +644,25 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
 
       {/* Section 2: All Treatments (Immunizations & Maintenance) */}
       <div className="bubble-container">
-        <h3 style={{ margin: '0 0 15px 0' }}>Treatments & Immunizations</h3>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: '0 0 15px 0' }}>Treatments & Immunizations</h3>
+          <button
+            onClick={handleCreateNewTreatment}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            + Add New
+          </button>
+        </div>
+
         <ColorTable
           data={prepareTreatmentData()}
           columns={treatmentColumns}
@@ -637,10 +732,6 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           onSave={saveMedicalRecord}
           onUpdate={updateMedicalRecord}
           onResolve={resolveIssue}
-          medicines={medicines}
-          medicinesLoading={medicinesLoading}
-          onAddMedicine={addNewMedicine}
-          onOpenMedicationViewer={handleOpenMedicationViewer}
         />
       </Popup>
 
@@ -658,6 +749,114 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           onUpdateMedicine={updateMedicine}
           medicinesLoading={medicinesLoading}
         />
+      </Popup>
+
+      {/* Quick Treatment Popup */}
+      <Popup
+        isOpen={showNewTreatmentPopup}
+        onClose={handleCloseNewTreatment}
+        title="Add Treatment"
+        width="480px"
+      >
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+          {quickTreatmentError && (
+            <div style={{
+              padding: '10px 14px',
+              backgroundColor: '#f8d7da',
+              border: '1px solid #f5c6cb',
+              borderRadius: '4px',
+              color: '#721c24',
+              fontSize: '14px'
+            }}>
+              {quickTreatmentError}
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px' }}>
+              Medicine: <span style={{ color: 'red' }}>*</span>
+            </label>
+            <SelectMedicine
+              value={quickTreatment.medicineID}
+              onChange={(id) => setQuickTreatment(prev => ({ ...prev, medicineID: id }))}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px' }}>
+              Date Applied: <span style={{ color: 'red' }}>*</span>
+            </label>
+            <input
+              type="datetime-local"
+              value={quickTreatment.date}
+              onChange={(e) => setQuickTreatment(prev => ({ ...prev, date: e.target.value }))}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '14px',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px' }}>
+              Notes:
+            </label>
+            <textarea
+              value={quickTreatment.notes}
+              onChange={(e) => setQuickTreatment(prev => ({ ...prev, notes: e.target.value }))}
+              placeholder="Optional notes about this treatment"
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '14px',
+                boxSizing: 'border-box',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px' }}>
+            <button
+              onClick={handleCloseNewTreatment}
+              disabled={quickTreatmentSaving}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#6c757d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveQuickTreatment}
+              disabled={quickTreatmentSaving}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: quickTreatmentSaving ? '#6c757d' : '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: quickTreatmentSaving ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              {quickTreatmentSaving ? 'Saving...' : 'Save Treatment'}
+            </button>
+          </div>
+        </div>
       </Popup>
     </div>
   );

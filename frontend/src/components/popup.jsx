@@ -12,7 +12,7 @@ function Popup({
     maxWidth = '100vw',
     maxHeight = '95vh',
     fullscreen = false,
-    headerStyle = {},   // <--
+    headerStyle = {},
     contentStyle = {}
 }) {
     const popupRef = useRef(null);
@@ -27,7 +27,7 @@ function Popup({
 
     useEffect(() => {
         if (isOpen) {
-            console.log('Focused element when popup opens:', document.activeElement);
+            //console.log('Focused element when popup opens:', document.activeElement);
         }
     }, [isOpen]);
 
@@ -156,9 +156,9 @@ function Popup({
 
     // Rest of popup styling logic
     const headerHeight = title ? 50 : 35;
-    const contentPadding = 30;
-    const backdropPadding = 40;
-    const bufferSpace = 120;
+    const contentPadding = 15;
+    const backdropPadding = 0;
+    const bufferSpace = 100;
 
     const maxContentHeight = `calc(${maxHeight} - ${headerHeight + contentPadding + backdropPadding + bufferSpace}px)`;
     const backdropCount = document.querySelectorAll('[data-popup-backdrop]').length;
@@ -199,6 +199,7 @@ function Popup({
     const contentMaxHeight = fullscreen ?
         `${viewportHeight - headerHeight - contentPadding}px` : // Use dynamic height
         `${maxHeightPx - headerHeight - contentPadding - backdropPadding - bufferSpace}px`;
+    
 
     const popupRoot = document.getElementById('popup-root');
     if (!popupRoot) {
@@ -292,9 +293,12 @@ function Popup({
                     </div>
 
                     <div style={{
-                        padding: '15px',
+                        paddingTop: fullscreen ? '0px' : '15px',
+                        paddingLeft: fullscreen ? '0px' : '15px',
+                        paddingRight: fullscreen ? '0px' : '15px',
+                        paddingBottom: fullscreen ? '0px' : '15px',
                         overflow: 'auto',
-                        flex: 1,
+                        flex: '1 1 auto',
                         maxHeight: contentMaxHeight,
                         touchAction: 'pan-y', // Allow only vertical scrolling
                         WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS

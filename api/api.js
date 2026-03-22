@@ -143,9 +143,6 @@ class APIWrapper {
                 dbOperations.getOffspring(cowTag)
             ]);
 
-            // Get images
-            const images = await localFileOps.getCowImage({ cowTag });
-
             // Get minimap if cow has a pasture
             let minimap = null;
             if (cowData?.PastureName) {
@@ -168,7 +165,6 @@ class APIWrapper {
                 currentWeight: currentWeight,
                 notes: notes,
                 calves: calves,
-                images: images,
                 minimap: minimap,
                 availableHerds: allHerds.herds.map(h => h.herdName)
             };
@@ -463,7 +459,7 @@ class APIWrapper {
             issueObservationDate: req.body.issueObservationDate,
             issueSerious: req.body.issueSerious,
 
-            treatmentMedicine: req.body.treatmentMedicine,
+            treatmentMedicineID: req.body.treatmentMedicineID,
             treatmentDate: req.body.treatmentDate,
             treatmentResponse: req.body.treatmentResponse,
             treatmentMethod: req.body.treatmentMethod,
@@ -559,8 +555,8 @@ class APIWrapper {
     /**
      * Submit pregnancy check results
      */
-    async submitPregancyCheck(req, res) {
-        return this.executeDBOperation(req, res, 'submitPregancyCheck', (req) => ({
+    async createPregancyCheck(req, res) {
+        return this.executeDBOperation(req, res, 'createPregancyCheck', (req) => ({
             herdName: req.body.herdName,
             date: req.body.date,
             records: req.body.records
@@ -579,8 +575,8 @@ class APIWrapper {
     /**
      * Add calving record
      */
-    async addCalvingRecord(req, res) {
-        return this.executeDBOperation(req, res, 'addCalvingRecord', (req) => ({
+    async createCalvingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createCalvingRecord', (req) => ({
             breedingRecordId: req.body.breedingRecordId,
             calfTag: req.body.calfTag,
             damTag: req.body.damTag,
@@ -623,8 +619,8 @@ class APIWrapper {
     /**
      * Record batch weights
      */
-    async recordBatchWeights(req, res) {
-        return this.executeDBOperation(req, res, 'recordBatchWeights', (req) => ({
+    async createWeightRecordBatch(req, res) {
+        return this.executeDBOperation(req, res, 'createWeightRecordBatch', (req) => ({
             date: req.body.date,
             records: req.body.records
         }));
@@ -719,7 +715,7 @@ class APIWrapper {
                     
                     if (breedingRecordId) {
                         // Create calving record
-                        await dbOperations.addCalvingRecord({
+                        await dbOperations.createCalvingRecord({
                             breedingRecordId: breedingRecordId,
                             calfTag: cowData.cowTag,
                             damTag: cowData.dam,
@@ -763,322 +759,6 @@ class APIWrapper {
                 error: 'Internal server error',
                 operation: 'addCow'
             });
-        }
-    }
-
-
-
-    /**
-     * File operations - simplified
-     */
-    async saveCowImage(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'saveCowImage', (req) => ({
-            cowTag: req.params.tag,
-            imageType: req.body.imageType,
-            fileBuffer: req.file.buffer,
-            originalFilename: req.file.originalname
-        }));
-    }
-
-    async uploadMap(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'uploadMap', (req) => ({
-            mapType: req.body.mapType,
-            fileBuffer: req.file.buffer,
-            filename: req.file.originalname,
-            mimeType: req.file.mimetype
-        }));
-    }
-
-    async uploadMinimap(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'uploadMinimap', (req) => ({
-            fieldName: req.params.fieldName,
-            fileBuffer: req.file.buffer,
-            filename: req.file.originalname,
-            mimeType: req.file.mimetype
-        }));
-    }
-
-
-
-
-    async getCowImage(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const result = await localFileOps.getActualImageFile({
-                cowTag: req.params.tag,
-                imageType: req.params.imageType
-            });
-
-            if (result.success) {
-                res.set({
-                    'Content-Type': result.mimeType,
-                    'Content-Length': result.size,
-                    'Content-Disposition': `inline; filename="${result.filename}"`
-                });
-                res.send(result.fileBuffer);
-            } else {
-                res.status(404).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Get cow image error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async getNthCowImage(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const result = await localFileOps.getActualImageFile({
-                cowTag: req.params.tag,
-                imageType: req.params.imageType,
-                n: parseInt(req.params.n) || 1
-            });
-
-            if (result.success) {
-                res.set({
-                    'Content-Type': result.mimeType,
-                    'Content-Length': result.size,
-                    'Content-Disposition': `inline; filename="${result.filename}"`
-                });
-                res.send(result.fileBuffer);
-            } else {
-                res.status(404).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Get nth cow image error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async getAllCowImages(req, res) {
-        return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
-            cowTag: req.params.tag
-        }));
-    }
-
-    async getCowImageCount(req, res) {
-        try {
-
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const result = await localFileOps.numCowImages({
-                cowTag: req.params.tag
-            });
-
-            return res.status(200).json(result);
-        } catch (error) {
-            console.error('Get cow image count error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async uploadMedicalImage(req, res) {
-        try {
-            const recordId = parseInt(req.params.recordId);
-            
-            if (!req.file) {
-                return res.status(400).json({ error: 'No image file provided' });
-            }
-
-            const result = await localFileOps.saveMedicalImage({
-                recordId: recordId,
-                fileBuffer: req.file.buffer,
-                originalFilename: req.file.originalname
-            });
-
-            if (result.success) {
-                res.json({
-                    success: true,
-                    message: result.message,
-                    filename: result.filename
-                });
-            } else {
-                res.status(500).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Error uploading medical image:', error);
-            res.status(500).json({ error: 'Failed to upload medical image' });
-        }
-    }
-
-    async getMedicalImage(req, res) {
-        try {
-            const recordId = parseInt(req.params.recordId);
-            const imageType = req.params.imageType; // 'issue' for now
-            const n = parseInt(req.params.n) || 1;
-
-            const result = await localFileOps.getMedicalImage({
-                recordId: recordId,
-                imageType: imageType,
-                n: n
-            });
-
-            if (result.success) {
-                res.set({
-                    'Content-Type': result.mimeType,
-                    'Content-Length': result.size,
-                    'Last-Modified': result.modified.toUTCString(),
-                    'Cache-Control': 'public, max-age=31536000'
-                });
-                res.send(result.fileBuffer);
-            } else {
-                res.status(404).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Error getting medical image:', error);
-            res.status(500).json({ error: 'Failed to get medical image' });
-        }
-    }
-
-    async getMedicalImageCount(req, res) {
-        try {
-            const recordId = parseInt(req.params.recordId);
-
-            const result = await localFileOps.getMedicalImageCount({
-                recordId: recordId
-            });
-
-            if (result.success) {
-                res.json({
-                    success: true,
-                    issues: result.issues || 0,
-                    total: result.total || 0
-                });
-            } else {
-                res.status(500).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Error getting medical image count:', error);
-            res.status(500).json({ error: 'Failed to get image count' });
-        }
-    }
-
-
-    async getMap(req, res) {
-        try {
-            // Maps are public resources, but we might want pasture info
-            const pastureName = req.query.pasture;
-            const result = await localFileOps.getMap({ pastureName });
-
-            return res.status(200).json(result);
-        } catch (error) {
-            console.error('Get map error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async getMapImage(req, res) {
-        try {
-            const { image } = req.query;
-            const allowedTypes = ['map', 'MapCombined'];
-
-            if (!allowedTypes.includes(image)) {
-                return res.status(400).json({ error: 'Invalid map type' });
-            }
-
-            // Pass just the image type to local function
-            const result = await localFileOps.getMapImage(image);
-
-            if (result.success) {
-                res.set({
-                    'Content-Type': result.mimeType,
-                    'Content-Length': result.size,
-                    'Content-Disposition': `inline; filename="${result.filename}"`
-                });
-                res.send(result.fileBuffer);
-            } else {
-                res.status(404).json({ error: result.message });
-            }
-        } catch (error) {
-            console.error('Map image error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async getMinimap(req, res) {
-        try {
-
-
-
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const result = await localFileOps.getMinimap({
-                fieldName: decodeURIComponent(req.params.fieldName)
-            });
-
-            if (result.success) {
-                res.set({
-                    'Content-Type': result.mimeType,
-                    'Content-Length': result.size,
-                    'Content-Disposition': `inline; filename="${result.filename}"`
-                });
-                res.send(result.fileBuffer);
-            } else {
-                res.status(404).json({
-                    error: result.message,
-                    availableFields: result.availableFields
-                });
-            }
-        } catch (error) {
-            console.error('Get minimap error:', error);
-            res.status(500).json({ error: error.message });
-        }
-    }
-
-    async getAvailableMinimaps(req, res) {
-        try {
-            // Public resource, no access control needed
-            const availableFields = await localFileOps.getAvailableMinimaps();
-            res.json({
-                success: true,
-                fields: availableFields,
-                count: availableFields.length
-            });
-        } catch (error) {
-            console.error('Available minimaps error:', error);
-            res.status(500).json({ error: error.message });
         }
     }
 
@@ -1144,14 +824,6 @@ class APIWrapper {
         }));
     }
 
-    
-
-    /**
-     * Get all available pastures
-     */
-    async getAllPastures(req, res) {
-        return this.executeDBOperation(req, res, 'getAllPastures', (req) => ({}));
-    }
 
     async getHerdEvents(req, res) {
         return this.executeDBOperation(req, res, 'getHerdEvents', (req) => ({
@@ -1167,6 +839,80 @@ class APIWrapper {
             notes: req.body.notes,
             username: req.body.username || req.session?.user?.username || 'Unknown'
         }));
+    }
+
+    async getHerdNote(req, res) {
+        return this.executeDBOperation(req, res, 'getHerdNote', (req) => ({
+            noteID: parseInt(req.params.noteId)
+        }));
+    }
+
+    async addHerdNote(req, res) {
+        return this.executeDBOperation(req, res, 'addHerdNote', (req) => ({
+            herdID: req.body.herdID,
+            username: req.body.username || req.session?.user?.username || 'Unknown',
+            note: req.body.note
+        }));
+    }
+
+    async updateHerdNote(req, res) {
+        return this.executeDBOperation(req, res, 'updateHerdNote', (req) => ({
+            noteID: parseInt(req.params.noteId),
+            note: req.body.note,
+            archive: req.body.archive
+        }));
+    }
+
+    async deleteHerdNote(req, res) {
+        return this.executeDBOperation(req, res, 'deleteHerdNote', (req) => ({
+            noteID: parseInt(req.params.noteId)
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+    /**
+     * Get all available pastures
+     */
+    async getAllPastures(req, res) {
+        return this.executeDBOperation(req, res, 'getAllPastures', (req) => ({}));
     }
 
     async getPastureMaintenanceEvents(req, res) {
@@ -1233,6 +979,7 @@ class APIWrapper {
     }
 
 
+
     /**
      * SHEET MANAGEMENT API FUNCTIONS
      */
@@ -1240,160 +987,445 @@ class APIWrapper {
     async getAllSheets(req, res) {
         return this.executeDBOperation(req, res, 'getAllSheetTemplates', (req) => ({}));
     }
-    
-    /**
-     * handle parentSheetId and locked status
-     */
+
+    async getSheet(req, res) {
+        return this.executeDBOperation(req, res, 'getSheetTemplate', (req) => ({
+            sheetId: parseInt(req.params.sheetId)
+        }));
+    }
+
     async createSheet(req, res) {
         return this.executeDBOperation(req, res, 'createSheetTemplate', (req) => ({
-            name: req.body.name,
-            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] },
-            createdBy: req.session?.user?.username || 'Unknown',
-            locked: req.body.locked || false,
+            name:          req.body.name,
+            columns:       req.body.columns,
+            createdBy:     req.session?.user?.username || 'Unknown',
+            locked:        req.body.locked || false,
             parentSheetId: req.body.parentSheetId || null
         }));
     }
 
-    async getSheetStructure(req, res) {
-        try {
-            const sheetDef = await dbOperations.getSheetTemplate({ sheetId: req.params.sheetId });
-            const columnConfig = JSON.parse(sheetDef.columns);
-
-            // Separate columns based on whether they're fillable
-            const dataColumns = columnConfig.columns.filter(col => !col.dataPath.startsWith('Fillable/'));
-            const fillableColumns = columnConfig.columns.filter(col => col.dataPath.startsWith('Fillable/'));
-
-            return res.status(200).json({
-                name: sheetDef.name,
-                dataColumns: dataColumns,
-                fillableColumns: fillableColumns
-            });
-        } catch (error) {
-            console.error('Error getting sheet structure:', error);
-            return res.status(500).json({ error: error.message });
-        }
-    }
-
     async updateSheet(req, res) {
         return this.executeDBOperation(req, res, 'updateSheetTemplate', (req) => ({
-            sheetId: req.params.sheetId,
-            name: req.body.name,
-            columns: { columns: [...req.body.dataColumns, ...req.body.fillableColumns] }
+            sheetId: parseInt(req.params.sheetId),
+            name:    req.body.name,
+            columns: req.body.columns
         }));
     }
 
-    async deleteSheet(req, res) {
-        return this.executeDBOperation(req, res, 'deleteSheetTemplate', (req) => req.params.sheetId);
+    async deleteSheetTemplate(req, res) {
+        return this.executeDBOperation(req, res, 'deleteSheetTemplate', (req) => 
+            parseInt(req.params.sheetId)
+        );
     }
 
     async getAvailableColumns(req, res) {
-        return this.executeDBOperation(req, res, 'getAvailableColumns', (req) => ({}));
+        return this.executeDBOperation(req, res, 'getAvailableColumns', () => ({}));
     }
 
+    async getTemplatePreviewColumns(req, res) {
+        return this.executeDBOperation(req, res, 'getTemplatePreviewColumns', (req) => ({
+            templateId: parseInt(req.params.templateId)
+        }));
+    }
 
+    async previewSheetColumns(req, res) {
+        return this.executeDBOperation(req, res, 'previewSheetColumns', (req) => ({
+            templateId: parseInt(req.params.templateId),
+        }));
+    }
+
+    // NOT YET IMPLEMENTED - getSheetStructure used old dataPath filtering, no longer valid
+    async getSheetStructure(req, res) {
+        return res.status(501).json({ error: 'getSheetStructure not yet implemented' });
+    }
 
 
     /**
      * SHEET INSTANCE API FUNCTIONS
      */
 
-    async getAllInstances(req, res) {
+    async getAllSheetInstances(req, res) {
         return this.executeDBOperation(req, res, 'getAllSheetInstances', (req) => ({}));
     }
 
-    async getSheetInstances(req, res) {
-        return this.executeDBOperation(req, res, 'getSheetInstances', (req) => 
-            req.params.sheetId
-        );
+    async getTemplateInstances(req, res) {
+        return this.executeDBOperation(req, res, 'getAllSheetInstances', (req) => ({
+            templateId: parseInt(req.params.templateId)
+        }));
+    }
+
+    async getSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'getSheetInstance', (req) => ({
+            instanceId: parseInt(req.params.instanceId)
+        }));
     }
 
     async loadSheetInstance(req, res) {
         return this.executeDBOperation(req, res, 'loadSheetInstance', (req) => ({
-            instanceId: req.params.instanceId
+            instanceId: parseInt(req.params.instanceId)
         }));
     }
 
     async createSheetInstance(req, res) {
         return this.executeDBOperation(req, res, 'createSheetInstance', (req) => ({
-            sheetId: req.params.sheetId,
-            herdName: req.body.herdName,
-            breedingYear: req.body.breedingYear,
-            createdBy: req.session?.user?.username || 'Unknown'
+            templateId:   parseInt(req.params.templateId),
+            herdName:     req.body.herdName,
+            breedingYear: req.body.breedingYear || null,
+            createdBy:    req.session?.user?.username || 'Unknown',
+            instanceName: req.body.instanceName || '',
+            defaults:     req.body.defaults || {},
+        }));
+    }
+
+    async updateSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'updateSheetInstance', (req) => ({
+            instanceId:   parseInt(req.params.instanceId),
+            columnData:   req.body.columnData,
+            rowData:      req.body.rowData,
+            animalTags:   req.body.animalTags,
+            lastEditedBy: req.session?.user?.username || 'Unknown'
+        }));
+    }
+
+    async deleteSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'deleteSheetInstance', (req) => ({
+            instanceId: parseInt(req.params.instanceId)
         }));
     }
 
     async tryLoadSheetInstance(req, res) {
         return this.executeDBOperation(req, res, 'tryLoadSheetInstance', (req) => ({
-            instanceId: req.body.instanceId,
-            sheetId: req.body.sheetId,
-            herdName: req.body.herdName,
-            breedingYear: req.body.breedingYear,
-            createdBy: req.session?.user?.username || 'Unknown'
+            instanceId:   req.body.instanceId || null,
+            templateId:   req.body.templateId,
+            herdName:     req.body.herdName,
+            breedingYear: req.body.breedingYear || null,
+            createdBy:    req.session?.user?.username || 'Unknown'
         }));
     }
 
+    // NOT YET IMPLEMENTED
     async updateSheetInstanceCell(req, res) {
-        return this.executeDBOperation(req, res, 'updateSheetInstanceCell', (req) => ({
-            instanceId: req.params.instanceId,
-            cowTag: req.body.cowTag,
-            columnKey: req.body.columnKey,
-            value: req.body.value,
-            column: req.body.column
-        }));
+        return res.status(501).json({ error: 'updateSheetInstanceCell not yet implemented' });
     }
 
+    // NOT YET IMPLEMENTED
     async batchUpdateSheetInstanceCells(req, res) {
-        return this.executeDBOperation(req, res, 'batchUpdateSheetInstanceCells', (req) => ({
-            instanceId: req.params.instanceId,
-            updates: req.body.updates
-        }));
+        return res.status(501).json({ error: 'batchUpdateSheetInstanceCells not yet implemented' });
     }
 
-    async deleteSheetInstance(req, res) {
-        return this.executeDBOperation(req, res, 'deleteSheetInstance', (req) => 
-            req.params.instanceId
-        );
-    }
-
-
-
-
-
-
-    /**
-     * Load sheet data with filtering
-     */
-    async loadSheet(req, res) {
-        return this.executeDBOperation(req, res, 'getSheetDataDynamic', (req) => ({
-            sheetId: req.body.sheetId,
-            herdName: req.body.herdName,
-            breedingYear: req.body.breedingYear || new Date().getFullYear(),
-            sheetName: req.body.sheetName || null
-        }));
-    }
-
-    /**
-     * Batch update multiple sheet cells at once
-     */
-    async batchUpdateSheetCells(req, res) {
-        return this.executeDBOperation(req, res, 'batchUpdateSheetCells', (req) => ({
-            updates: req.body.updates
-        }));
-    }
-
-
-    /**
-     * Updates a sheet cell
-     */
+    // NOT YET IMPLEMENTED
     async updateSheetCell(req, res) {
-        return this.executeDBOperation(req, res, 'updateSheetCell', (req) => ({
-            handler: req.body.handler,
-            cowTag: req.body.cowTag,
-            value: req.body.value,
-            breedingYear: req.body.breedingYear || new Date().getFullYear(),
-            breedingPlanId: req.body.breedingPlanId || null
+        return res.status(501).json({ error: 'updateSheetCell not yet implemented' });
+    }
+
+    // NOT YET IMPLEMENTED
+    async batchUpdateSheetCells(req, res) {
+        return res.status(501).json({ error: 'batchUpdateSheetCells not yet implemented' });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Local functions 
+
+
+    // Binary response — cannot use executeFileOperation
+    async getCowImage(req, res) {
+        const result = await localFileOps.getCowImage({
+            cowTag: req.params.tag,
+            imageType: req.params.imageType,
+            n: 1
+        });
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Content-Disposition': `inline; filename="${result.filename}"`,
+                'X-Filename': result.filename,
+                'Cache-Control': 'public, max-age=31536000'
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({ error: result.message });
+    }
+
+    // Binary response — cannot use executeFileOperation
+    async getNthCowImage(req, res) {
+        const result = await localFileOps.getCowImage({
+            cowTag: req.params.tag,
+            imageType: req.params.imageType,
+            n: parseInt(req.params.n) || 1
+        });
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Content-Disposition': `inline; filename="${result.filename}"`,
+                'X-Filename': result.filename,
+               'Cache-Control': 'public, max-age=31536000'
+
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({ error: result.message });
+    }
+
+    async saveCowImage(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'saveCowImage', (req) => ({
+            cowTag: req.params.tag,
+            imageType: req.body.imageType,
+            fileBuffer: req.file.buffer,
+            originalFilename: req.file.originalname
         }));
     }
+
+    async getAllCowImages(req, res) {
+        return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
+            cowTag: req.params.tag
+        }));
+    }
+
+    async getCowImageCount(req, res) {
+        return this.executeFileOperation(req, res, 'numCowImages', (req) => ({
+            cowTag: req.params.tag
+        }));
+    }
+
+    async deleteCowImage(req, res) {
+        return this.executeFileOperation(req, res, 'deleteCowImage', (req) => ({
+            cowTag: req.params.tag,
+            filename: req.params.filename
+        }));
+    }
+
+
+
+
+
+    // Binary response — cannot use executeFileOperation
+    async getMedicalImage(req, res) {
+        const result = await localFileOps.getMedicalImage({
+            recordId: parseInt(req.params.recordId),
+            n: parseInt(req.params.n) || 1,
+        });
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Last-Modified': result.modified.toUTCString(),
+                'Cache-Control': 'public, max-age=31536000',
+                'X-Filename': result.filename
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({ error: result.message });
+    }
+
+    async uploadMedicalImage(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'saveMedicalImage', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            fileBuffer: req.file.buffer,
+            originalFilename: req.file.originalname
+        }));
+    }
+
+    async getMedicalImageCount(req, res) {
+        return this.executeFileOperation(req, res, 'getMedicalImageCount', (req) => ({
+            recordId: parseInt(req.params.recordId)
+        }));
+    }
+
+    async deleteMedicalImage(req, res) {
+        return this.executeFileOperation(req, res, 'deleteMedicalImage', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            filename: req.params.filename
+        }));
+    }
+
+
+
+
+
+
+    async saveMedicalUpload(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'saveMedicalUpload', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            fileBuffer: req.file.buffer,
+            filename: req.file.originalname
+        }));
+    }
+
+    // Binary response — cannot use executeFileOperation
+    async getMedicalUpload(req, res) {
+        const result = await localFileOps.getMedicalUpload({
+            recordId: parseInt(req.params.recordId),
+            filename: req.params.filename
+        });
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Last-Modified': result.modified.toUTCString(),
+                'Content-Disposition': `inline; filename="${result.filename}"`
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({ error: result.message });
+    }
+
+    async deleteMedicalUpload(req, res) {
+        return this.executeFileOperation(req, res, 'deleteMedicalUpload', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            filename: req.params.filename
+        }));
+    }
+
+    async listMedicalUploads(req, res) {
+        return this.executeFileOperation(req, res, 'listMedicalUploads', (req) => ({
+            recordId: parseInt(req.params.recordId)
+        }));
+    }
+
+
+    async getMap(req, res) {
+        return this.executeFileOperation(req, res, 'getMap', (req) => ({
+            pastureName: req.query.pasture
+        }));
+    }
+
+    // Binary response — cannot use executeFileOperation
+    async getMapImage(req, res) {
+        const { image } = req.query;
+        const allowedTypes = ['map', 'MapCombined'];
+
+        if (!allowedTypes.includes(image)) {
+            return res.status(400).json({ error: 'Invalid map type' });
+        }
+
+        const result = await localFileOps.getMapImage(image);
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Content-Disposition': `inline; filename="${result.filename}"`
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({ error: result.message });
+    }
+
+    async uploadMap(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'uploadMap', (req) => ({
+            mapType: req.body.mapType,
+            fileBuffer: req.file.buffer,
+            filename: req.file.originalname
+        }));
+    }
+
+    // Binary response — cannot use executeFileOperation
+    async getMinimap(req, res) {
+        const result = await localFileOps.getMinimap({
+            fieldName: decodeURIComponent(req.params.fieldName)
+        });
+
+        if (result.success) {
+            res.set({
+                'Content-Type': result.mimeType,
+                'Content-Length': result.size,
+                'Content-Disposition': `inline; filename="${result.filename}"`
+            });
+            return res.send(result.fileBuffer);
+        }
+        return res.status(404).json({
+            error: result.message,
+            availableFields: result.availableFields
+        });
+    }
+
+    async uploadMinimap(req, res) {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file provided' });
+        }
+
+        return this.executeFileOperation(req, res, 'uploadMinimap', (req) => ({
+            fieldName: req.params.fieldName,
+            fileBuffer: req.file.buffer,
+            filename: req.file.originalname
+        }));
+    }
+
+
+    async getAvailableMinimaps(req, res) {
+        try {
+            const availableFields = await localFileOps.getAvailableMinimaps();
+            return res.status(200).json({
+                success: true,
+                fields: availableFields,
+                count: availableFields.length
+            });
+        } catch (error) {
+            console.error('Available minimaps error:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+
+
+
+
+
+
+
+
+
 
 
 

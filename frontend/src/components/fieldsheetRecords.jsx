@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Sheet from './sheet';
-import Popup from './popup';
-import '../screenSizing.css';
+import ConfirmPopup from './popupConfirm';
+import SheetInstanceCreator from './sheetInstanceCreator';
 
-function FieldsheetRecords({  }) {
+function FieldsheetRecords() {
   const [instances, setInstances] = useState([]);
   const [sheets, setSheets] = useState([]);
   const [selectedInstance, setSelectedInstance] = useState(null);
@@ -17,6 +17,7 @@ function FieldsheetRecords({  }) {
   const [newInstanceHerd, setNewInstanceHerd] = useState('');
   const [newInstanceYear, setNewInstanceYear] = useState(new Date().getFullYear());
   const [herds, setHerds] = useState([]);
+
 
 
   // Fetch sheets and instances when component mounts
@@ -116,7 +117,7 @@ function FieldsheetRecords({  }) {
         await fetchInstances();
         
         // Select the newly created instance
-        const newInstance = instances.find(i => i.instanceId === data.instanceId);
+        const newInstance = instances.find(i => i.id === data.id);
         if (newInstance) {
           setSelectedInstance(newInstance);
         }
@@ -138,7 +139,7 @@ function FieldsheetRecords({  }) {
   const confirmDelete = async () => {
     if (selectedInstance) {
       try {
-        const response = await fetch(`/api/sheets/instances/${selectedInstance.instanceId}`, {
+        const response = await fetch(`/api/sheets/instances/${selectedInstance.id}`, {
           method: 'DELETE',
           credentials: 'include'
         });
@@ -165,7 +166,7 @@ function FieldsheetRecords({  }) {
 
   const filteredInstances = filterSheet === 'all' 
     ? instances 
-    : instances.filter(i => i.sheetId === parseInt(filterSheet));
+    : instances.filter(i => i.templateId === parseInt(filterSheet));
 
   if (loading) {
     return (
@@ -183,7 +184,7 @@ function FieldsheetRecords({  }) {
   }
 
   return (
-    <div style={{ padding: '0px' }}>
+    <div className="multibubble-page" style={{ padding: '0px' }}>
       {/* Split div 50/50 */}
       <div className="multibubble-row" style={{ minHeight: '200px' }}>
         {/* Left side - Instance list */}
@@ -217,21 +218,21 @@ function FieldsheetRecords({  }) {
             ) : (
               filteredInstances.map((instance) => (
                 <div
-                  key={instance.instanceId}
+                  key={instance.id}
                   onClick={() => handleInstanceSelect(instance)}
                   style={{
                     padding: '10px',
                     border: '1px solid #ddd',
                     borderRadius: '3px',
                     cursor: 'pointer',
-                    backgroundColor: selectedInstance?.instanceId === instance.instanceId ? '#e3f2fd' : '#f9f9f9',
-                    borderColor: selectedInstance?.instanceId === instance.instanceId ? '#2196f3' : '#ddd',
+                    backgroundColor: selectedInstance?.id === instance.id ? '#e3f2fd' : '#f9f9f9',
+                    borderColor: selectedInstance?.id === instance.id ? '#2196f3' : '#ddd',
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  <div style={{ fontWeight: 'bold' }}>{instance.sheetName}</div>
+                  <div style={{ fontWeight: 'bold' }}>{instance.instanceName}</div>
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    {instance.herdName} - {instance.breedingYear}
+                    {instance.breedingYear}
                   </div>
                   <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
                     Created: {formatDate(instance.dateCreated)} by {instance.createdBy}
@@ -239,7 +240,15 @@ function FieldsheetRecords({  }) {
                 </div>
               ))
             )}
+          </div>
+        </div>
+
+        {/* Right side - Actions */}
+        <div className="bubble-container" style={{flex: 1}}>
+          <h3 style={{ margin: '0 0 15px 0' }}>Actions</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div
+              key="create-new"
               onClick={handleCreateNew}
               style={{
                 padding: '10px',
@@ -255,13 +264,7 @@ function FieldsheetRecords({  }) {
             >
               + Create New Record
             </div>
-          </div>
-        </div>
 
-        {/* Right side - Actions */}
-        <div className="bubble-container" style={{flex: 1}}>
-          <h3 style={{ margin: '0 0 15px 0' }}>Actions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
               onClick={handleDelete}
               disabled={!selectedInstance}
@@ -284,7 +287,7 @@ function FieldsheetRecords({  }) {
             <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '3px' }}>
               <h4 style={{ margin: '0 0 10px 0' }}>Record Details</h4>
               <div style={{ fontSize: '14px' }}>
-                <div><strong>Sheet:</strong> {selectedInstance.sheetName}</div>
+                <div><strong>Sheet:</strong> {selectedInstance.templateName}</div>
                 <div><strong>Herd:</strong> {selectedInstance.herdName}</div>
                 <div><strong>Year:</strong> {selectedInstance.breedingYear}</div>
                 <div><strong>Created:</strong> {formatDate(selectedInstance.dateCreated)}</div>
@@ -298,12 +301,9 @@ function FieldsheetRecords({  }) {
       {/* Display/Edit block */}
       <div className="bubble-container" style={{flex: 1, overflow: 'hidden', padding: '0px'}}>
         {selectedInstance ? (
-          <Sheet 
-            key={selectedInstance.instanceId}
-            instanceId={selectedInstance.instanceId}
-            sheetId={selectedInstance.sheetId}
-            sheetName={selectedInstance.sheetName}
-            isInstance={true}
+          <Sheet
+            key={selectedInstance.id}
+            instanceId={selectedInstance.id}
           />
         ) : (
           <div style={{
@@ -312,7 +312,8 @@ function FieldsheetRecords({  }) {
             alignItems: 'center',
             height: '100%',
             color: '#666',
-            fontSize: '18px'
+            fontSize: '18px',
+            minHeight: '150px'
           }}>
             Select a record to view
           </div>
@@ -320,140 +321,27 @@ function FieldsheetRecords({  }) {
       </div>
 
       {/* Create Instance Dialog */}
-      <Popup
+      <SheetInstanceCreator
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
-        title="Create New Record"
-        width="400px"
-      >
-        <div style={{ padding: '20px' }}>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Sheet Template:
-            </label>
-            <select
-              value={newInstanceSheet || ''}
-              onChange={(e) => setNewInstanceSheet(parseInt(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '3px',
-                border: '1px solid #ddd'
-              }}
-            >
-              <option value="">Select a sheet...</option>
-              {sheets.map(sheet => (
-                <option key={sheet.id} value={sheet.id}>{sheet.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Herd:
-            </label>
-            <select
-              value={newInstanceHerd}
-              onChange={(e) => setNewInstanceHerd(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '3px',
-                border: '1px solid #ddd'
-              }}
-            >
-              <option value="">Select a herd...</option>
-              {herds.map((herd, index) => (
-                <option key={index} value={herd}>{herd}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Breeding Year:
-            </label>
-            <input
-              type="number"
-              value={newInstanceYear}
-              onChange={(e) => setNewInstanceYear(parseInt(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '3px',
-                border: '1px solid #ddd'
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button
-              onClick={() => setShowCreateDialog(false)}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#6c757d',
-                color: 'white'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleCreateInstance}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#28a745',
-                color: 'white'
-              }}
-            >
-              Create
-            </button>
-          </div>
-        </div>
-      </Popup>
+        onCreated={async (data) => {
+            await fetchInstances();
+            // data.instanceId comes back from the create endpoint
+            const fresh = instances.find(i => i.id === data.instanceId);
+            if (fresh) setSelectedInstance(fresh);
+        }}
+    />
 
       {/* Delete Confirmation Popup */}
-      <Popup
+      <ConfirmPopup
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDelete}
         title="Confirm Deletion"
-        width="400px"
-        height="200px"
-      >
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ marginBottom: '20px' }}>
-            Are you sure you want to delete this record?
-          </p>
-          <p style={{ marginBottom: '30px', color: '#dc3545', fontWeight: 'bold' }}>
-            This action cannot be undone.
-          </p>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#6c757d',
-                color: 'white'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirmDelete}
-              className="button"
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#dc3545',
-                color: 'white'
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </Popup>
+        message='Are you sure you want to delete this record?<br/><br/><span style="color:#dc3545;font-weight:bold">This action cannot be undone.</span>'
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </div>
   );
 }

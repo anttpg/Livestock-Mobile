@@ -6,6 +6,69 @@ FUTURE DBOPERATION OPTIMIZATIONS
 -make getHerdFeedStatus find herd location its own function.
 
 
+CHANGES MADE TO DB
+Renamed table Sheets -> SheetTemplates
+SheetTemplates; Added DateCreated col datetime
+SheetInstances; Deleted HerdID
+SheetInstances; Added CreatedBy/ LastEditedBy nvarchar , LastUpdated (datetime) 
+SheetInstances; Renamed SheetID -> TemplateID
+SheetInstances; Added InstanceName
+
+
+-- Rename table Sheets -> SheetTemplates
+EXEC sp_rename 'Sheets', 'SheetTemplates';
+
+-- Add DateCreated column to SheetTemplates
+ALTER TABLE SheetTemplates
+ADD DateCreated DATETIME;
+
+-- Drop FK constraint before dropping column
+ALTER TABLE SheetInstances
+DROP CONSTRAINT FK_SheetInstances_Herds;
+
+-- Drop HerdID from SheetInstances
+ALTER TABLE SheetInstances
+DROP COLUMN HerdID;
+
+-- Add LastEditedBy to SheetInstances (CreatedBy already exists)
+ALTER TABLE SheetInstances
+ADD LastEditedBy NVARCHAR(255);
+
+-- Add LastUpdated to SheetInstances
+ALTER TABLE SheetInstances
+ADD LastUpdated DATETIME;
+
+-- Rename SheetID -> TemplateID in SheetInstances
+EXEC sp_rename 'SheetInstances.SheetID', 'TemplateID', 'COLUMN';
+
+-- Add InstanceName to SheetInstances
+ALTER TABLE SheetInstances
+ADD InstanceName NVARCHAR(255);
+
+
+
+
+
+
+CowTable changes
+[Dam (Mother)] -> Dam
+[Sire (Father)] -> Sire
+
+EXEC sp_rename 'CowTable.[Dam (Mother)]', 'Dam', 'COLUMN';
+EXEC sp_rename 'CowTable.[Sire (Father)]', 'Sire', 'COLUMN';
+
+
+
+Made New Table
+HerdNotes
+
+with the columns:
+ID autonumber and PK
+HerdID number and FK to Herds.HerdID
+DateOfEntry datetime
+Username varchar 
+Note varchar max
+Archive bool default false
 
 
 
@@ -15,11 +78,40 @@ FUTURE DBOPERATION OPTIMIZATIONS
 
 
 
+getSaleRecord
+createSaleRecord
+updateSaleRecord
 
 
+getPurchaseRecord
+createPurchaseRecord
+updatePurchaseRecord
 
 
+updateMedicine
+addMedicine
+getMedicines
 
+
+getWeightRecord
+updateWeightRecord
+createWeightRecord
+
+
+----Breeding Records 
+getPregnancyCheck
+createPregancyCheck
+updatePregancyCheck
+
+getCalvingRecord
+createCalvingRecord
+updateCalvingRecord
+
+
+getWeaningRecord TODO
+createWeaningRecord TODO
+updateWeaningRecord TODO
+deleteWeaningRecord TODO
 
 
 
