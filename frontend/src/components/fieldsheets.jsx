@@ -9,7 +9,7 @@ function Fieldsheets({ sheets: filterSheets = null }) {
   // Define tabs configuration
   const tabs = [
     { id: 'templates', label: 'Templates' },
-    { id: 'records', label: 'All Records' }
+    { id: 'records', label: 'All Instances' }
   ];
 
   // No data fetching needed since each tab manages its own data

@@ -625,7 +625,7 @@ const startDrag = (e, type, itemId, idx, colId = null) => {
             </select>
           </div>
 
-          {newRec.source === 'MedicalTable' && (
+          {/* {newRec.source === 'MedicalTable' && (
             <div>
               <label style={{ display: 'block', marginBottom: '3px', fontSize: '12px', fontWeight: 'bold' }}>
                 Medicine &nbsp;<span style={{ fontWeight: 'normal', color: '#888' }}>(optional — if nothing selected, medicine is chosen per instance)</span>
@@ -638,7 +638,7 @@ const startDrag = (e, type, itemId, idx, colId = null) => {
                 }}
               />
             </div>
-          )}
+          )} */}
 
           <div>
             <label style={{ display: 'block', marginBottom: '3px', fontSize: '12px', fontWeight: 'bold' }}>Display Name</label>

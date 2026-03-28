@@ -64,6 +64,7 @@ function SheetTemplate({ sheetId }) {
                 rawMode={true}
                 evenRowColor="#f0f8ff"
                 oddRowColor="#fff"
+                showActionColumn={false}
             />
         </div>
     );

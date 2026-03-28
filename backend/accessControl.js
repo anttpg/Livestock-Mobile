@@ -1,4 +1,6 @@
 const localFileOps = require('../api/local');
+const dbOperations = require('../api/dbOperations');
+console.log('dbOperations loaded:', Object.keys(dbOperations));
 require('dotenv').config();
 
 class AccessControl {
@@ -7,39 +9,57 @@ class AccessControl {
         this.devBypassEmail = process.env.DEV_BYPASS_EMAIL || '_development';
     }
 
-    /**
-     * Initialize user system check/create users.csv on server start
-     */
     async initialize() {
         try {
-            const result = await localFileOps.checkUsers();
-            if (result.created) {
-                console.log('User system initialized - first user will receive admin privileges');
+            // Ensure CSV exists
+            const csvResult = await localFileOps.checkUsers();
+            if (csvResult.created) {
+                console.log('User system initialized - users.csv created');
             } else {
-                console.log(`User system loaded - ${result.userCount} users found`);
-                if (!result.hasAdmin) {
-                    console.warn('WARNING: No active admin users found!');
+                console.log(`users.csv loaded - ${csvResult.userCount} users found`);
+            }
+
+            // Check DB for active admin
+            const dbResult = await dbOperations.checkUsers();
+
+            if (dbResult.hasAdmin) {
+                console.log(`User system ready - ${dbResult.userCount} users in database`);
+                return dbResult;
+            }
+
+            // No active admin in DB — attempt CSV import
+            console.log('No active admin found in database, attempting CSV import...');
+
+            const csvUsers = await localFileOps.readoutUsersJSON();
+            if (csvUsers.success && csvUsers.users.length > 0) {
+                const importResult = await dbOperations.importUsers({ users: csvUsers.users });
+                console.log(`CSV import complete: ${importResult.message}`);
+
+                // Re-check after import
+                const postImportCheck = await dbOperations.checkUsers();
+                if (postImportCheck.hasAdmin) {
+                    console.log('User system ready - admin found after CSV import');
+                    return postImportCheck;
                 }
             }
-            return result;
+
+            // Still no admin — fresh install, first user to register will become admin
+            console.log('No users imported - first user to register will receive admin privileges');
+            return { success: true, hasAdmin: false, userCount: 0 };
+
         } catch (error) {
             console.error('Failed to initialize user system:', error);
             throw error;
         }
     }
 
-    /**
-     * Extract user email from Cloudflare Access header or development mode
-     */
     getUserEmail(req) {
-        // In development, allow bypass
         if (this.isDevelopment) {
             const devEmail = req.headers['x-dev-email'] || this.devBypassEmail;
             console.log('Development mode - using email:', devEmail);
             return devEmail;
         }
 
-        // Production: Get email from Cloudflare Access
         const email = req.headers['cf-access-authenticated-user-email'];
         if (!email) {
             console.warn('No Cloudflare Access email header found');
@@ -49,13 +69,10 @@ class AccessControl {
         return email;
     }
 
-    /**
-     * Authenticate user and establish session
-     */
     async authenticate(req, res, next) {
         try {
             const email = this.getUserEmail(req);
-            
+
             if (!email) {
                 return res.status(401).json({
                     success: false,
@@ -63,13 +80,13 @@ class AccessControl {
                 });
             }
 
-            const userResult = await localFileOps.lookupUser({ email });
+            const userResult = await dbOperations.lookupUser({ email });
 
             if (!userResult.exists) {
                 return res.json({
                     success: true,
                     needsRegistration: true,
-                    email: email
+                    email
                 });
             }
 
@@ -79,17 +96,16 @@ class AccessControl {
                 return res.json({
                     success: true,
                     blocked: true,
-                    email: email,
+                    email,
                     userName: user.username
                 });
             }
 
-            // Check if user is pre-registered (needs to complete registration)
-            if (user.username === 'PREREGISTERED' && !user.hasPassword) {
+            if (user.preRegistered) {
                 return res.json({
                     success: true,
-                    needsRegistration: true,  // Send to registration page
-                    email: email,
+                    needsRegistration: true,
+                    email,
                     isPreregistered: true
                 });
             }
@@ -98,7 +114,7 @@ class AccessControl {
                 return res.json({
                     success: true,
                     needsPasswordSetup: true,
-                    email: email,
+                    email,
                     userName: user.username
                 });
             }
@@ -106,7 +122,7 @@ class AccessControl {
             return res.json({
                 success: true,
                 needsLogin: true,
-                email: email,
+                email,
                 userName: user.username,
                 blocked: false
             });
@@ -120,10 +136,6 @@ class AccessControl {
         }
     }
 
-
-    /**
-     * Verify login credentials
-     */
     async login(req, res) {
         try {
             const { email, password } = req.body;
@@ -135,18 +147,15 @@ class AccessControl {
                 });
             }
 
-            // Validate password
-            const result = await localFileOps.validatePassword({ email, password });
+            const result = await dbOperations.validatePassword({ email, password });
 
             if (result.success) {
-                // Set session
                 req.session.user = result.user;
-                
+
                 req.session.save(() => {
                     return res.json({
                         success: true,
                         user: {
-                            id: result.user.id,
                             username: result.user.username,
                             email: result.user.email,
                             permissions: result.user.permissions
@@ -165,9 +174,6 @@ class AccessControl {
         }
     }
 
-    /**
-     * Register new user
-     */
     async register(req, res) {
         try {
             const { username, email, password } = req.body;
@@ -179,7 +185,6 @@ class AccessControl {
                 });
             }
 
-            // Verify email matches Cloudflare Access email (or dev bypass)
             const authenticatedEmail = this.getUserEmail(req);
             if (email.toLowerCase() !== authenticatedEmail.toLowerCase()) {
                 return res.status(403).json({
@@ -188,12 +193,11 @@ class AccessControl {
                 });
             }
 
-            const result = await localFileOps.setupUser({ username, email, password });
+            const result = await dbOperations.setupUser({ username, email, password });
 
             if (result.success) {
-                // Automatically log in new user
                 req.session.user = result.user;
-                
+
                 req.session.save(() => {
                     return res.json({
                         success: true,
@@ -213,9 +217,6 @@ class AccessControl {
         }
     }
 
-    /**
-     * Set password for existing user (password reset or first-time setup)
-     */
     async setPassword(req, res) {
         try {
             const { email, password } = req.body;
@@ -227,7 +228,6 @@ class AccessControl {
                 });
             }
 
-            // Verify email matches authenticated user
             const authenticatedEmail = this.getUserEmail(req);
             if (email.toLowerCase() !== authenticatedEmail.toLowerCase()) {
                 return res.status(403).json({
@@ -236,12 +236,11 @@ class AccessControl {
                 });
             }
 
-            const result = await localFileOps.setUserPassword({ email, password });
+            const result = await dbOperations.setUserPassword({ email, password });
 
             if (result.success) {
-                // Automatically log in user
                 req.session.user = result.user;
-                
+
                 req.session.save(() => {
                     return res.json({
                         success: true,
@@ -260,9 +259,6 @@ class AccessControl {
         }
     }
 
-    /**
-     * Main access control middleware - checks if user has valid session
-     */
     requireAuth() {
         return (req, res, next) => {
             if (!req.session.user) {
@@ -275,9 +271,6 @@ class AccessControl {
         };
     }
 
-    /**
-     * Require specific permission
-     */
     requirePermission(permission) {
         return (req, res, next) => {
             if (!req.session.user) {
@@ -298,22 +291,15 @@ class AccessControl {
         };
     }
 
-    /**
-     * Require admin permission
-     */
     requireAdmin() {
         return this.requirePermission('admin');
     }
 
-    /**
-     * Require dev permission
-     */
     requireDev() {
         return this.requirePermission('dev');
     }
 }
 
-// Export singleton instance
 const accessControl = new AccessControl();
 
 module.exports = {

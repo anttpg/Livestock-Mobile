@@ -18,6 +18,7 @@ function Popup({
     const popupRef = useRef(null);
     const headerRef = useRef(null);
     const isNestedRef = useRef(false);
+    const isDraggingFromInsideRef = useRef(false);
     const [viewportHeight, setViewportHeight] = React.useState(window.innerHeight);
 
     // Static counter to track open popups
@@ -111,9 +112,27 @@ function Popup({
     if (!isOpen) return null;
 
     const handleBackdropClick = (e) => {
+        if (isDraggingFromInsideRef.current) {
+            isDraggingFromInsideRef.current = false;
+            return;
+        }
         if (e.target === e.currentTarget) {
             onClose();
         }
+    };
+
+    const handlePopupMouseDown = (e) => {
+        isDraggingFromInsideRef.current = false;
+        const onMouseMove = () => {
+            isDraggingFromInsideRef.current = true;
+            window.removeEventListener('mousemove', onMouseMove);
+        };
+        const onMouseUp = () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
     };
 
     // Prevent scroll events on header from propagating
@@ -239,6 +258,7 @@ function Popup({
             >
                 <div
                     ref={popupRef}
+                    onMouseDown={handlePopupMouseDown}
                     style={{
                         ...popupStyles,
                         // Force reflow when viewport changes on mobile

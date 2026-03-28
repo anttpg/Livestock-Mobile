@@ -7,56 +7,25 @@ FUTURE DBOPERATION OPTIMIZATIONS
 
 
 CHANGES MADE TO DB
-Renamed table Sheets -> SheetTemplates
-SheetTemplates; Added DateCreated col datetime
-SheetInstances; Deleted HerdID
-SheetInstances; Added CreatedBy/ LastEditedBy nvarchar , LastUpdated (datetime) 
-SheetInstances; Renamed SheetID -> TemplateID
-SheetInstances; Added InstanceName
 
-
--- Rename table Sheets -> SheetTemplates
-EXEC sp_rename 'Sheets', 'SheetTemplates';
-
--- Add DateCreated column to SheetTemplates
-ALTER TABLE SheetTemplates
-ADD DateCreated DATETIME;
-
--- Drop FK constraint before dropping column
-ALTER TABLE SheetInstances
-DROP CONSTRAINT FK_SheetInstances_Herds;
-
--- Drop HerdID from SheetInstances
-ALTER TABLE SheetInstances
-DROP COLUMN HerdID;
-
--- Add LastEditedBy to SheetInstances (CreatedBy already exists)
-ALTER TABLE SheetInstances
-ADD LastEditedBy NVARCHAR(255);
-
--- Add LastUpdated to SheetInstances
-ALTER TABLE SheetInstances
-ADD LastUpdated DATETIME;
-
--- Rename SheetID -> TemplateID in SheetInstances
-EXEC sp_rename 'SheetInstances.SheetID', 'TemplateID', 'COLUMN';
-
--- Add InstanceName to SheetInstances
-ALTER TABLE SheetInstances
-ADD InstanceName NVARCHAR(255);
-
-
-
-
-
-
-CowTable changes
-[Dam (Mother)] -> Dam
-[Sire (Father)] -> Sire
-
-EXEC sp_rename 'CowTable.[Dam (Mother)]', 'Dam', 'COLUMN';
-EXEC sp_rename 'CowTable.[Sire (Father)]', 'Sire', 'COLUMN';
-
+Users
+Added columns
+ALTER TABLE Users ADD Email TEXT;
+ALTER TABLE Users ADD PasswordHash TEXT;
+ALTER TABLE Users ADD Permissions TEXT;
+ALTER TABLE Users ADD Blocked BIT DEFAULT 0;
+ALTER TABLE Users ADD PreRegistered BIT DEFAULT 1;
+ALTER TABLE Users ALTER COLUMN Email NVARCHAR(255);
+ALTER TABLE Users ALTER COLUMN PasswordHash NVARCHAR(255);
+ALTER TABLE Users ALTER COLUMN Permissions NVARCHAR(255);
+ALTER TABLE Users ALTER COLUMN Username NVARCHAR(255) NULL;
+ALTER TABLE PastureFeedRecords DROP CONSTRAINT PastureFeedRecords$UsersPastureFeedRecords;
+ALTER TABLE PastureMaintenanceRecords DROP CONSTRAINT PastureMaintenanceRecords$UsersPastureMaintenanceRecords;
+ALTER TABLE Users DROP CONSTRAINT Users$PrimaryKey;
+ALTER TABLE Users ALTER COLUMN Username NVARCHAR(255) NULL;
+ALTER TABLE Users ALTER COLUMN Email NVARCHAR(255) NOT NULL;
+ALTER TABLE Users ADD CONSTRAINT Users$PrimaryKey PRIMARY KEY (Email);
+ALTER TABLE Users ADD CONSTRAINT Users$UsernameUnique UNIQUE (Username);
 
 
 Made New Table

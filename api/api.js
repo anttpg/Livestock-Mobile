@@ -1,5 +1,5 @@
 const { validationResult } = require('express-validator');
-const { setupAccessControl } = require('../backend/accessControl');
+const { getUserEmail } = require('../backend/accessControl');
 const dbOperations = require('./dbOperations');
 const localFileOps = require('./local');
 
@@ -1431,206 +1431,131 @@ class APIWrapper {
 
 
 
-    /**
-     * Get user's email from Cloudflare Access
-     */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     async getUserEmail(req, res) {
         try {
-            const { getUserEmail } = require('../backend/accessControl');
             const email = getUserEmail(req);
-            
+
             if (!email) {
                 return res.status(401).json({
                     success: false,
                     message: 'No authenticated email found'
                 });
             }
-            
-            return res.json({
-                success: true,
-                email: email
-            });
+
+            return res.json({ success: true, email });
         } catch (error) {
             console.error('Error getting user email:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to get user email'
-            });
+            return res.status(500).json({ success: false, error: 'Failed to get user email' });
         }
     }
-
-    /**
-     * Get all users - Admin only
-     */
+    
     async getAllUsers(req, res) {
-        try {
-            // Admin check is done by middleware
-            const result = await localFileOps.getAllUsers();
-            return res.status(200).json(result);
-        } catch (error) {
-            console.error('Error getting all users:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to get users'
-            });
-        }
+        return this.executeDBOperation(req, res, 'getAllUsers', () => ({}));
     }
 
-    /**
-     * Reset user password - Admin only
-     */
     async resetUserPassword(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const { email } = req.body;
-            const adminEmail = req.session.user.email;
-
-            const result = await localFileOps.resetUserPassword({
-                email,
-                adminEmail
-            });
-
-            if (result.success) {
-                return res.status(200).json(result);
-            } else {
-                return res.status(400).json(result);
-            }
-        } catch (error) {
-            console.error('Error resetting password:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to reset password'
-            });
-        }
+        return this.executeDBOperation(req, res, 'resetUserPassword', (req) => ({
+            email: req.body.email
+        }));
     }
 
-    /**
-     * Update user permissions - Admin only
-     */
     async updateUserPermissions(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
+        const { permissions } = req.body;
+        const validPermissions = ['view', 'add', 'admin', 'dev'];
+        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
 
-            const { email, permissions } = req.body;
-            const adminEmail = req.session.user.email;
-
-            // Validate permissions array
-            const validPermissions = ['view', 'add', 'admin', 'dev'];
-            const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
-            
-            if (invalidPerms.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Invalid permissions: ${invalidPerms.join(', ')}`
-                });
-            }
-
-            const result = await localFileOps.updateUserPermissions({
-                email,
-                permissions,
-                adminEmail
-            });
-
-            if (result.success) {
-                return res.status(200).json(result);
-            } else {
-                return res.status(400).json(result);
-            }
-        } catch (error) {
-            console.error('Error updating permissions:', error);
-            return res.status(500).json({
+        if (invalidPerms.length > 0) {
+            return res.status(400).json({
                 success: false,
-                error: 'Failed to update permissions'
+                message: `Invalid permissions: ${invalidPerms.join(', ')}`
             });
         }
+
+        return this.executeDBOperation(req, res, 'updateUserPermissions', (req) => ({
+            email: req.body.email,
+            permissions: req.body.permissions
+        }));
     }
 
-    /**
-     * Block user - Admin only
-     */
+    async preRegisterUser(req, res) {
+        const { permissions } = req.body;
+        const validPermissions = ['view', 'add', 'admin', 'dev'];
+        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
+
+        if (invalidPerms.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid permissions: ${invalidPerms.join(', ')}`
+            });
+        }
+
+        return this.executeDBOperation(req, res, 'preRegisterUser', (req) => ({
+            email: req.body.email,
+            permissions: req.body.permissions
+        }));
+    }
+
     async blockUser(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const { email } = req.body;
-            const adminEmail = req.session.user.email;
-
-            const result = await localFileOps.blockUser({
-                email,
-                adminEmail
-            });
-
-            if (result.success) {
-                return res.status(200).json(result);
-            } else {
-                return res.status(400).json(result);
-            }
-        } catch (error) {
-            console.error('Error blocking user:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to block user'
-            });
-        }
+        return this.executeDBOperation(req, res, 'blockUser', (req) => ({
+            email: req.body.email
+        }));
     }
 
-    /**
-     * Unblock user - Admin only
-     */
     async unblockUser(req, res) {
-        try {
-            // Validation check
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const { email } = req.body;
-            const adminEmail = req.session.user.email;
-
-            const result = await localFileOps.unblockUser({
-                email,
-                adminEmail
-            });
-
-            if (result.success) {
-                return res.status(200).json(result);
-            } else {
-                return res.status(400).json(result);
-            }
-        } catch (error) {
-            console.error('Error unblocking user:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to unblock user'
-            });
-        }
+        return this.executeDBOperation(req, res, 'unblockUser', (req) => ({
+            email: req.body.email
+        }));
     }
+
+    async deleteUser(req, res) {
+        return this.executeDBOperation(req, res, 'deleteUser', (req) => ({
+            email: req.body.email
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     /**
@@ -1717,42 +1642,6 @@ class APIWrapper {
             return res.status(500).json({
                 success: false,
                 error: 'Failed to clear frontend log'
-            });
-        }
-    }
-
-    /**
-     * Pre-register user - Admin only
-     */
-    async preRegisterUser(req, res) {
-        try {
-            const validationErrors = validationResult(req);
-            if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
-            }
-
-            const { email, permissions } = req.body;
-            const adminEmail = req.session.user.email;
-
-            const result = await localFileOps.preRegisterUser({
-                email,
-                permissions,
-                adminEmail
-            });
-
-            if (result.success) {
-                return res.status(200).json(result);
-            } else {
-                return res.status(400).json(result);
-            }
-        } catch (error) {
-            console.error('Error pre-registering user:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to pre-register user'
             });
         }
     }

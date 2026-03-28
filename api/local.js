@@ -487,6 +487,78 @@ class LocalFileOperations {
 
 
 
+    // Primitives
+
+    /**
+     * Read a single file at a known absolute path.
+     * @param {string} filePath - Absolute path to the file
+     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
+     */
+    async readFileByPath(filePath) {
+        const fs = require('fs').promises;
+
+        try {
+            await fs.access(filePath);
+        } catch {
+            return { success: false, message: `File not found: ${filePath}` };
+        }
+
+        const fileBuffer = await fs.readFile(filePath);
+        const stats = await fs.stat(filePath);
+
+        return {
+            success: true,
+            fileBuffer,
+            filename: path.basename(filePath),
+            size: stats.size,
+            modified: stats.mtime,
+            mimeType: this.getMimeType(filePath)
+        };
+    }
+
+    /**
+     * Save a file with an exact pre-determined name. Fails if file already exists.
+     * @param {string}   directory      - Absolute directory to save into
+     * @param {string}   filename       - Exact filename to save as
+     * @param {Buffer}   fileBuffer     - File contents
+     * @param {string[]} [allowedFormats] - If provided, validates file extension before saving
+     * @returns {Object} { success, relativePath, absolutePath, filename, message }
+     */
+    async saveFileStrict(directory, filename, fileBuffer, allowedFormats) {
+        const fs = require('fs').promises;
+
+        if (allowedFormats && !this.validateFileType(filename, allowedFormats)) {
+            return { success: false, message: `Invalid format. Allowed: ${allowedFormats.join(', ')}` };
+        }
+
+        await this.ensureDirectoryExists(directory);
+        const filePath = path.join(directory, filename);
+
+        try {
+            await fs.access(filePath);
+            return { success: false, message: `File '${filename}' already exists.` };
+        } catch (err) {
+            if (err.code !== 'ENOENT') throw err;
+        }
+
+        await fs.writeFile(filePath, fileBuffer);
+
+        return {
+            success: true,
+            absolutePath: filePath,
+            relativePath: path.relative(this.basePath, filePath).replace(/\\/g, '/'),
+            filename,
+            message: `Saved ${filename}`
+        };
+    }
+
+
+
+
+
+
+
+
 
     /**
      * Save a cow image. Never overwrites — appends a counter if filename already exists.
@@ -573,6 +645,57 @@ class LocalFileOperations {
         if (!found.success) return found;
         return this.deleteCowImage({ cowTag, filename: found.filename });
     }
+
+
+    /**
+     * Get the nth most recent image of a given type for a cow.
+     * Pass type 'both' to retrieve the nth headshot and bodyshot together.
+     * @param {Object} params
+     * @param {string} params.cowTag    - Cow tag identifier
+     * @param {string} params.type      - 'headshot', 'body', or 'both'
+     * @param {number} [params.n=1]     - 1 = most recent
+     * @returns {Object} Single image result, or { success, headshot, bodyshot } for 'both'
+     */
+    async getNthCowImage({ cowTag, type, n = 1 }) {
+        if (type !== 'both') {
+            return this.getCowImage({ cowTag, imageType: type, n });
+        }
+
+        const [headshot, bodyshot] = await Promise.all([
+            this.getCowImage({ cowTag, imageType: 'headshot', n }),
+            this.getCowImage({ cowTag, imageType: 'body', n })
+        ]);
+
+        return { success: true, headshot, bodyshot };
+    }
+
+    /**
+     * Get count of headshot and bodyshot images for a cow.
+     * @param {Object} params
+     * @param {string} params.cowTag - Cow tag identifier
+     * @returns {Object} { success, headshots, bodyshots, total }
+     */
+    async numCowImages({ cowTag }) {
+        const safeTag = this.remCowtagSlash(cowTag);
+        const directory = path.join(this.cowPhotosDir, safeTag);
+
+        const [headshots, bodyshots] = await Promise.all([
+            this.listFiles(directory, ' HEAD '),
+            this.listFiles(directory, ' BODY ')
+        ]);
+
+        return {
+            success: true,
+            headshots: headshots.length,
+            bodyshots: bodyshots.length,
+            total: headshots.length + bodyshots.length
+        };
+    }
+
+
+
+
+
 
 
 
@@ -739,118 +862,10 @@ class LocalFileOperations {
 
 
 
-    // Primitives
-
-    /**
-     * Read a single file at a known absolute path.
-     * @param {string} filePath - Absolute path to the file
-     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
-     */
-    async readFileByPath(filePath) {
-        const fs = require('fs').promises;
-
-        try {
-            await fs.access(filePath);
-        } catch {
-            return { success: false, message: `File not found: ${filePath}` };
-        }
-
-        const fileBuffer = await fs.readFile(filePath);
-        const stats = await fs.stat(filePath);
-
-        return {
-            success: true,
-            fileBuffer,
-            filename: path.basename(filePath),
-            size: stats.size,
-            modified: stats.mtime,
-            mimeType: this.getMimeType(filePath)
-        };
-    }
-
-    /**
-     * Save a file with an exact pre-determined name. Fails if file already exists.
-     * @param {string}   directory      - Absolute directory to save into
-     * @param {string}   filename       - Exact filename to save as
-     * @param {Buffer}   fileBuffer     - File contents
-     * @param {string[]} [allowedFormats] - If provided, validates file extension before saving
-     * @returns {Object} { success, relativePath, absolutePath, filename, message }
-     */
-    async saveFileStrict(directory, filename, fileBuffer, allowedFormats) {
-        const fs = require('fs').promises;
-
-        if (allowedFormats && !this.validateFileType(filename, allowedFormats)) {
-            return { success: false, message: `Invalid format. Allowed: ${allowedFormats.join(', ')}` };
-        }
-
-        await this.ensureDirectoryExists(directory);
-        const filePath = path.join(directory, filename);
-
-        try {
-            await fs.access(filePath);
-            return { success: false, message: `File '${filename}' already exists.` };
-        } catch (err) {
-            if (err.code !== 'ENOENT') throw err;
-        }
-
-        await fs.writeFile(filePath, fileBuffer);
-
-        return {
-            success: true,
-            absolutePath: filePath,
-            relativePath: path.relative(this.basePath, filePath).replace(/\\/g, '/'),
-            filename,
-            message: `Saved ${filename}`
-        };
-    }
+    
 
 
-    // Cow wrappers
 
-    /**
-     * Get the nth most recent image of a given type for a cow.
-     * Pass type 'both' to retrieve the nth headshot and bodyshot together.
-     * @param {Object} params
-     * @param {string} params.cowTag    - Cow tag identifier
-     * @param {string} params.type      - 'headshot', 'body', or 'both'
-     * @param {number} [params.n=1]     - 1 = most recent
-     * @returns {Object} Single image result, or { success, headshot, bodyshot } for 'both'
-     */
-    async getNthCowImage({ cowTag, type, n = 1 }) {
-        if (type !== 'both') {
-            return this.getCowImage({ cowTag, imageType: type, n });
-        }
-
-        const [headshot, bodyshot] = await Promise.all([
-            this.getCowImage({ cowTag, imageType: 'headshot', n }),
-            this.getCowImage({ cowTag, imageType: 'body', n })
-        ]);
-
-        return { success: true, headshot, bodyshot };
-    }
-
-    /**
-     * Get count of headshot and bodyshot images for a cow.
-     * @param {Object} params
-     * @param {string} params.cowTag - Cow tag identifier
-     * @returns {Object} { success, headshots, bodyshots, total }
-     */
-    async numCowImages({ cowTag }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const directory = path.join(this.cowPhotosDir, safeTag);
-
-        const [headshots, bodyshots] = await Promise.all([
-            this.listFiles(directory, ' HEAD '),
-            this.listFiles(directory, ' BODY ')
-        ]);
-
-        return {
-            success: true,
-            headshots: headshots.length,
-            bodyshots: bodyshots.length,
-            total: headshots.length + bodyshots.length
-        };
-    }
 
 
     // Medical upload wrappers
@@ -921,6 +936,10 @@ class LocalFileOperations {
             return { success: false, message: `Failed to get map: ${error.message}` };
         }
     }
+
+
+
+
 
     /**
      * Get a main map image by type.
@@ -1010,6 +1029,32 @@ class LocalFileOperations {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // USER MANAGEMENT 
 
 
     /**
@@ -1504,6 +1549,7 @@ class LocalFileOperations {
         }
     }
 
+
     /**
      * Block a user account
      */
@@ -1616,6 +1662,134 @@ class LocalFileOperations {
         }
     }
 
+    /**
+     * Pre-register a user with email and permissions (no password yet)
+     */
+    async preRegisterUser(params) {
+        const { email, permissions, adminEmail } = params;
+
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+
+            // Verify admin has permission
+            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+            if (!admin || !admin.permissions.includes('admin')) {
+                return {
+                    success: false,
+                    message: 'Only admins can pre-register users'
+                };
+            }
+
+            // Check if user already exists
+            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+            if (existingUser) {
+                return {
+                    success: false,
+                    message: 'User already exists'
+                };
+            }
+
+            // Generate new user ID
+            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
+            const newId = maxId + 1;
+
+            // Create new user with PREREGISTERED username and no password
+            const newUser = {
+                id: newId,
+                username: 'PREREGISTERED',  // Changed: Use reserved name
+                email,
+                passwordHash: '', // Empty - user will set on first login
+                permissions,
+                blocked: false
+            };
+
+            users.push(newUser);
+
+            // Save to file
+            const csvContent = this.usersToCSV(users);
+            await fs.writeFile(this.usersFile, csvContent);
+
+            return {
+                success: true,
+                user: {
+                    id: newUser.id,
+                    username: newUser.username,
+                    email: newUser.email,
+                    permissions: newUser.permissions
+                }
+            };
+        } catch (error) {
+            console.error('Error pre-registering user:', error);
+            return {
+                success: false,
+                message: `Failed to pre-register user: ${error.message}`
+            };
+        }
+    }
+
+    async readoutUsersJSON() {
+        try {
+            const content = await fs.readFile(this.usersFile, 'utf8');
+            const users = this.parseUsersCSV(content);
+
+            return {
+                success: true,
+                users: users.map(user => ({
+                    id: user.id,
+                    username: user.username,
+                    Email: user.email,
+                    PasswordHash: user.passwordHash,
+                    Permissions: user.permissions.join('|'),
+                    Blocked: user.blocked
+                }))
+            };
+        } catch (error) {
+            console.error('Error reading users CSV:', error);
+            return {
+                success: false,
+                message: `Failed to read users: ${error.message}`
+            };
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     /**
@@ -1726,72 +1900,6 @@ class LocalFileOperations {
             return {
                 success: false,
                 message: `Failed to clear frontend log: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Pre-register a user with email and permissions (no password yet)
-     */
-    async preRegisterUser(params) {
-        const { email, permissions, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can pre-register users'
-                };
-            }
-
-            // Check if user already exists
-            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-            if (existingUser) {
-                return {
-                    success: false,
-                    message: 'User already exists'
-                };
-            }
-
-            // Generate new user ID
-            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
-            const newId = maxId + 1;
-
-            // Create new user with PREREGISTERED username and no password
-            const newUser = {
-                id: newId,
-                username: 'PREREGISTERED',  // Changed: Use reserved name
-                email,
-                passwordHash: '', // Empty - user will set on first login
-                permissions,
-                blocked: false
-            };
-
-            users.push(newUser);
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                user: {
-                    id: newUser.id,
-                    username: newUser.username,
-                    email: newUser.email,
-                    permissions: newUser.permissions
-                }
-            };
-        } catch (error) {
-            console.error('Error pre-registering user:', error);
-            return {
-                success: false,
-                message: `Failed to pre-register user: ${error.message}`
             };
         }
     }
@@ -2435,6 +2543,11 @@ class LocalFileOperations {
 const localOps = new LocalFileOperations();
 
 module.exports = {
+    // Utilities
+    configureMulter: () => localOps.configureMulter(),
+    remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
+    repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag),
+
     // Cow images
     saveCowImage: (params) => localOps.saveCowImage(params),
     getCowImage: (params) => localOps.getCowImage(params),
@@ -2467,12 +2580,8 @@ module.exports = {
     getAvailableMinimaps: () => localOps.getAvailableMinimaps(),
     uploadMinimap: (params) => localOps.uploadMinimap(params),
 
-    // Utilities
-    configureMulter: () => localOps.configureMulter(),
-    remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
-    repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag),
 
-
+    // User management
     checkUsers: () => localOps.checkUsers(),
     getAllUsers: () => localOps.getAllUsers(),
     lookupUser: (params) => localOps.lookupUser(params),
@@ -2484,6 +2593,8 @@ module.exports = {
     blockUser: (params) => localOps.blockUser(params),
     unblockUser: (params) => localOps.unblockUser(params),
     preRegisterUser: (params) => localOps.preRegisterUser(params),
+    readoutUsersJSON: () => localOps.readoutUsersJSON(),
+
 
     getBackendLog: () => localOps.getBackendLog(),
     getFrontendLog: () => localOps.getFrontendLog(),

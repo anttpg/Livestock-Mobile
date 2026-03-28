@@ -269,6 +269,17 @@ app.post('/api/users/pre-register',
     }
 );
 
+// Delete user account
+app.delete('/api/users/delete',
+    requireAuth(),
+    requireAdmin(),
+    createValidationMiddleware('', true),
+    async (req, res) => {
+        return apiWrapper.deleteUser(req, res);
+    }
+);
+
+
 
 
 

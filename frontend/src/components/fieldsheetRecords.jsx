@@ -262,7 +262,7 @@ function FieldsheetRecords() {
                 transition: 'all 0.2s ease'
               }}
             >
-              + Create New Record
+              + Create New Instance
             </div>
 
             <button

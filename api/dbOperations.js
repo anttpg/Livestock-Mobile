@@ -1,6 +1,6 @@
 /* eslint-disable no-case-declarations */
 const { sql, pool } = require('./db');
-
+const bcrypt = require('bcrypt');
 
 
 // Shorthand to get active animals
@@ -13,6 +13,8 @@ class DatabaseOperations {
         this.pool = pool;
         this.sql = sql;
         this.STATUS_ACTIVE = STATUS_ACTIVE;
+
+        this.SALT_ROUNDS = 10;
     }
 
     /**
@@ -4155,6 +4157,702 @@ class DatabaseOperations {
 
     //                   USER MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
 
+
+    /**
+     * @typedef {Object} UserPublic
+     * @property {number}   id
+     * @property {string|null} username
+     * @property {string}   email
+     * @property {string[]} permissions
+     * @property {boolean}  blocked
+     * @property {boolean}  preRegistered
+     * @property {boolean}  hasPassword
+     */
+
+    /**
+     * @typedef {Object} UserSession
+     * @property {number}   id
+     * @property {string}   username
+     * @property {string}   email
+     * @property {string[]} permissions
+     */
+
+    /**
+     * @typedef {Object} BaseResult
+     * @property {boolean} success
+     * @property {string}  [message]
+     */
+
+    /**
+     * @typedef {Object} CheckUsersResult
+     * @property {boolean} success
+     * @property {boolean} hasAdmin
+     * @property {number}  userCount
+     */
+
+    /**
+     * @typedef {Object} ImportUserRow
+     * @property {string|null} username
+     * @property {string}      Email
+     * @property {string}      PasswordHash
+     * @property {string}      Permissions
+     * @property {boolean}     Blocked
+     */
+
+
+    /**
+     * Checks whether the Users table has at least one active admin.
+     * @returns {Promise<CheckUsersResult>}
+     */
+    async checkUsers() {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            const result = await request.query(`SELECT COUNT(*) AS userCount FROM Users WHERE Email IS NOT NULL`);
+            const userCount = result.recordset[0].userCount;
+
+            const adminRequest = this.pool.request();
+            const adminResult = await adminRequest.query(`
+            SELECT COUNT(*) AS adminCount
+            FROM Users
+            WHERE Blocked = 0
+              AND Permissions LIKE '%admin%'
+        `);
+            const hasAdmin = adminResult.recordset[0].adminCount > 0;
+
+            if (!hasAdmin && userCount > 0) {
+                console.warn('WARNING: No active admin users found in database');
+            }
+
+            return { success: true, hasAdmin, userCount };
+        } catch (error) {
+            console.error('Error checking users:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Returns all users, excluding password hashes.
+     * @returns {Promise<BaseResult & { users?: UserPublic[] }>}
+     */
+    async getAllUsers() {
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            const result = await request.query(`
+            SELECT Username, Email, PasswordHash, Permissions, Blocked, PreRegistered
+            FROM Users
+            WHERE Email IS NOT NULL
+        `);
+
+            const users = result.recordset.map(row => ({
+                username: row.Username,
+                email: row.Email,
+                permissions: row.Permissions ? row.Permissions.split('|').filter(Boolean) : [],
+                blocked: !!row.Blocked,
+                preRegistered: !!row.PreRegistered,
+                hasPassword: !!row.PasswordHash && row.PasswordHash !== ''
+            }));
+
+            return { success: true, users };
+        } catch (error) {
+            console.error('Error getting all users:', error);
+            return { success: false, message: `Failed to get users: ${error.message}` };
+        }
+    }
+
+    /**
+     * Looks up a single user by email address.
+     * @param {{ email: string }} params
+     * @returns {Promise<BaseResult & { exists: boolean, user?: UserPublic & { isAdmin: boolean } }>}
+     */
+    async lookupUser(params) {
+        const { email } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('email', sql.NVarChar, email);
+
+            const result = await request.query(`
+            SELECT Username, Email, PasswordHash, Permissions, Blocked, PreRegistered
+            FROM Users
+            WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (result.recordset.length === 0) {
+                return { success: false, exists: false, message: 'User not found' };
+            }
+
+            const row = result.recordset[0];
+            const permissions = row.Permissions ? row.Permissions.split('|').filter(Boolean) : [];
+
+            return {
+                success: true,
+                exists: true,
+                user: {
+                    username: row.Username,
+                    email: row.Email,
+                    permissions,
+                    blocked: !!row.Blocked,
+                    preRegistered: !!row.PreRegistered,
+                    hasPassword: !!row.PasswordHash && row.PasswordHash !== '',
+                    isAdmin: permissions.includes('admin')
+                }
+            };
+        } catch (error) {
+            console.error('Error looking up user:', error);
+            return { success: false, message: `Failed to lookup user: ${error.message}` };
+        }
+    }
+
+    /**
+     * Completes registration for a new or pre-registered user.
+     * First user to register is granted all permissions.
+     * @param {{ username: string, email: string, password: string }} params
+     * @returns {Promise<BaseResult & { user?: UserSession, wasPreregistered?: boolean, isFirstUser?: boolean }>}
+     */
+    async setupUser(params) {
+        const { username, email, password } = params;
+        await this.ensureConnection();
+
+        try {
+            if (username.toUpperCase() === 'PREREGISTERED') {
+                return { success: false, message: 'Username "PREREGISTERED" is reserved. Please choose a different username.' };
+            }
+
+            const lookupRequest = this.pool.request();
+            lookupRequest.input('email', sql.NVarChar, email);
+            const existing = await lookupRequest.query(`
+            SELECT Username, Permissions, PreRegistered
+            FROM Users
+            WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
+
+            // Pre-registered user completing their registration
+            if (existing.recordset.length > 0) {
+                const row = existing.recordset[0];
+
+                if (row.Username !== null && row.PreRegistered === false) {
+                    return { success: false, message: 'User already has a username set' };
+                }
+
+                const updateRequest = this.pool.request();
+                updateRequest.input('username', sql.NVarChar, username);
+                updateRequest.input('passwordHash', sql.NVarChar, passwordHash);
+                updateRequest.input('email', sql.NVarChar, email);
+
+                await updateRequest.query(`
+                UPDATE Users
+                SET Username      = @username,
+                    PasswordHash  = @passwordHash,
+                    PreRegistered = 0
+                WHERE LOWER(Email) = LOWER(@email)
+            `);
+
+                const permissions = row.Permissions ? row.Permissions.split('|').filter(Boolean) : [];
+                return {
+                    success: true,
+                    wasPreregistered: true,
+                    user: { username, email, permissions }
+                };
+            }
+
+            // Brand new user — check if they are the first
+            const countRequest = this.pool.request();
+            const countResult = await countRequest.query(`SELECT COUNT(*) AS cnt FROM Users WHERE Email IS NOT NULL`);
+            const isFirstUser = countResult.recordset[0].cnt === 0;
+
+            const permissions = isFirstUser ? ['view', 'add', 'admin', 'dev'] : ['view'];
+            if (isFirstUser) console.log('First user created - granted all permissions including admin');
+
+            const insertRequest = this.pool.request();
+            insertRequest.input('username', sql.NVarChar, username);
+            insertRequest.input('email', sql.NVarChar, email);
+            insertRequest.input('passwordHash', sql.NVarChar, passwordHash);
+            insertRequest.input('permissions', sql.NVarChar, permissions.join('|'));
+
+            await insertRequest.query(`
+            IF EXISTS (SELECT 1 FROM Users WHERE Username = @username)
+                UPDATE Users
+                SET Email        = @email,
+                    PasswordHash = @passwordHash,
+                    Permissions  = @permissions,
+                    Blocked      = 0,
+                    PreRegistered = 0
+                WHERE Username = @username
+            ELSE
+                INSERT INTO Users (Username, Email, PasswordHash, Permissions, Blocked, PreRegistered)
+                VALUES (@username, @email, @passwordHash, @permissions, 0, 0)
+        `);
+
+            return {
+                success: true,
+                isFirstUser,
+                user: { username, email, permissions }
+            };
+        } catch (error) {
+            console.error('Error setting up user:', error);
+            return { success: false, message: `Failed to setup user: ${error.message}` };
+        }
+    }
+
+    /**
+     * Validates a user's password against the stored hash.
+     * @param {{ email: string, password: string }} params
+     * @returns {Promise<BaseResult & { user?: UserSession, blocked?: boolean, needsPasswordSetup?: boolean }>}
+     */
+    async validatePassword(params) {
+        const { email, password } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('email', sql.NVarChar, email);
+
+            const result = await request.query(`
+            SELECT Username, Email, PasswordHash, Permissions, Blocked
+            FROM Users
+            WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (result.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const row = result.recordset[0];
+
+            if (row.Blocked) {
+                return { success: false, blocked: true, message: 'User account is blocked' };
+            }
+
+            if (!row.PasswordHash || row.PasswordHash === '') {
+                return { success: false, needsPasswordSetup: true, message: 'Password needs to be set' };
+            }
+
+            const isValid = await bcrypt.compare(password, row.PasswordHash);
+            if (!isValid) {
+                return { success: false, message: 'Invalid password' };
+            }
+
+            const permissions = row.Permissions ? row.Permissions.split('|').filter(Boolean) : [];
+            return {
+                success: true,
+                user: { username: row.Username, email: row.Email, permissions }
+            };
+        } catch (error) {
+            console.error('Error validating password:', error);
+            return { success: false, message: `Failed to validate password: ${error.message}` };
+        }
+    }
+
+    /**
+     * Sets a new password for a user (first-time setup or after reset).
+     * @param {{ email: string, password: string }} params
+     * @returns {Promise<BaseResult & { user?: UserSession }>}
+     */
+    async setUserPassword(params) {
+        const { email, password } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('email', sql.NVarChar, email);
+
+            const result = await request.query(`
+            SELECT Username, Email, Permissions, Blocked
+            FROM Users
+            WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (result.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const row = result.recordset[0];
+
+            if (row.Blocked) {
+                return { success: false, message: 'Cannot set password for blocked user' };
+            }
+
+            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
+
+            const updateRequest = this.pool.request();
+            updateRequest.input('passwordHash', sql.NVarChar, passwordHash);
+            updateRequest.input('email', sql.NVarChar, email);
+
+            await updateRequest.query(`
+            UPDATE Users SET PasswordHash = @passwordHash WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            const permissions = row.Permissions ? row.Permissions.split('|').filter(Boolean) : [];
+            return {
+                success: true,
+                user: { username: row.Username, email: row.Email, permissions }
+            };
+        } catch (error) {
+            console.error('Error setting password:', error);
+            return { success: false, message: `Failed to set password: ${error.message}` };
+        }
+    }
+
+
+    /**
+     * Clears a user's password hash, forcing them to set a new one on next login.
+     * Caller must have already been verified as admin at the route level.
+     * @param {{ email: string }} params
+     * @returns {Promise<BaseResult>}
+     */
+    async resetUserPassword(params) {
+        const { email } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('email', sql.NVarChar, email);
+            const userResult = await request.query(`SELECT Email FROM Users WHERE LOWER(Email) = LOWER(@email)`);
+
+            if (userResult.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const updateRequest = this.pool.request();
+            updateRequest.input('email', sql.NVarChar, email);
+            await updateRequest.query(`UPDATE Users SET PasswordHash = '' WHERE LOWER(Email) = LOWER(@email)`);
+
+            return { success: true, message: `Password reset for ${email}. User will be prompted to set a new password on next login.` };
+        } catch (error) {
+            console.error('Error resetting password:', error);
+            return { success: false, message: `Failed to reset password: ${error.message}` };
+        }
+    }
+
+    /**
+     * Updates the permission set for a given user.
+     * Caller must have already been verified as admin at the route level.
+     * Prevents removal of the last active admin.
+     * @param {{ email: string, permissions: string[] }} params
+     * @returns {Promise<BaseResult & { user?: UserSession }>}
+     */
+    async updateUserPermissions(params) {
+        const { email, permissions } = params;
+        await this.ensureConnection();
+
+        try {
+            const targetRequest = this.pool.request();
+            targetRequest.input('email', sql.NVarChar, email);
+            const targetResult = await targetRequest.query(`
+            SELECT Username, Email, Permissions FROM Users WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (targetResult.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const row = targetResult.recordset[0];
+            const wasAdmin = row.Permissions?.includes('admin');
+            const willBeAdmin = permissions.includes('admin');
+
+            if (wasAdmin && !willBeAdmin) {
+                const activeAdminsRequest = this.pool.request();
+                activeAdminsRequest.input('email', sql.NVarChar, email);
+                const activeAdmins = await activeAdminsRequest.query(`
+                SELECT COUNT(*) AS cnt
+                FROM Users
+                WHERE Blocked = 0
+                  AND Permissions LIKE '%admin%'
+                  AND LOWER(Email) != LOWER(@email)
+            `);
+
+                if (activeAdmins.recordset[0].cnt === 0) {
+                    return { success: false, message: 'Cannot remove admin permission - at least one admin must remain' };
+                }
+            }
+
+            const updateRequest = this.pool.request();
+            updateRequest.input('permissions', sql.NVarChar, permissions.join('|'));
+            updateRequest.input('email', sql.NVarChar, email);
+            await updateRequest.query(`UPDATE Users SET Permissions = @permissions WHERE LOWER(Email) = LOWER(@email)`);
+
+            return {
+                success: true,
+                user: { username: row.Username, email: row.Email, permissions }
+            };
+        } catch (error) {
+            console.error('Error updating permissions:', error);
+            return { success: false, message: `Failed to update permissions: ${error.message}` };
+        }
+    }
+
+    /**
+     * Blocks a user account, preventing them from logging in.
+     * Caller must have already been verified as admin at the route level.
+     * Prevents blocking if it would leave zero active admins.
+     * @param {{ email: string }} params
+     * @returns {Promise<BaseResult>}
+     */
+    async blockUser(params) {
+        const { email } = params;
+        await this.ensureConnection();
+
+        try {
+            const targetRequest = this.pool.request();
+            targetRequest.input('email', sql.NVarChar, email);
+            const targetResult = await targetRequest.query(`
+            SELECT Permissions FROM Users WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (targetResult.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const row = targetResult.recordset[0];
+
+            if (row.Permissions?.includes('admin')) {
+                const activeAdminsRequest = this.pool.request();
+                activeAdminsRequest.input('email', sql.NVarChar, email);
+                const activeAdmins = await activeAdminsRequest.query(`
+                SELECT COUNT(*) AS cnt
+                FROM Users
+                WHERE Blocked = 0
+                  AND Permissions LIKE '%admin%'
+                  AND LOWER(Email) != LOWER(@email)
+            `);
+
+                if (activeAdmins.recordset[0].cnt === 0) {
+                    return { success: false, message: 'Cannot block user - at least one active admin must remain' };
+                }
+            }
+
+            const updateRequest = this.pool.request();
+            updateRequest.input('email', sql.NVarChar, email);
+            await updateRequest.query(`UPDATE Users SET Blocked = 1 WHERE LOWER(Email) = LOWER(@email)`);
+
+            return { success: true, message: `User ${email} has been blocked` };
+        } catch (error) {
+            console.error('Error blocking user:', error);
+            return { success: false, message: `Failed to block user: ${error.message}` };
+        }
+    }
+
+    /**
+     * Unblocks a previously blocked user account.
+     * Caller must have already been verified as admin at the route level.
+     * @param {{ email: string }} params
+     * @returns {Promise<BaseResult>}
+     */
+    async unblockUser(params) {
+        const { email } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('email', sql.NVarChar, email);
+            const result = await request.query(`SELECT Email FROM Users WHERE LOWER(Email) = LOWER(@email)`);
+
+            if (result.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const updateRequest = this.pool.request();
+            updateRequest.input('email', sql.NVarChar, email);
+            await updateRequest.query(`UPDATE Users SET Blocked = 0 WHERE LOWER(Email) = LOWER(@email)`);
+
+            return { success: true, message: `User ${email} has been unblocked` };
+        } catch (error) {
+            console.error('Error unblocking user:', error);
+            return { success: false, message: `Failed to unblock user: ${error.message}` };
+        }
+    }
+
+    /**
+     * Pre-registers a user by email and permissions. Username is left null until
+     * the user completes registration on first login.
+     * Caller must have already been verified as admin at the route level.
+     * @param {{ email: string, permissions: string[] }} params
+     * @returns {Promise<BaseResult & { user?: Pick<UserPublic, 'email' | 'permissions' | 'preRegistered'> }>}
+     */
+    async preRegisterUser(params) {
+        const { email, permissions } = params;
+        await this.ensureConnection();
+
+        try {
+            const existingRequest = this.pool.request();
+            existingRequest.input('email', sql.NVarChar, email);
+            const existing = await existingRequest.query(`SELECT Email FROM Users WHERE LOWER(Email) = LOWER(@email)`);
+
+            console.log('preRegisterUser check - email:', email, 'rows found:', existing.recordset);
+
+            if (existing.recordset.length > 0) {
+                return { success: false, message: 'User already exists' };
+            }
+
+            const insertRequest = this.pool.request();
+            insertRequest.input('email', sql.NVarChar, email);
+            insertRequest.input('permissions', sql.NVarChar, permissions.join('|'));
+
+            await insertRequest.query(`
+            INSERT INTO Users (Username, Email, PasswordHash, Permissions, Blocked, PreRegistered)
+            VALUES (NULL, @email, '', @permissions, 0, 1)
+        `);
+
+            return {
+                success: true,
+                user: { email, permissions, preRegistered: true }
+            };
+        } catch (error) {
+            console.error('Error pre-registering user:', error);
+            return { success: false, message: `Failed to pre-register user: ${error.message}` };
+        }
+    }
+
+    /**
+     * Deletes a user record entirely from the database.
+     * Caller must have already been verified as admin at the route level.
+     * Prevents deletion if it would leave zero active admins.
+     * @param {{ email: string }} params
+     * @returns {Promise<BaseResult>}
+     */
+    async deleteUser(params) {
+        const { email } = params;
+        await this.ensureConnection();
+
+        try {
+            const targetRequest = this.pool.request();
+            targetRequest.input('email', sql.NVarChar, email);
+            const targetResult = await targetRequest.query(`
+            SELECT Permissions FROM Users WHERE LOWER(Email) = LOWER(@email)
+        `);
+
+            if (targetResult.recordset.length === 0) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const row = targetResult.recordset[0];
+
+            if (row.Permissions?.includes('admin')) {
+                const activeAdminsRequest = this.pool.request();
+                activeAdminsRequest.input('email', sql.NVarChar, email);
+                const activeAdmins = await activeAdminsRequest.query(`
+                SELECT COUNT(*) AS cnt
+                FROM Users
+                WHERE Blocked = 0
+                  AND Permissions LIKE '%admin%'
+                  AND LOWER(Email) != LOWER(@email)
+            `);
+
+                if (activeAdmins.recordset[0].cnt === 0) {
+                    return { success: false, message: 'Cannot delete user - at least one active admin must remain' };
+                }
+            }
+
+            const deleteRequest = this.pool.request();
+            deleteRequest.input('email', sql.NVarChar, email);
+            await deleteRequest.query(`DELETE FROM Users WHERE LOWER(Email) = LOWER(@email)`);
+
+            return { success: true, message: `User ${email} has been deleted` };
+        } catch (error) {
+            console.error('Error deleting user:', error);
+            return { success: false, message: `Failed to delete user: ${error.message}` };
+        }
+    }
+
+
+
+    /**
+     * Imports an array of users from the CSV export into the database.
+     * If a row already exists with a matching Username (e.g. preferences were stored
+     * prior to migration), that row is updated in place rather than creating a duplicate.
+     * Rows with a null username are always inserted fresh.
+     * @param {{ users: ImportUserRow[] }} params
+     * @returns {Promise<BaseResult & { imported: number, updated: number, failed: number }>}
+     */
+    async importUsers(params) {
+        const { users } = params;
+        await this.ensureConnection();
+
+        let imported = 0;
+        let updated  = 0;
+        let failed   = 0;
+
+        for (const user of users) {
+            try {
+                if (user.username !== null) {
+                    // Check existence first so we can track insert vs update
+                    const existsRequest = this.pool.request();
+                    existsRequest.input('username', sql.NVarChar, user.username);
+                    const existsResult = await existsRequest.query(
+                        `SELECT 1 AS found FROM Users WHERE Username = @username`
+                    );
+                    const alreadyExists = existsResult.recordset.length > 0;
+
+                    const request = this.pool.request();
+                    request.input('username',     sql.NVarChar, user.username);
+                    request.input('email',        sql.NVarChar, user.Email);
+                    request.input('passwordHash', sql.NVarChar, user.PasswordHash);
+                    request.input('permissions',  sql.NVarChar, user.Permissions);
+                    request.input('blocked',      sql.Bit,      user.Blocked ? 1 : 0);
+
+                    await request.query(`
+                        IF EXISTS (SELECT 1 FROM Users WHERE Username = @username)
+                            UPDATE Users
+                            SET Email         = @email,
+                                PasswordHash  = @passwordHash,
+                                Permissions   = @permissions,
+                                Blocked       = @blocked,
+                                PreRegistered = 0
+                            WHERE Username = @username
+                        ELSE
+                            INSERT INTO Users (Username, Email, PasswordHash, Permissions, Blocked, PreRegistered)
+                            VALUES (@username, @email, @passwordHash, @permissions, @blocked, 0)
+                    `);
+
+                    alreadyExists ? updated++ : imported++;
+                } else {
+                    // Pre-registered user — upsert on email to prevent duplicates on re-import
+                    const request = this.pool.request();
+                    request.input('email',        sql.NVarChar, user.Email);
+                    request.input('passwordHash', sql.NVarChar, user.PasswordHash);
+                    request.input('permissions',  sql.NVarChar, user.Permissions);
+                    request.input('blocked',      sql.Bit,      user.Blocked ? 1 : 0);
+
+                    await request.query(`
+                        IF EXISTS (SELECT 1 FROM Users WHERE LOWER(Email) = LOWER(@email))
+                            UPDATE Users
+                            SET PasswordHash  = @passwordHash,
+                                Permissions   = @permissions,
+                                Blocked       = @blocked,
+                                PreRegistered = 1
+                            WHERE LOWER(Email) = LOWER(@email)
+                        ELSE
+                            INSERT INTO Users (Username, Email, PasswordHash, Permissions, Blocked, PreRegistered)
+                            VALUES (NULL, @email, @passwordHash, @permissions, @blocked, 1)
+                    `);
+
+                    imported++;
+                }
+            } catch (error) {
+                console.error(`Error importing user ${user.Email}:`, error);
+                failed++;
+            }
+        }
+
+        return {
+            success: failed < users.length,
+            message: `Import complete: ${imported} inserted, ${updated} updated, ${failed} failed`,
+            imported,
+            updated,
+            failed
+        };
+    }
+
+
+
+
     async getUserPreferences(params) {
         const { username } = params;
         await this.ensureConnection();
@@ -7736,8 +8434,25 @@ module.exports = {
 
 
     // Users
+    checkUsers: () => dbOps.checkUsers(),
+    getAllUsers: () => dbOps.getAllUsers(),
+    lookupUser: (params) => dbOps.lookupUser(params),
+    setupUser: (params) => dbOps.setupUser(params),
+    validatePassword: (params) => dbOps.validatePassword(params),
+    setUserPassword: (params) => dbOps.setUserPassword(params),
+    resetUserPassword: (params) => dbOps.resetUserPassword(params),
+    updateUserPermissions: (params) => dbOps.updateUserPermissions(params),
+    blockUser: (params) => dbOps.blockUser(params),
+    unblockUser: (params) => dbOps.unblockUser(params),
+    preRegisterUser: (params) => dbOps.preRegisterUser(params),
+    deleteUser: (params) => dbOps.deleteUser(params),
+    importUsers: (params) => dbOps.importUsers(params),
+
     getUserPreferences: (params) => dbOps.getUserPreferences(params),
     updateUserPreferences: (params) => dbOps.updateUserPreferences(params),
+
+
+
 
     // Pasture & feed activity
     getAllPastures: () => dbOps.getAllPastures(),
@@ -7785,10 +8500,6 @@ module.exports = {
 
     generateTagSuggestions: (params) => dbOps.generateTagSuggestions(params),
     createWeightRecordBatch: (params) => dbOps.createWeightRecordBatch(params),
-
-
-
-
 
 
 };
