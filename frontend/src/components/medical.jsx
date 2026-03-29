@@ -373,14 +373,14 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cowTag,
-          recordType: 'treatment',
-          treatmentMedicineID: quickTreatment.medicineID,
-          treatmentDate: toUTC(quickTreatment.date),
-          treatmentResponse: quickTreatment.notes?.trim() || null,
-          isImmunization: false
+            cowTag,
+            recordType:          'treatment',
+            TreatmentMedicineID: quickTreatment.medicineID,
+            TreatmentDate:       toUTC(quickTreatment.date),
+            TreatmentResponse:   quickTreatment.notes?.trim() || null,
+            TreatmentIsActive:   false,
         })
-      });
+    });
 
       if (!response.ok) {
         const err = await response.json();

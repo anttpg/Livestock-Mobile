@@ -131,7 +131,7 @@ function FieldsheetTemplates({ filterSheets = null }) {
   };
 
   const handleDelete = () => {
-    if (selectedSheet && !selectedSheet.locked) {
+    if (selectedSheet /*&& !selectedSheet.locked*/) {
       setShowDeleteConfirm(true);
     }
   };

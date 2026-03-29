@@ -50,6 +50,11 @@ function ReadOnlyCell({ value, type, isDefault }) {
 }
 
 function EditableCell({ value, type, options = [], onChange }) {
+    const [localValue, setLocalValue] = useState(value);
+
+    // Keep in sync if parent value changes (e.g. on reload)
+    useEffect(() => setLocalValue(value), [value]);
+
     if (type === 'boolean') {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '4px 0' }}>
@@ -67,7 +72,7 @@ function EditableCell({ value, type, options = [], onChange }) {
             <select
                 value={value ?? ''}
                 onChange={e => onChange(e.target.value || null)}
-                style={{ ...cellBase, cursor: 'pointer'}}
+                style={{ ...cellBase, cursor: 'pointer' }}
             >
                 <option value="">-- None --</option>
                 {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -89,25 +94,27 @@ function EditableCell({ value, type, options = [], onChange }) {
             <input
                 type="number"
                 step="0.01"
-                value={value ?? ''}
-                onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                value={localValue ?? ''}
+                onChange={e => setLocalValue(e.target.value === '' ? null : Number(e.target.value))}
+                onBlur={() => onChange(localValue)}
                 style={cellBase}
             />
         );
     }
-    // text / inline
+    // text / inline — local state, flush on blur only
     return (
         <input
             type="text"
-            value={value ?? ''}
-            onChange={e => onChange(e.target.value)}
+            value={localValue ?? ''}
+            onChange={e => setLocalValue(e.target.value)}
+            onBlur={() => onChange(localValue)}
             style={cellBase}
         />
     );
 }
 
-//  Main component 
 
+//  Main component 
 function Sheet({ instanceId, showImportButton = false }) {
 
     const [sheetData,    setSheetData]    = useState(null);
@@ -141,14 +148,38 @@ function Sheet({ instanceId, showImportButton = false }) {
      * Snapshot: lives on CowTable — needs cowTag + new value.
      * Inline:   lives only in RowData JSON — same shape, different persistence.
      */
-    const handleSnapshotChange = (cowTag, col, newValue) => {
-        console.log('Call handler here!', {
-            type:     col.storage,   // 'snapshot' | 'inline'
-            cowTag,
-            key:      col.key,
-            newValue,
-        });
+    const handleSnapshotChange = async (cowTag, col, newValue) => {
         applyLocalCell(cowTag, col.key, newValue);
+        try {
+            if (col.storage === 'inline') {
+                // Inline fields live only in RowData — persist via cell endpoint
+                await fetch(`/api/sheets/instances/${instanceId}/cell`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        cowTag,
+                        recordSlot: col.key,
+                        source:     null,
+                        fieldKey:   col.key,
+                        fieldValue: newValue,
+                    }),
+                });
+            } else {
+                // Snapshot fields live on CowTable
+                await fetch(`/api/cow/update`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        cowTag,
+                        updates: { [col.key]: newValue },
+                    }),
+                });
+            }
+        } catch (e) {
+            console.error('Error saving snapshot cell:', e);
+        }
     };
 
     /**
@@ -161,38 +192,29 @@ function Sheet({ instanceId, showImportButton = false }) {
      * the slot metadata, and ALL field values so the backend can
      * INSERT the full record in one shot.
      */
-    const handleRecordFieldChange = (cowTag, col, field, newValue) => {
-        const row        = sheetData.data.find(r => r.CowTag === cowTag);
-        const existing   = row?.[col.recordSlot];  // null or { recordId, ...fields }
+    const handleRecordFieldChange = async (cowTag, col, field, newValue) => {
+        const row      = sheetData.data.find(r => r.CowTag === cowTag);
+        const existing = row?.[col.recordSlot];
 
-        if (existing) {
-            // Record exists — update single field by record ID only
-            console.log('Call handler here!', {
-                type:       'record-update',
-                recordId:   existing.recordId,
-                recordSlot: col.recordSlot,
-                source:     col.source,
-                fieldKey:   field.key,
-                newValue,
-            });
-        } else {
-            // Record does not exist — creation needed, pass full row context
-            const allFieldValues = {
-                ...(col.defaults || {}),
-                [field.key]: newValue,
-            };
-            console.log('Call handler here!', {
-                type:           'record-create',
-                cowTag,
-                recordSlot:     col.recordSlot,
-                source:         col.source,
-                medicine:       col.medicine || null,
-                fieldValues:    allFieldValues,
-            });
-        }
-
-        // Optimistic local update
         applyLocalRecordField(cowTag, col.recordSlot, field.key, newValue, existing);
+
+        try {
+            await fetch(`/api/sheets/instances/${instanceId}/cell`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    cowTag,
+                    recordSlot: col.recordSlot,
+                    source:     col.source,
+                    fieldKey:   field.key,
+                    fieldValue: newValue,
+                    medicine:   col.medicine || null,
+                }),
+            });
+        } catch (e) {
+            console.error('Error saving record cell:', e);
+        }
     };
 
     //  Optimistic local state updates 
@@ -255,7 +277,7 @@ function Sheet({ instanceId, showImportButton = false }) {
  
             for (const col of columns) {
                 if (col.storage === 'record') {
-                    for (const field of col.fields) {
+                    for (const field of col.fields.filter(f => !f.hidden)) {
                         cellMap.push({ excelCol, col, field, isRecord: true });
                         excelCol++;
                     }
@@ -267,15 +289,13 @@ function Sheet({ instanceId, showImportButton = false }) {
  
             const totalCols = excelCol - 1;
  
-            //  Row 1: top-level group headers 
-            ws.addRow([]); // placeholder — we'll write cells manually
- 
+            //  Row 1: top-level group headers  
             let writeCol = 1;
             for (const col of columns) {
                 if (col.storage === 'record') {
-                    const span = col.fields.length;
+                    const span = col.fields.filter(f => !f.hidden).length;
                     const cell = ws.getRow(1).getCell(writeCol);
-                    cell.value = col.name + (col.medicine ? ' (pinned)' : '');
+                    cell.value = col.name;
                     applyHeaderStyle(cell, COLORS.recordHeader, true, 11);
                     cell.border = {
                         top: thin(COLORS.recordBorder), left: thin(COLORS.recordBorder),
@@ -296,8 +316,6 @@ function Sheet({ instanceId, showImportButton = false }) {
             }
  
             //  Row 2: sub-field headers (record columns only) 
-            ws.addRow([]);
- 
             for (const { excelCol: ec, col, field, isRecord } of cellMap) {
                 if (!isRecord) continue; // already merged into row 1
                 const cell = ws.getRow(2).getCell(ec);
@@ -311,10 +329,15 @@ function Sheet({ instanceId, showImportButton = false }) {
  
             ws.getRow(1).height = 22;
             ws.getRow(2).height = 18;
+
+            // Freeze the CowTag row so its always visible and easy to see
+            const cowTagEntry = cellMap.find(c => !c.isRecord && c.col.key === 'CowTag');
+            const cowTagColIndex = cowTagEntry ? cowTagEntry.excelCol : 0;
+            ws.views = [{ state: 'frozen', xSplit: cowTagColIndex, ySplit: 2 }];
  
             //  Data rows 
             sheetData.data.forEach((row, ri) => {
-                const excelRow = ws.addRow([]);
+                const excelRow = ws.getRow(ri + 3);
                 excelRow.height = 18;
                 const bgArgb = ri % 2 === 0 ? COLORS.rowEven : COLORS.rowOdd;
  
@@ -361,7 +384,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                         cell.value = Number(rawValue);
  
                     } else if (col.key === 'CowTag') {
-                        cell.value = { text: rawValue ?? '', hyperlink: `/animal?tab=general&search=${encodeURIComponent(rawValue ?? '')}` };
+                        cell.value = { text: rawValue ?? '', hyperlink: `${window.location.origin}/animal?tab=general&search=${encodeURIComponent(rawValue ?? '')}` };
                         cell.font  = { name: 'Calibri', size: 10, color: { argb: COLORS.cowTagBlue }, underline: true };
  
                     } else {
@@ -384,11 +407,10 @@ function Sheet({ instanceId, showImportButton = false }) {
             for (const { excelCol: ec, col, field, isRecord } of cellMap) {
                 const type    = isRecord ? field.type : col.type;
                 const options = isRecord ? (field.options || []) : (col.options || []);
-                if (type !== 'select' || options.length === 0) continue;
+                const colLetter = ws.getColumn(ec).letter;
+                const range     = `${colLetter}${dataRowStart}:${colLetter}${dataRowEnd}`;
 
                 if (type === 'boolean') {
-                    const colLetter = ws.getColumn(ec).letter;
-                    const range     = `${colLetter}${dataRowStart}:${colLetter}${dataRowEnd}`;
                     ws.dataValidations.add(range, {
                         type: 'list', allowBlank: true,
                         formulae: ['"TRUE,FALSE"'],
@@ -398,9 +420,9 @@ function Sheet({ instanceId, showImportButton = false }) {
                     });
                     continue;
                 }
- 
-                const colLetter = ws.getColumn(ec).letter;
-                const range     = `${colLetter}${dataRowStart}:${colLetter}${dataRowEnd}`;
+
+                if (type !== 'select' || options.length === 0) continue;
+
                 ws.dataValidations.add(range, {
                     type: 'list', allowBlank: true,
                     formulae: [`"${options.join(',')}"`],
@@ -409,7 +431,49 @@ function Sheet({ instanceId, showImportButton = false }) {
                     error: `Please select from: ${options.join(', ')}`,
                 });
             }
- 
+
+
+
+            // Hidden metadata in 2nd sheet
+            const meta = workbook.addWorksheet('_meta', { state: 'hidden' });
+
+            meta.getColumn(1).width = 30;
+            meta.getColumn(2).width = 80;
+
+            const metaRows = [
+                ['instanceId',    sheetData.instanceId],
+                ['templateId',    sheetData.templateId],
+                ['instanceName',  sheetData.instanceName],
+                ['templateName',  sheetData.templateName],
+                ['breedingYear',  sheetData.breedingYear],
+                ['dateCreated',   sheetData.dateCreated],
+                ['exportedAt',    new Date().toISOString()],
+                ['animalTags',    JSON.stringify(sheetData.animalTags)],
+                ['columnData',    JSON.stringify(
+                                    sheetData.columns.map(({ get, update, add, ...rest }) => rest)
+                                )],
+                ['defaults',      JSON.stringify(
+                                    sheetData.columns
+                                        .filter(c => c.storage === 'record' && c.defaults)
+                                        .reduce((acc, c) => {
+                                            acc[c.recordSlot] = {
+                                                ...(c.medicine && { medicine: c.medicine }),
+                                                defaults: c.defaults,
+                                            };
+                                            return acc;
+                                        }, {})
+                                )],
+            ];
+
+            metaRows.forEach(([key, value], i) => {
+                const row = meta.getRow(i + 1);
+                row.getCell(1).value = key;
+                row.getCell(2).value = String(value ?? '');
+                row.getCell(1).font  = { bold: true, name: 'Calibri', size: 10 };
+                row.getCell(2).font  = { name: 'Calibri', size: 10 };
+            });
+            
+
             //  Write file 
             const buffer = await workbook.xlsx.writeBuffer();
             const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -440,11 +504,11 @@ function Sheet({ instanceId, showImportButton = false }) {
         for (const col of columns) {
             if (col.storage === 'record') {
                 row1Cells.push(
-                    `<th colspan="${col.fields.length}" style="background:#fce4ec;border:1px solid #f48fb1;text-align:center;padding:6px 8px;font-size:11px;">
+                    `<th colspan="${col.fields.filter(f => !f.hidden).length}" style="background:#fce4ec;border:1px solid #f48fb1;text-align:center;padding:6px 8px;font-size:11px;">
                         ${col.name}${col.medicine ? ' <span style="font-weight:normal;font-size:9px;color:#888">(pinned)</span>' : ''}
                     </th>`
                 );
-                col.fields.forEach(field => {
+                col.fields.filter(f => !f.hidden).forEach(field => {
                     row2Cells.push(
                         `<th style="background:#fff8e1;border:1px solid #ddd;padding:5px 7px;font-size:10px;font-weight:normal;text-align:left;">${field.name}</th>`
                     );
@@ -464,7 +528,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                     const record     = row[col.recordSlot];
                     const isDefault  = record == null;
                     const bg         = isDefault ? 'background:#fffde7;' : (ri % 2 === 1 ? 'background:#f9f9f9;' : '');
-                    col.fields.forEach(field => {
+                    col.fields.filter(f => !f.hidden).forEach(field => {
                         const value = isDefault
                             ? (col.defaults?.[field.key] ?? '')
                             : (record[field.key] ?? '');
@@ -540,7 +604,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                                 return (
                                     <th
                                         key={col.recordSlot}
-                                        colSpan={col.fields.length}
+                                        colSpan={col.fields.filter(f => !f.hidden).length}
                                         style={{ ...thBase, backgroundColor: '#fce4ec', borderBottom: '1px solid #f48fb1', textAlign: 'center' }}
                                     >
                                         {col.name}
@@ -564,7 +628,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                     <tr>
                         {columns.flatMap(col => {
                             if (col.storage !== 'record') return [];
-                            return col.fields.map(field => (
+                            return col.fields.filter(f => !f.hidden).map(field => (
                                 <th key={`${col.recordSlot}.${field.key}`} style={{ ...thBase, fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
                                     {field.name}
                                 </th>
@@ -616,7 +680,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                                 const record    = row[col.recordSlot];   // null OR { recordId, ...fields }
                                 const isDefault = record == null;        // showing col.defaults, not real data
 
-                                return col.fields.map(field => {
+                                return col.fields.filter(f => !f.hidden).map(field => {
                                     const value = isDefault
                                         ? (col.defaults?.[field.key] ?? null)
                                         : (record[field.key] ?? null);

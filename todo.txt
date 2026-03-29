@@ -7,39 +7,11 @@ FUTURE DBOPERATION OPTIMIZATIONS
 
 
 CHANGES MADE TO DB
+SheetInstances
+Add bool column Archive, default false
 
-Users
-Added columns
-ALTER TABLE Users ADD Email TEXT;
-ALTER TABLE Users ADD PasswordHash TEXT;
-ALTER TABLE Users ADD Permissions TEXT;
-ALTER TABLE Users ADD Blocked BIT DEFAULT 0;
-ALTER TABLE Users ADD PreRegistered BIT DEFAULT 1;
-ALTER TABLE Users ALTER COLUMN Email NVARCHAR(255);
-ALTER TABLE Users ALTER COLUMN PasswordHash NVARCHAR(255);
-ALTER TABLE Users ALTER COLUMN Permissions NVARCHAR(255);
-ALTER TABLE Users ALTER COLUMN Username NVARCHAR(255) NULL;
-ALTER TABLE PastureFeedRecords DROP CONSTRAINT PastureFeedRecords$UsersPastureFeedRecords;
-ALTER TABLE PastureMaintenanceRecords DROP CONSTRAINT PastureMaintenanceRecords$UsersPastureMaintenanceRecords;
-ALTER TABLE Users DROP CONSTRAINT Users$PrimaryKey;
-ALTER TABLE Users ALTER COLUMN Username NVARCHAR(255) NULL;
-ALTER TABLE Users ALTER COLUMN Email NVARCHAR(255) NOT NULL;
-ALTER TABLE Users ADD CONSTRAINT Users$PrimaryKey PRIMARY KEY (Email);
-ALTER TABLE Users ADD CONSTRAINT Users$UsernameUnique UNIQUE (Username);
-
-
-Made New Table
-HerdNotes
-
-with the columns:
-ID autonumber and PK
-HerdID number and FK to Herds.HerdID
-DateOfEntry datetime
-Username varchar 
-Note varchar max
-Archive bool default false
-
-
+ALTER TABLE dbo.SheetInstances
+ADD Archive BIT NOT NULL DEFAULT 0;
 
 
 

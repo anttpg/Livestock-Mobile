@@ -65,7 +65,7 @@ function buildDefaults(columns) {
             d[col.recordSlot]._medicine = '';
         }
 
-        for (const field of (col.fields || [])) {
+        for (const field of (col.fields || []).filter(f => !f.hidden)) {
             switch (field.type) {
                 case 'select':  d[col.recordSlot][field.key] = null;                    break;
                 case 'boolean': d[col.recordSlot][field.key] = false;                   break;
@@ -95,13 +95,21 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
     const [loading,         setLoading]         = useState(false);
     const [loadingCols,     setLoadingCols]     = useState(false);
 
-    // Breeding year is always derived from the current date — not user-editable.
-    const breedingYear = new Date().getFullYear();
+    // Primary record date — user-editable, stored as UTC ISO string
+    const [primaryRecordDate, setPrimaryRecordDate] = useState(new Date().toISOString());
+
+    // Helpers for datetime-local <-> UTC conversion
+    const toLocalInput = (utcStr) => {
+        if (!utcStr) return '';
+        const d = new Date(utcStr);
+        return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    const toUTC = (localStr) => localStr ? new Date(localStr).toISOString() : null;
 
     //  Reset & seed on open 
     useEffect(() => {
         if (!isOpen) return;
-        setInstanceName('');
+        setPrimaryRecordDate(new Date().toISOString());
         setTemplateId('');
         setHerd('');
         setResolvedColumns([]);
@@ -173,7 +181,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                 body: JSON.stringify({
                     instanceName: instanceName.trim(),
                     herdName:     herd,
-                    breedingYear,
+                    primaryRecordDate,
                     defaults,
                 }),
             });
@@ -341,7 +349,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                         </div>
                     )}
 
-                    {col.fields?.map(field => renderFieldDefault(col.recordSlot, field))}
+                    {col.fields?.filter(f => !f.hidden).map(field => renderFieldDefault(col.recordSlot, field))}
                 </div>
             </div>
         );
@@ -404,12 +412,12 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                 {/* Row 2: Herd + breeding year */}
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                     <div style={{ flex: 2 }}>
-                        <label style={labelStyle}>Breeding Year</label>
+                        <label style={labelStyle}>Record Date</label>
                         <input
-                            type="text"
-                            value={breedingYear}
-                            disabled
-                            style={{ width: '100%', padding: '7px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '14px', backgroundColor: '#f5f5f5', color: '#666', boxSizing: 'border-box' }}
+                            type="datetime-local"
+                            value={toLocalInput(primaryRecordDate)}
+                            onChange={e => setPrimaryRecordDate(toUTC(e.target.value))}
+                            style={{ width: '100%', padding: '7px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '14px', boxSizing: 'border-box' }}
                         />
                     </div>
                     <div style={{ flex: 1 }}>

@@ -30,10 +30,10 @@ function AddWeightRecord({ cowTag: propCowTag, eventId: propEventId = null, onSu
                 credentials: 'include',
                 body: JSON.stringify({
                     cowTag,
-                    weight: parseInt(weight),
-                    date,
-                    eventId: propEventId ?? null,
-                    notes: notes.trim() || null
+                    Weight:       parseInt(weight),
+                    TimeRecorded: date,
+                    EventID:      propEventId ?? null,
+                    Notes:        notes.trim() || null
                 })
             });
 

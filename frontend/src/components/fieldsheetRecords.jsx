@@ -12,10 +12,6 @@ function FieldsheetRecords() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // New instance creation state
-  const [newInstanceSheet, setNewInstanceSheet] = useState(null);
-  const [newInstanceHerd, setNewInstanceHerd] = useState('');
-  const [newInstanceYear, setNewInstanceYear] = useState(new Date().getFullYear());
   const [herds, setHerds] = useState([]);
 
 
@@ -70,14 +66,18 @@ function FieldsheetRecords() {
 
       if (response.ok) {
         const data = await response.json();
-        setInstances(data.instances || []);
+        const list = data.instances || [];
+        setInstances(list);
+        return list;
       } else {
         console.error('Failed to fetch instances');
         setInstances([]);
+        return [];
       }
     } catch (error) {
       console.error('Error fetching instances:', error);
       setInstances([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -89,45 +89,6 @@ function FieldsheetRecords() {
 
   const handleCreateNew = () => {
     setShowCreateDialog(true);
-  };
-
-  const handleCreateInstance = async () => {
-    if (!newInstanceSheet || !newInstanceHerd || !newInstanceYear) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/sheets/${newInstanceSheet}/instances/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          herdName: newInstanceHerd,
-          breedingYear: newInstanceYear
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setShowCreateDialog(false);
-        setNewInstanceSheet(null);
-        setNewInstanceHerd('');
-        setNewInstanceYear(new Date().getFullYear());
-        await fetchInstances();
-
-        // Select the newly created instance
-        const newInstance = instances.find(i => i.id === data.id);
-        if (newInstance) {
-          setSelectedInstance(newInstance);
-        }
-      } else {
-        alert('Failed to create instance');
-      }
-    } catch (error) {
-      console.error('Error creating instance:', error);
-      alert('Error creating instance');
-    }
   };
 
   const handleDelete = () => {
@@ -189,11 +150,11 @@ function FieldsheetRecords() {
       <div className="multibubble-row" style={{ minHeight: '200px' }}>
         {/* Left side - Instance list */}
         <div className="bubble-container" style={{ flex: 1 }}>
-          <h3 style={{ margin: '0 0 15px 0' }}>Saved Records</h3>
+          <h3 style={{ margin: '0 0 15px 0' }}>Saved Instances</h3>
 
           {/* Filter dropdown */}
           <div style={{ marginBottom: '15px' }}>
-            <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Filter by Sheet:</label>
+            <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Filter by Template:</label>
             <select
               value={filterSheet}
               onChange={(e) => setFilterSheet(e.target.value)}
@@ -232,7 +193,7 @@ function FieldsheetRecords() {
                 >
                   <div style={{ fontWeight: 'bold' }}>{instance.instanceName}</div>
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    {instance.breedingYear}
+                    {instance.primaryRecordDate ? new Date(instance.primaryRecordDate).toLocaleDateString() : ''}
                   </div>
                   <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
                     Created: {formatDate(instance.dateCreated)} by {instance.createdBy}
@@ -279,17 +240,17 @@ function FieldsheetRecords() {
                 cursor: selectedInstance ? 'pointer' : 'not-allowed'
               }}
             >
-              Delete Record
+              Delete Instance
             </button>
           </div>
 
           {selectedInstance && (
             <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '3px' }}>
-              <h4 style={{ margin: '0 0 10px 0' }}>Record Details</h4>
+              <h4 style={{ margin: '0 0 10px 0' }}>Instance Details</h4>
               <div style={{ fontSize: '14px' }}>
                 <div><strong>Sheet:</strong> {selectedInstance.templateName}</div>
                 <div><strong>Herd:</strong> {selectedInstance.herdName}</div>
-                <div><strong>Year:</strong> {selectedInstance.breedingYear}</div>
+                <div><strong>Record Date:</strong> {selectedInstance.primaryRecordDate ? new Date(selectedInstance.primaryRecordDate).toLocaleDateString() : '—'}</div>
                 <div><strong>Created:</strong> {formatDate(selectedInstance.dateCreated)}</div>
                 <div><strong>By:</strong> {selectedInstance.createdBy}</div>
               </div>
@@ -315,7 +276,7 @@ function FieldsheetRecords() {
             fontSize: '18px',
             minHeight: '150px'
           }}>
-            Select a record to view
+            Select an instance to view
           </div>
         )}
       </div>
@@ -325,10 +286,9 @@ function FieldsheetRecords() {
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
         onCreated={async (data) => {
-          await fetchInstances();
-          // data.instanceId comes back from the create endpoint
-          const fresh = instances.find(i => i.id === data.instanceId);
-          if (fresh) setSelectedInstance(fresh);
+          const fresh = await fetchInstances();
+          const newInstance = fresh.find(i => i.id === data.instanceId);
+          if (newInstance) setSelectedInstance(newInstance);
         }}
       />
 

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState} from 'react';
 import PhotoViewer from './PhotoViewer';
 
 // XHR-based upload so we get real progress events
@@ -36,6 +36,7 @@ function xhrUpload(url, formData, onProgress) {
 }
 
 function AnimalPhotoViewer({ cowTag, imageType, style = {}, alternateDefaultPhoto = false }) {
+  const [cacheKey, setCacheKey] = useState(() => Date.now());
   const isMedical = cowTag?.startsWith('medical_');
   const recordId = isMedical ? cowTag.replace('medical_', '') : null;
   const encodedTag = cowTag ? encodeURIComponent(cowTag) : null;
@@ -62,13 +63,16 @@ function AnimalPhotoViewer({ cowTag, imageType, style = {}, alternateDefaultPhot
     };
   }, [cowTag, imageType]);
 
-  const getImageUrl = useMemo(() => {
+    const getImageUrl = useMemo(() => {
     if (!cowTag) return () => defaultImage;
 
-    return (n) => isMedical
-      ? `/api/medical/${encodeURIComponent(recordId)}/image/${imageType}/${n}`
-      : `/api/cow/${encodedTag}/image/${imageType}/${n}`;
-  }, [cowTag, imageType]);
+    return (n) => {
+      const base = isMedical
+        ? `/api/medical/${encodeURIComponent(recordId)}/image/${imageType}/${n}`
+        : `/api/cow/${cowTag}/image/${imageType}/${n}`;
+      return `${base}?v=${cacheKey}`;
+    };
+  }, [cowTag, imageType, cacheKey]);
 
   const uploadFn = useMemo(() => {
     if (!cowTag) return null;
@@ -86,32 +90,37 @@ function AnimalPhotoViewer({ cowTag, imageType, style = {}, alternateDefaultPhot
         ? `/api/medical/${encodeURIComponent(recordId)}/images`
         : `/api/cow/${encodedTag}/upload-image`;
 
-      return xhrUpload(url, formData, onProgress);
+      const result = await xhrUpload(url, formData, onProgress);
+      if (result.success) setCacheKey(Date.now());
+      return result;
     };
-  }, [cowTag, imageType]);
+  }, [cowTag, imageType, cacheKey]);
 
   const deleteFn = useMemo(() => {
     if (!cowTag) return null;
 
     return async (n) => {
-        const getUrl = isMedical
-            ? `/api/medical/${encodeURIComponent(recordId)}/image/${imageType}/${n}`
-            : `/api/cow/${cowTag}/image/${imageType}/${n}`;
+      const getUrl = isMedical
+        ? `/api/medical/${encodeURIComponent(recordId)}/image/${imageType}/${n}?v=${cacheKey}`
+        : `/api/cow/${cowTag}/image/${imageType}/${n}?v=${cacheKey}`;
 
-        const headRes = await fetch(getUrl, { method: 'HEAD', credentials: 'include' });
-        const filename = headRes.headers.get('X-Filename');
-        if (!filename) return { success: false, error: 'Could not resolve filename' };
+      const headRes = await fetch(getUrl, { method: 'HEAD', credentials: 'include' });
+      const filename = headRes.headers.get('X-Filename');
+      if (!filename) return { success: false, error: 'Could not resolve filename' };
 
-        const deleteUrl = isMedical
-            ? `/api/medical/${encodeURIComponent(recordId)}/images/${encodeURIComponent(filename)}`
-            : `/api/cow/${cowTag}/images/${encodeURIComponent(filename)}`;
+      const deleteUrl = isMedical
+        ? `/api/medical/${encodeURIComponent(recordId)}/images/${encodeURIComponent(filename)}`
+        : `/api/cow/${cowTag}/images/${encodeURIComponent(filename)}`;
 
-        const res = await fetch(deleteUrl, { method: 'DELETE', credentials: 'include' });
-        if (res.ok) return { success: true };
-        const data = await res.json().catch(() => ({}));
-        return { success: false, error: data.error || `Server error ${res.status}` };
+      const res = await fetch(deleteUrl, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) {
+        setCacheKey(Date.now());  // bust cache for all image URLs after delete
+        return { success: true };
+      }
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || `Server error ${res.status}` };
     };
-}, [cowTag, imageType]);
+  }, [cowTag, imageType, cacheKey]);
 
   if (!cowTag) {
     return (

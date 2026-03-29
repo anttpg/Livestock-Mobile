@@ -450,38 +450,35 @@ class APIWrapper {
 
     async createMedicalRecord(req, res) {
         return this.executeDBOperation(req, res, 'createMedicalRecord', (req) => ({
-            cowTag: req.body.cowTag,
-            recordType: req.body.recordType,
-            eventID: req.body.eventID,
+            cowTag:      req.body.cowTag,
+            recordType:  req.body.recordType,
+            EventID:     req.body.EventID,
+            Note:        req.body.Note,
 
-            issueDescription: req.body.issueDescription,
-            issueObservedBy: req.body.issueObservedBy,
-            issueObservationDate: req.body.issueObservationDate,
-            issueSerious: req.body.issueSerious,
+            IssueDescription:     req.body.IssueDescription,
+            IssueObservedBy:      req.body.IssueObservedBy,
+            IssueObservationDate: req.body.IssueObservationDate,
+            IssueSerious:         req.body.IssueSerious,
 
-            treatmentMedicineID: req.body.treatmentMedicineID,
-            treatmentDate: req.body.treatmentDate,
-            treatmentResponse: req.body.treatmentResponse,
-            treatmentMethod: req.body.treatmentMethod,
-            treatmentIsImmunization: req.body.treatmentIsImmunization,
-            treatmentIsActive: req.body.treatmentIsActive,
+            TreatmentMedicineID:  req.body.TreatmentMedicineID,
+            TreatmentDate:        req.body.TreatmentDate,
+            TreatmentResponse:    req.body.TreatmentResponse,
+            TreatmentIsActive:    req.body.TreatmentIsActive,
 
-            vetName: req.body.vetName,
-            vetComments: req.body.vetComments,
-
-            note: req.body.note
+            VetName:     req.body.VetName,
+            VetComments: req.body.VetComments,
         }));
     }
 
-    async getMedicalRecordDetails(req, res) {
-        return this.executeDBOperation(req, res, 'getMedicalRecordDetails', (req) => ({
-            recordID: parseInt(req.params.recordId)
+    async getMedicalRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getMedicalRecord', (req) => ({
+            recordId: parseInt(req.params.recordId)
         }));
     }
 
     async updateMedicalRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateMedicalRecord', (req) => ({
-            recordID: parseInt(req.params.recordId),
+            recordId: parseInt(req.params.recordId),
             ...req.body
         }));
     }
@@ -528,18 +525,19 @@ class APIWrapper {
 
     async createWeightRecord(req, res) {
         return this.executeDBOperation(req, res, 'createWeightRecord', (req) => ({
-            cowTag: req.body.cowTag,
-            weight: req.body.weight,
-            date: req.body.date,
-            eventId: req.body.eventId,
-            notes: req.body.notes
+            cowTag:       req.body.cowTag,
+            Weight:       req.body.Weight,
+            TimeRecorded: req.body.TimeRecorded,
+            EventID:      req.body.EventID,
+            Notes:        req.body.Notes
         }));
     }
 
     async updateWeightRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateWeightRecord', (req) => ({
-            cowTag: req.body.cowTag,
-            weight: req.body.weight
+            cowTag:       req.body.cowTag,
+            Weight:       req.body.Weight,
+            TimeRecorded: req.body.TimeRecorded
         }));
     }
 
@@ -1103,26 +1101,26 @@ class APIWrapper {
         }));
     }
 
-    // NOT YET IMPLEMENTED
-    async updateSheetInstanceCell(req, res) {
-        return res.status(501).json({ error: 'updateSheetInstanceCell not yet implemented' });
-    }
-
-    // NOT YET IMPLEMENTED
-    async batchUpdateSheetInstanceCells(req, res) {
-        return res.status(501).json({ error: 'batchUpdateSheetInstanceCells not yet implemented' });
-    }
-
-    // NOT YET IMPLEMENTED
     async updateSheetCell(req, res) {
-        return res.status(501).json({ error: 'updateSheetCell not yet implemented' });
+        return this.executeDBOperation(req, res, 'updateSheetCell', (req) => ({
+            instanceId:  parseInt(req.params.instanceId),
+            cowTag:      req.body.cowTag,
+            recordSlot:  req.body.recordSlot,
+            source:      req.body.source,
+            fieldKey:    req.body.fieldKey,
+            fieldValue:  req.body.fieldValue,
+            medicine:    req.body.medicine ?? null,
+            createdBy:   req.session?.user?.username || 'Unknown'
+        }));
     }
 
-    // NOT YET IMPLEMENTED
-    async batchUpdateSheetCells(req, res) {
-        return res.status(501).json({ error: 'batchUpdateSheetCells not yet implemented' });
+    async bulkUpdateSheetRows(req, res) {
+        return this.executeDBOperation(req, res, 'bulkUpdateSheetRows', (req) => ({
+            instanceId: parseInt(req.params.instanceId),
+            rows:       req.body.rows,
+            createdBy:  req.session?.user?.username || 'Unknown'
+        }));
     }
-
 
 
 

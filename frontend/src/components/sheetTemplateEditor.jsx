@@ -445,7 +445,8 @@ const startDrag = (e, type, itemId, idx, colId = null) => {
     return availableCols.filter(c => {
       if (c.source !== col.source) return false;
       if (used.has(c.key)) return false;
-      if (c.key === reqKey) return false; // required field cannot be manually added/removed
+      if (c.key === reqKey) return false;
+      if (c.hidden) return false; // hidden fields are managed automatically, not user-selectable
       return true;
     });
   };
@@ -788,7 +789,7 @@ const startDrag = (e, type, itemId, idx, colId = null) => {
 
                       {/* Sub-fields */}
                       <div style={{ padding: '6px 10px 8px 30px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        {col.fields.map((field, fi) => {
+                        {col.fields.filter(f => !f.hidden).map((field, fi) => {
                           const fieldDisp = getFieldDisp(col._id, field._id, fi);
                           const fieldDragging = dragVisual?.type === 'field' && dragVisual.colId === col._id && dragVisual.itemId === field._id;
                           const isRequired = requiredFieldKeys[col.source] === field.key;

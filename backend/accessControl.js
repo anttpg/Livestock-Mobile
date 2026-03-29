@@ -1,6 +1,5 @@
 const localFileOps = require('../api/local');
 const dbOperations = require('../api/dbOperations');
-console.log('dbOperations loaded:', Object.keys(dbOperations));
 require('dotenv').config();
 
 class AccessControl {

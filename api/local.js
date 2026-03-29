@@ -591,7 +591,7 @@ class LocalFileOperations {
         const safeTag = this.remCowtagSlash(cowTag);
         const directory = path.join(this.cowPhotosDir, safeTag);
         const filterKeyword = imageType === 'headshot' ? ' HEAD ' : ' BODY ';
-        return this.readFile(directory, filterKeyword, n, true);
+        return this.readFile(directory, filterKeyword, n, false);
     }
 
     /**
@@ -641,7 +641,7 @@ class LocalFileOperations {
         const safeTag = this.remCowtagSlash(cowTag);
         const directory = path.join(this.cowPhotosDir, safeTag);
         const filterKeyword = imageType === 'headshot' ? ' HEAD ' : ' BODY ';
-        const found = await this.readFile(directory, filterKeyword, n, true);
+        const found = await this.readFile(directory, filterKeyword, n, false);
         if (!found.success) return found;
         return this.deleteCowImage({ cowTag, filename: found.filename });
     }

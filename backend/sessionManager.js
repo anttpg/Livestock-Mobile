@@ -223,7 +223,7 @@ app.get('/api/users',
 app.post('/api/users/reset-password',
     requireAuth(),
     requireAdmin(),
-    createValidationMiddleware('resetPassword'),
+    createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.resetUserPassword(req, res);
     }
@@ -233,7 +233,7 @@ app.post('/api/users/reset-password',
 app.post('/api/users/update-permissions',
     requireAuth(),
     requireAdmin(),
-    createValidationMiddleware('updatePermissions'),
+    createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.updateUserPermissions(req, res);
     }
@@ -243,7 +243,7 @@ app.post('/api/users/update-permissions',
 app.post('/api/users/block',
     requireAuth(),
     requireAdmin(),
-    createValidationMiddleware('blockUser'),
+    createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.blockUser(req, res);
     }
@@ -253,7 +253,7 @@ app.post('/api/users/block',
 app.post('/api/users/unblock',
     requireAuth(),
     requireAdmin(),
-    createValidationMiddleware('unblockUser'),
+    createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.unblockUser(req, res);
     }
@@ -263,7 +263,7 @@ app.post('/api/users/unblock',
 app.post('/api/users/pre-register',
     requireAuth(),
     requireAdmin(),
-    createValidationMiddleware('preRegisterUser'),
+    createValidationMiddleware('', true),
     async (req, res) => {
         return apiWrapper.preRegisterUser(req, res);
     }
@@ -455,7 +455,7 @@ app.post('/api/medical/record',
 app.get('/api/medical/record/:recordId',
   createValidationMiddleware('getMedicalRecord'),
   async (req, res) => {
-    return apiWrapper.getMedicalRecordDetails(req, res);
+    return apiWrapper.getMedicalRecord(req, res);
   }
 );
 
@@ -466,12 +466,7 @@ app.put('/api/medical/record/:recordId',
   }
 );
 
-app.post('/api/medical/resolve-record/:recordId',
-  createValidationMiddleware('resolveIssue'),
-  async (req, res) => {
-    return apiWrapper.resolveIssue(req, res);
-  }
-);
+
 
 app.get('/api/medical/medicines',
   createValidationMiddleware('getMedicines'),
@@ -698,13 +693,15 @@ app.put('/api/cow/weight',
   }
 );
 
+
 // Record batch weights
-app.post('/api/batch-weigh-in',
-  createValidationMiddleware('createWeightRecordBatch'),
-  async (req, res) => {
-    return apiWrapper.createWeightRecordBatch(req, res);
-  }
-);
+// app.post('/api/batch-weigh-in',
+//   createValidationMiddleware('createWeightRecordBatch'),
+//   async (req, res) => {
+//     return apiWrapper.createWeightRecordBatch(req, res);
+//   }
+// );
+
 
 // BREEDING ROUTES
 
@@ -1268,17 +1265,17 @@ app.put('/api/sheets/instances/:instanceId',
     }
 );
 
-app.put('/api/sheets/instances/:instanceId/cell',
+app.patch('/api/sheets/instances/:instanceId/cell',
     createValidationMiddleware('', true),
     async (req, res) => {
-        return apiWrapper.updateSheetInstanceCell(req, res);
+        return apiWrapper.updateSheetCell(req, res);
     }
 );
 
 app.put('/api/sheets/instances/:instanceId/cells',
     createValidationMiddleware('', true),
     async (req, res) => {
-        return apiWrapper.batchUpdateSheetInstanceCells(req, res);
+        return apiWrapper.bulkUpdateSheetRows(req, res);
     }
 );
 

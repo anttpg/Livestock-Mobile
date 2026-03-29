@@ -196,20 +196,20 @@ function IssueSubform({
 
     try {
       if (isCreatingNew) {
-        await onSave({
-          recordType: 'issue',
-          issueDescription: formData.IssueDescription,
-          issueObservationDate: toUTC(formData.IssueObservationDate),
-          issueObservedBy: formData.IssueObservedBy,
-          issueSerious: formData.IssueSerious,
-          treatmentMedicineID: formData.TreatmentMedicineID?.trim() || null,
-          treatmentDate: toUTC(formData.TreatmentDate),
-          treatmentResponse: formData.TreatmentResponse?.trim() || null,
-          treatmentIsActive: formData.TreatmentIsActive,
-          vetName: formData.VetName?.trim() || null,
-          vetComments: formData.VetComments?.trim() || null,
-          note: `Issue reported by ${formData.IssueObservedBy} on ${formData.IssueObservationDate}`
-        });
+      await onSave({
+          recordType:           'issue',
+          Note:                 `Issue reported by ${formData.IssueObservedBy} on ${formData.IssueObservationDate}`,
+          IssueDescription:     formData.IssueDescription,
+          IssueObservationDate: toUTC(formData.IssueObservationDate),
+          IssueObservedBy:      formData.IssueObservedBy,
+          IssueSerious:         formData.IssueSerious,
+          TreatmentMedicineID:  formData.TreatmentMedicineID?.trim() || null,
+          TreatmentDate:        toUTC(formData.TreatmentDate),
+          TreatmentResponse:    formData.TreatmentResponse?.trim() || null,
+          TreatmentIsActive:    formData.TreatmentIsActive,
+          VetName:              formData.VetName?.trim() || null,
+          VetComments:          formData.VetComments?.trim() || null,
+      });
       } else {
         await onUpdate(recordId, {
           IssueDescription: formData.IssueDescription,

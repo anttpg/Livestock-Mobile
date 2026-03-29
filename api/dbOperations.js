@@ -755,36 +755,38 @@ class DatabaseOperations {
 
 
 
-
-
     /**
      * Create a new weight record
-     * @param {Object} params - { cowTag, weight, date (optional), eventId (optional), notes (optional) }
-     * @returns {Promise<{success: boolean, recordId: number}>}
+     * @param {{ cowTag: string, Weight?: number, TimeRecorded?: string|Date, EventID?: number, Notes?: string, fields?: { NewWeight: number, NewWeightDate?: string|Date } }}
+     * @returns {Promise<{ success: boolean, recordId: number }>}
      */
     async createWeightRecord(params) {
-        const { cowTag, weight, date = null, eventId = null, notes = null } = params;
+        const { cowTag, fields, ...flatParams } = params;
+        const {
+            Weight = null,
+            TimeRecorded = null,
+            EventID = null,
+            Notes = null,
+        } = fields
+                ? { Weight: fields.NewWeight, TimeRecorded: fields.NewWeightDate, ...fields }
+                : flatParams;
+
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('weight', sql.Int, parseInt(weight));
-            request.input('timeRecorded', sql.DateTime, date ? new Date(date) : new Date());
-            request.input('eventId', sql.Int, eventId);
-            request.input('notes', sql.Text, notes);
+            request.input('cowTag',        sql.NVarChar, cowTag);
+            request.input('weight',        sql.Int,      parseInt(Weight));
+            request.input('timeRecorded',  sql.DateTime, TimeRecorded ? new Date(TimeRecorded) : new Date());
+            request.input('eventID',       sql.Int,      EventID);
+            request.input('notes',         sql.Text,     Notes);
 
-            const query = `
+            const result = await request.query(`
                 INSERT INTO WeightRecords (CowTag, Weight, TimeRecorded, EventID, Notes)
                 OUTPUT INSERTED.ID
-                VALUES (@cowTag, @weight, @timeRecorded, @eventId, @notes)`;
+                VALUES (@cowTag, @weight, @timeRecorded, @eventID, @notes)`);
 
-            const result = await request.query(query);
-
-            return {
-                success: true,
-                recordId: result.recordset[0].ID
-            };
+            return { success: true, recordId: result.recordset[0].ID };
         } catch (error) {
             console.error('Error creating weight record:', error);
             throw new Error(`Failed to create weight record: ${error.message}`);
@@ -792,78 +794,76 @@ class DatabaseOperations {
     }
 
 
+
+
     /**
      * Record batch weights
      * @param {Object} params - { date, records: [{ cowTag, weight, notes }] }
      */
     async createWeightRecordBatch(params) {
-        const { date, records } = params;
-        await this.ensureConnection();
-
-        try {
-            // Create event
-            const eventRequest = this.pool.request();
-            eventRequest.input('eventDate', sql.DateTime, new Date(date));
-            eventRequest.input('description', sql.NVarChar, `Batch Weigh-in`);
-
-            const eventQuery = `
-            INSERT INTO Events (EventDate, Description)
-            OUTPUT INSERTED.ID
-            VALUES (@eventDate, @description)`;
-            const eventResult = await eventRequest.query(eventQuery);
-            const eventId = eventResult.recordset[0].ID;
-
-            // Insert weight records
-            for (const record of records) {
-                const wrRequest = this.pool.request();
-                wrRequest.input('eventId', sql.Int, eventId);
-                wrRequest.input('weight', sql.Int, record.weight);
-                wrRequest.input('timeRecorded', sql.DateTime, new Date(date));
-                wrRequest.input('cowTag', sql.NVarChar, record.cowTag);
-                wrRequest.input('notes', sql.Text, record.notes || null);
-
-                const wrQuery = `
-                INSERT INTO WeightRecords (EventID, Weight, TimeRecorded, CowTag, Notes)
-                VALUES (@eventId, @weight, @timeRecorded, @cowTag, @notes)`;
-                await wrRequest.query(wrQuery);
-            }
-
-            return { success: true, eventId, recordsProcessed: records.length };
-        } catch (error) {
-            console.error('Error recording batch weights:', error);
-            throw new Error(`Failed to record batch weights: ${error.message}`);
-        }
+        return;
     }
+    //     const { date, records } = params;
+    //     await this.ensureConnection();
 
+    //     try {
+    //         // Create event
+    //         const eventRequest = this.pool.request();
+    //         eventRequest.input('eventDate', sql.DateTime, new Date(date));
+    //         eventRequest.input('description', sql.NVarChar, `Batch Weigh-in`);
 
+    //         const eventQuery = `
+    //         INSERT INTO Events (EventDate, Description)
+    //         OUTPUT INSERTED.ID
+    //         VALUES (@eventDate, @description)`;
+    //         const eventResult = await eventRequest.query(eventQuery);
+    //         const eventId = eventResult.recordset[0].ID;
+
+    //         // Insert weight records
+    //         for (const record of records) {
+    //             const wrRequest = this.pool.request();
+    //             wrRequest.input('eventId', sql.Int, eventId);
+    //             wrRequest.input('weight', sql.Int, record.weight);
+    //             wrRequest.input('timeRecorded', sql.DateTime, new Date(date));
+    //             wrRequest.input('cowTag', sql.NVarChar, record.cowTag);
+    //             wrRequest.input('notes', sql.Text, record.notes || null);
+
+    //             const wrQuery = `
+    //             INSERT INTO WeightRecords (EventID, Weight, TimeRecorded, CowTag, Notes)
+    //             VALUES (@eventId, @weight, @timeRecorded, @cowTag, @notes)`;
+    //             await wrRequest.query(wrQuery);
+    //         }
+
+    //         return { success: true, eventId, recordsProcessed: records.length };
+    //     } catch (error) {
+    //         console.error('Error recording batch weights:', error);
+    //         throw new Error(`Failed to record batch weights: ${error.message}`);
+    //     }
+    // }
 
 
 
     /**
      * Update an existing weight record
-     * @param {Object} params - { recordId, weight, date (optional) }
-     * @returns {Promise<{success: boolean}>}
+     * @param {{ recordId: number, fields: { Weight: number, TimeRecorded?: string|Date } }}
+     * @returns {Promise<{ success: boolean }>}
      */
-    async updateWeightRecord(params) {
-        const { recordId, weight, date = null } = params;
+    async updateWeightRecord({ recordId, fields = {} }) {
+        const { Weight, TimeRecorded = null } = fields;
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('recordId', sql.Int, recordId);
-            request.input('weight', sql.Int, parseInt(weight));
-            request.input('timeRecorded', sql.DateTime, date ? new Date(date) : new Date());
+            request.input('recordId',     sql.Int,      recordId);
+            request.input('weight',       sql.Int,      parseInt(Weight));
+            request.input('timeRecorded', sql.DateTime, TimeRecorded ? new Date(TimeRecorded) : new Date());
 
-            const query = `
-                UPDATE WeightRecords 
+            const result = await request.query(`
+                UPDATE WeightRecords
                 SET Weight = @weight, TimeRecorded = @timeRecorded
-                WHERE ID = @recordId`;
+                WHERE ID = @recordId`);
 
-            const result = await request.query(query);
-
-            if (result.rowsAffected[0] === 0) {
-                throw new Error('Weight record not found');
-            }
+            if (result.rowsAffected[0] === 0) throw new Error('Weight record not found');
 
             return { success: true };
         } catch (error) {
@@ -873,42 +873,62 @@ class DatabaseOperations {
     }
 
 
+
     /**
      * Get a specific weight record by its ID
-     * @param {number} recordId - The weight record ID
-     * @returns {Promise<{weight: number|null, date: Date|null, cowTag: string|null}>}
+     * @param {{ recordId: number }}
+     * @returns {Promise<Object|null>}
      */
-    async getWeightRecord(recordId) {
+    async getWeightRecord({ recordId }) {
         await this.ensureConnection();
-        
+
         try {
             const request = this.pool.request();
             request.input('recordId', sql.Int, recordId);
-            
-            const query = `
-                SELECT 
-                    Weight, 
-                    TimeRecorded AS WeightDate,
+
+            const result = await request.query(`
+                SELECT
+                    Weight        AS NewWeight,
+                    TimeRecorded  AS NewWeightDate,
                     CowTag
-                FROM WeightRecords 
-                WHERE ID = @recordId`;
-            
-            const result = await request.query(query);
-            
-            if (result.recordset.length === 0) {
-                return { weight: null, date: null, cowTag: null };
-            }
-            
-            return {
-                weight: result.recordset[0].Weight,
-                date: result.recordset[0].WeightDate,
-                cowTag: result.recordset[0].CowTag
-            };
+                FROM WeightRecords
+                WHERE ID = @recordId`);
+
+            if (result.recordset.length === 0) return null;
+
+            return result.recordset[0];
         } catch (error) {
-            console.error('Error fetching weight by record ID:', error);
-            throw new Error(`Failed to fetch weight by record ID: ${error.message}`);
+            console.error('Error fetching weight record:', error);
+            throw new Error(`Failed to fetch weight record: ${error.message}`);
         }
     }
+
+
+
+    /**
+     * Delete a weight record by ID
+     * @param {{ recordId: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deleteWeightRecord({ recordId }) {
+        await this.ensureConnection();
+        if (!recordId) throw new Error('recordId is required for deleteWeightRecord');
+
+        try {
+            const request = this.pool.request();
+            request.input('id', sql.Int, recordId);
+
+            const result = await request.query(`DELETE FROM WeightRecords WHERE ID = @id`);
+
+            if (result.rowsAffected[0] === 0) throw new Error(`No weight record found with ID ${recordId}`);
+
+            return { success: true, deleted: result.rowsAffected[0] };
+        } catch (error) {
+            console.error('Error deleting weight record:', error);
+            throw error;
+        }
+    }
+
 
 
     /**
@@ -1341,90 +1361,16 @@ class DatabaseOperations {
         }
     }
 
-    /**
-     * Add medical record for a cow
-     */
-    async createMedicalRecord(params) {
-        const {
-            cowTag, recordType, eventID,
-            // Issue fields
-            issueDescription, issueObservedBy, issueObservationDate, issueSerious,
-            // Treatment fields  
-            treatmentMedicineID, treatmentDate, treatmentResponse, treatmentIsActive,
-            // Vet fields
-            vetName, vetComments,
-            // General
-            note
-        } = params;
 
+
+
+    async getMedicalRecord(params) {
+        const { recordId } = params;
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('eventID', sql.Int, eventID || null);
-            request.input('note', sql.NVarChar(sql.MAX), note || null);
-
-            // Set record type flags
-            request.input('maintenance', sql.Bit, recordType === 'maintenance');
-            request.input('issue', sql.Bit, recordType === 'issue');
-            request.input('treatment', sql.Bit, recordType === 'treatment');
-            request.input('vet', sql.Bit, recordType === 'vet');
-
-            // Issue fields
-            request.input('issueDescription', sql.NVarChar(sql.MAX), issueDescription || null);
-            request.input('issueObservedBy', sql.NVarChar, issueObservedBy || null);
-            request.input('issueObservationDate', sql.DateTime, issueObservationDate || null);
-            request.input('issueSerious', sql.Bit, issueSerious || false);
-            request.input('issueResolved', sql.Bit, false);
-
-            // Treatment fields
-            const validMedicineID = treatmentMedicineID && treatmentMedicineID.trim() !== '' ? treatmentMedicineID : null;
-            request.input('treatmentMedicineID', sql.NVarChar, validMedicineID);
-            request.input('treatmentDate', sql.DateTime, treatmentDate || null);
-            request.input('treatmentResponse', sql.NVarChar(sql.MAX), treatmentResponse || null);
-            request.input('treatmentIsActive', sql.Bit, treatmentIsActive || false);
-
-            // Vet fields
-            request.input('vetName', sql.NVarChar, vetName || null);
-            request.input('vetComments', sql.NVarChar(sql.MAX), vetComments || null);
-
-            const query = `
-                INSERT INTO MedicalTable (
-                    CowTag, EventID, Note, Maintenance, Issue, Treatment, Vet,
-                    IssueDescription, IssueObservedBy, IssueObservationDate, IssueSerious, IssueResolved,
-                    TreatmentMedicineID, TreatmentDate, TreatmentResponse, TreatmentIsActive,
-                    VetName, VetComments
-                )
-                OUTPUT INSERTED.ID
-                VALUES (
-                    @cowTag, @eventID, @note, @maintenance, @issue, @treatment, @vet,
-                    @issueDescription, @issueObservedBy, @issueObservationDate, @issueSerious, @issueResolved,
-                    @treatmentMedicineID, @treatmentDate, @treatmentResponse, @treatmentIsActive,
-                    @vetName, @vetComments
-                )`;
-
-            const result = await request.query(query);
-            return {
-                success: true,
-                recordID: result.recordset[0]?.ID,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Medical record created successfully'
-            };
-        } catch (error) {
-            console.error('Error creating comprehensive medical record:', error);
-            throw new Error(`Failed to create medical record: ${error.message}`);
-        }
-    }
-
-
-    async getMedicalRecordDetails(params) {
-        const { recordID } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('recordID', sql.Int, recordID);
+            request.input('recordID', sql.Int, recordId);
 
             const query = `
                 SELECT 
@@ -1445,83 +1391,191 @@ class DatabaseOperations {
                 throw new Error('Medical record not found');
             }
 
-            return { record: result.recordset[0] };
+            return result.recordset[0];
         } catch (error) {
             console.error('Error fetching medical record details:', error);
             throw new Error(`Failed to fetch medical record: ${error.message}`);
         }
     }
 
+
+
     /**
-     * Update a medical record for a cow
+     * Create a medical record
+     * @param {{
+     *   cowTag: string,
+     *   recordType: 'maintenance' | 'issue' | 'treatment' | 'vet',
+     *   EventID?: number,
+     *   Note?: string,
+     *   IssueDescription?: string,
+     *   IssueObservedBy?: string,
+     *   IssueObservationDate?: string|Date,
+     *   IssueSerious?: boolean,
+     *   TreatmentMedicineID?: string,
+     *   TreatmentDate?: string|Date,
+     *   TreatmentResponse?: string,
+     *   TreatmentIsActive?: boolean,
+     *   VetName?: string,
+     *   VetComments?: string,
+     * }}
+     * @returns {Promise<{ success: boolean, recordId: number, rowsAffected: number }>}
      */
-    async updateMedicalRecord(params) {
-        const { recordID, ...updateFields } = params;
+    async createMedicalRecord(params) {
+        const { cowTag, fields, ...flatParams } = params;
+
+        const {
+            recordType           = 'treatment',
+            EventID              = null,
+            Note                 = null,
+            IssueDescription     = null,
+            IssueObservedBy      = null,
+            IssueObservationDate = null,
+            IssueSerious         = false,
+            TreatmentMedicineID  = null,
+            TreatmentDate        = null,
+            TreatmentResponse    = null,
+            TreatmentIsActive    = false,
+            VetName              = null,
+            VetComments          = null,
+        } = fields ? { ...flatParams, ...fields } : flatParams;
         await this.ensureConnection();
 
         try {
-            if (Object.keys(updateFields).length === 0) {
-                throw new Error('No fields provided for update');
-            }
-
-            // Helper to process date fields
-            const processDate = (value) => 
-                value instanceof Date || (typeof value === 'string' && value.trim() !== '') 
-                    ? new Date(value) : null;
-
-            // Map of field names to their processed values and SQL types
-            const fieldMap = {
-                IssueDescription: { value: updateFields.IssueDescription, type: sql.NText },
-                IssueObservedBy: { value: updateFields.IssueObservedBy, type: sql.NVarChar },
-                IssueObservationDate: { value: processDate(updateFields.IssueObservationDate), type: sql.DateTime },
-                IssueSerious: { value: updateFields.IssueSerious, type: sql.Bit },
-                TreatmentMedicineID: { value: updateFields.TreatmentMedicineID, type: sql.NVarChar },
-                TreatmentDate: { value: processDate(updateFields.TreatmentDate), type: sql.DateTime },
-                TreatmentResponse: { value: updateFields.TreatmentResponse, type: sql.NText },
-                TreatmentIsActive: { value: updateFields.TreatmentIsActive, type: sql.Bit },
-                VetName: { value: updateFields.VetName, type: sql.NVarChar },
-                VetComments: { value: updateFields.VetComments, type: sql.NText },
-                Note: { value: updateFields.Note, type: sql.NText }
-            };
+            const validMedicineID = TreatmentMedicineID?.trim() || null;
 
             const request = this.pool.request();
-            request.input('recordID', sql.Int, recordID);
+            request.input('cowTag',               sql.NVarChar,          cowTag);
+            request.input('eventID',              sql.Int,               EventID);
+            request.input('note',                 sql.NVarChar(sql.MAX), Note);
+            request.input('maintenance',          sql.Bit,               recordType === 'maintenance');
+            request.input('issue',                sql.Bit,               recordType === 'issue');
+            request.input('treatment',            sql.Bit,               recordType === 'treatment');
+            request.input('vet',                  sql.Bit,               recordType === 'vet');
+            request.input('issueDescription',     sql.NVarChar(sql.MAX), IssueDescription);
+            request.input('issueObservedBy',      sql.NVarChar,          IssueObservedBy);
+            request.input('issueObservationDate', sql.DateTime,          IssueObservationDate ? new Date(IssueObservationDate) : null);
+            request.input('issueSerious',         sql.Bit,               IssueSerious);
+            request.input('issueResolved',        sql.Bit,               false);
+            request.input('treatmentMedicineID',  sql.NVarChar,          validMedicineID);
+            request.input('treatmentDate',        sql.DateTime,          TreatmentDate ? new Date(TreatmentDate) : null);
+            request.input('treatmentResponse',    sql.NVarChar(sql.MAX), TreatmentResponse);
+            request.input('treatmentIsActive',    sql.Bit,               TreatmentIsActive);
+            request.input('vetName',              sql.NVarChar,          VetName);
+            request.input('vetComments',          sql.NVarChar(sql.MAX), VetComments);
 
-            const updateClauses = [];
-            
-            // Only add fields that were actually provided in updateFields
-            Object.entries(fieldMap).forEach(([fieldName, { value, type }]) => {
-                if (fieldName in updateFields) {
-                    const paramName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
-                    request.input(paramName, type, value);
-                    updateClauses.push(`${fieldName} = @${paramName}`);
-                }
-            });
-
-            if (updateClauses.length === 0) {
-                throw new Error('No valid update clauses generated');
-            }
-
-            const query = `
-                UPDATE MedicalTable 
-                SET ${updateClauses.join(', ')}
-                WHERE ID = @recordID`;
-
-            const result = await request.query(query);
-            if (result.rowsAffected[0] === 0) {
-                throw new Error('Medical record not found');
-            }
+            const result = await request.query(`
+                INSERT INTO MedicalTable (
+                    CowTag, EventID, Note, Maintenance, Issue, Treatment, Vet,
+                    IssueDescription, IssueObservedBy, IssueObservationDate, IssueSerious, IssueResolved,
+                    TreatmentMedicineID, TreatmentDate, TreatmentResponse, TreatmentIsActive,
+                    VetName, VetComments
+                )
+                OUTPUT INSERTED.ID
+                VALUES (
+                    @cowTag, @eventID, @note, @maintenance, @issue, @treatment, @vet,
+                    @issueDescription, @issueObservedBy, @issueObservationDate, @issueSerious, @issueResolved,
+                    @treatmentMedicineID, @treatmentDate, @treatmentResponse, @treatmentIsActive,
+                    @vetName, @vetComments
+                )`);
 
             return {
                 success: true,
+                recordId: result.recordset[0].ID,
                 rowsAffected: result.rowsAffected[0],
-                message: 'Medical record updated successfully'
             };
+        } catch (error) {
+            console.error('Error creating medical record:', error);
+            throw new Error(`Failed to create medical record: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Update a medical record
+     * @param {{ recordId: number, fields: { Note?: string, IssueDescription?: string, IssueObservedBy?: string, IssueObservationDate?: string|Date, IssueSerious?: boolean, TreatmentMedicineID?: string, TreatmentDate?: string|Date, TreatmentResponse?: string, TreatmentIsActive?: boolean, VetName?: string, VetComments?: string } }}
+     * @returns {Promise<{ success: boolean, rowsAffected: number }>}
+     */
+    async updateMedicalRecord({ recordId, fields = {} }) {
+        await this.ensureConnection();
+
+        if (!recordId) throw new Error('recordId is required for updateMedicalRecord');
+        if (Object.keys(fields).length === 0) throw new Error('No fields provided for update');
+
+        try {
+            const processDate = (value) =>
+                value instanceof Date || (typeof value === 'string' && value.trim())
+                    ? new Date(value) : null;
+
+            const fieldMap = {
+                Note:                 { value: fields.Note,                 type: sql.NVarChar(sql.MAX) },
+                IssueDescription:     { value: fields.IssueDescription,     type: sql.NVarChar(sql.MAX) },
+                IssueObservedBy:      { value: fields.IssueObservedBy,      type: sql.NVarChar          },
+                IssueObservationDate: { value: processDate(fields.IssueObservationDate), type: sql.DateTime },
+                IssueSerious:         { value: fields.IssueSerious,         type: sql.Bit               },
+                TreatmentMedicineID:  { value: fields.TreatmentMedicineID,  type: sql.NVarChar          },
+                TreatmentDate:        { value: processDate(fields.TreatmentDate), type: sql.DateTime     },
+                TreatmentResponse:    { value: fields.TreatmentResponse,    type: sql.NVarChar(sql.MAX) },
+                TreatmentIsActive:    { value: fields.TreatmentIsActive,    type: sql.Bit               },
+                VetName:              { value: fields.VetName,              type: sql.NVarChar          },
+                VetComments:          { value: fields.VetComments,          type: sql.NVarChar(sql.MAX) },
+            };
+
+            const request = this.pool.request();
+            request.input('recordId', sql.Int, recordId);
+
+            const setClauses = [];
+
+            for (const [fieldName, { value, type }] of Object.entries(fieldMap)) {
+                if (!(fieldName in fields)) continue;
+                const paramName = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
+                request.input(paramName, type, value);
+                setClauses.push(`[${fieldName}] = @${paramName}`);
+            }
+
+            if (setClauses.length === 0) throw new Error('No valid update clauses generated');
+
+            const result = await request.query(`
+                UPDATE MedicalTable
+                SET ${setClauses.join(', ')}
+                WHERE ID = @recordId`);
+
+            if (result.rowsAffected[0] === 0) throw new Error('Medical record not found');
+
+            return { success: true, rowsAffected: result.rowsAffected[0] };
         } catch (error) {
             console.error('Error updating medical record:', error);
             throw new Error(`Failed to update medical record: ${error.message}`);
         }
     }
+
+
+    /**
+     * Delete a medical record by ID
+     * @param {{ recordId: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deleteMedicalRecord({ recordId }) {
+        await this.ensureConnection();
+        if (!recordId) throw new Error('recordId is required for deleteMedicalRecord');
+
+        try {
+            const request = this.pool.request();
+            request.input('id', sql.Int, recordId);
+
+            const result = await request.query(`DELETE FROM MedicalTable WHERE ID = @id`);
+
+            if (result.rowsAffected[0] === 0) throw new Error(`No medical record found with ID ${recordId}`);
+
+            return { success: true, deleted: result.rowsAffected[0] };
+        } catch (error) {
+            console.error('Error deleting medical record:', error);
+            throw error;
+        }
+    }
+
+
+
+
 
     /**
      * Mark an issue as resolved
@@ -3176,46 +3230,18 @@ class DatabaseOperations {
 
 
     /**
-     * Get a pregnancy check record for a cow
-     * @param {Object} params
-     * @param {string}  params.cowTag              - Cow tag to look up
-     * @param {number}  [params.id]                - If provided, fetches this specific record by ID
-     * @param {number}  [params.breedingYear]      - If provided (and no id), fetches the most recent check for that breeding year
-     *                                               If neither id nor breedingYear are provided, fetches the most recent check overall
-     * @returns {Promise<{
-     *   ID:             number,
-     *   IsPregnant:     'Pregnant' | 'Open' | '',
-     *   PregCheckDate:  string,
-     *   FetusSex:       string,
-     *   MonthsPregnant: number | '',
-     *   Notes:          string,
-     *   WeightAtCheck:  number | ''
-     * } | null>}  null if no matching record found
+     * Get a pregnancy check record by ID
+     * @param {{ recordId: number }} params
+     * @returns {Promise<Object | null>}
      */
-    async getPregancyCheck({ cowTag, breedingYear = null, id = null }) {
+    async getPregancyCheck({ recordId }) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
+            request.input('id', sql.Int, recordId);
 
-            let yearJoin = '';
-            let whereClause;
-
-            if (id) {
-                request.input('id', sql.Int, id);
-                whereClause = 'WHERE pc.CowTag = @cowTag AND pc.ID = @id';
-            } else if (breedingYear) {
-                request.input('breedingYear', sql.Int, breedingYear);
-                yearJoin = `
-                    INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
-                    INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID`;
-                whereClause = 'WHERE pc.CowTag = @cowTag AND bp.PlanYear = @breedingYear';
-            } else {
-                whereClause = 'WHERE pc.CowTag = @cowTag';
-            }
-
-            const query = `
+            const result = await request.query(`
                 SELECT TOP 1
                     pc.ID,
                     pc.IsPregnant,
@@ -3226,167 +3252,185 @@ class DatabaseOperations {
                     wr.Weight AS WeightAtCheck
                 FROM PregancyCheck pc
                 LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
-                ${yearJoin}
-                ${whereClause}
-                ORDER BY pc.PregCheckDate DESC`;
-
-            const result = await request.query(query);
+                WHERE pc.ID = @id`);
 
             if (result.recordset.length === 0) return null;
 
             const row = result.recordset[0];
-
             return {
                 ID:             row.ID,
                 IsPregnant:     row.IsPregnant === 1 ? 'Pregnant' : (row.IsPregnant === 0 ? 'Open' : ''),
-                PregCheckDate:  row.PregCheckDate   || '',
-                FetusSex:       row.FetusSex        || '',
-                MonthsPregnant: row.MonthsPregnant  ?? '',
-                Notes:          row.Notes           || '',
-                WeightAtCheck:  row.WeightAtCheck   || ''
+                PregCheckDate:  row.PregCheckDate  || '',
+                FetusSex:       row.FetusSex       || '',
+                MonthsPregnant: row.MonthsPregnant ?? '',
+                Notes:          row.Notes          || '',
+                WeightAtCheck:  row.WeightAtCheck  || ''
             };
 
         } catch (error) {
-            console.error(`Error fetching pregnancy check for ${cowTag}:`, error);
+            console.error(`Error fetching pregnancy check ${recordId}:`, error);
             throw error;
         }
     }
 
 
 
+
+
     /**
-     * Submit pregnancy check results
-     * @param {Object} params - { herdName, date, records: [{ cowTag, result, sex, weight, notes }] }
+     * Create one or more pregnancy check records.
+     * Accepts a single { cowTag, fields } or an array of them.
+     *
+     * fields: {
+     *   IsPregnant     - boolean | 'Pregnant' | 'Open'   (required)
+     *   PregCheckDate  - date string                      (defaults to now)
+     *   FetusSex       - string                           (optional)
+     *   MonthsPregnant - number                           (optional)
+     *   PregNotes      - string                           (optional)
+     * }
+     *
+     * Single:  returns { success: boolean, recordId: number }
+     * Batch:   returns { success: boolean, created: number, results: [{ cowTag, recordId }] }
      */
     async createPregancyCheck(params) {
-        const { herdName, date, records, eventId = null } = params;
         await this.ensureConnection();
 
-        try {
-            // Insert pregnancy check records
-            for (const record of records) {
-                // Find breeding record ID
-                const brRequest = this.pool.request();
-                brRequest.input('cowTag', sql.NVarChar, record.cowTag);
-                const brQuery = `
-                SELECT TOP 1 ID FROM BreedingRecords 
-                WHERE CowTag = @cowTag 
-                ORDER BY ExposureStartDate DESC`;
-                const brResult = await brRequest.query(brQuery);
+        const isArray = Array.isArray(params);
+        const records = isArray ? params : [params];
 
-                if (brResult.recordset.length === 0) continue;
-                const breedingRecordId = brResult.recordset[0].ID;
+        if (records.length === 0) return { success: true, created: 0, results: [] };
 
-                // Create WeightRecord if weight provided
-                let weightRecordId = null;
-                if (record.weight) {
-                    const result = await this.createWeightRecord({
-                        cowTag: record.cowTag,
-                        weight: record.weight,
-                        date: date,
-                        eventId: eventId
-                    });
-                    weightRecordId = result.recordId;
-                }
+        const results = [];
 
-                const pcRequest = this.pool.request();
-                pcRequest.input('eventId', sql.Int, eventId);
-                pcRequest.input('breedingRecordId', sql.Int, breedingRecordId);
-                pcRequest.input('cowTag', sql.NVarChar, record.cowTag);
-                pcRequest.input('isPregnant', sql.Bit, record.result === 'Pregnant');
-                pcRequest.input('pregCheckDate', sql.DateTime, new Date(date));
-                pcRequest.input('fetusSex', sql.NVarChar, record.sex || null);
-                pcRequest.input('weightRecordId', sql.Int, weightRecordId);
-                pcRequest.input('notes', sql.NVarChar(sql.MAX), record.notes || null);
+        for (const { cowTag, fields = {} } of records) {
+            const {
+                IsPregnant,
+                PregCheckDate  = null,
+                FetusSex       = null,
+                MonthsPregnant = null,
+                PregNotes      = null,
+            } = fields;
 
-                const pcQuery = `
-                INSERT INTO PregancyCheck (
-                    EventID, BreedingRecordID, CowTag, IsPregnant, 
-                    PregCheckDate, FetusSex, WeightRecordID, Notes
-                ) VALUES (
-                    @eventId, @breedingRecordId, @cowTag, @isPregnant,
-                    @pregCheckDate, @fetusSex, @weightRecordId, @notes
-                )`;
-                await pcRequest.query(pcQuery);
+            // Resolve most recent breeding record for this cow
+            const brRequest = this.pool.request();
+            brRequest.input('cowTag', sql.NVarChar, cowTag);
+            const brResult = await brRequest.query(`
+                SELECT TOP 1 ID FROM BreedingRecords
+                WHERE CowTag = @cowTag
+                ORDER BY ExposureStartDate DESC`);
+
+            let breedingRecordId = null;
+            if (brResult.recordset.length === 0) {
+                console.warn(`createPregancyCheck: Warning, no breeding record found for ${cowTag}`);
+            }
+            else {
+                breedingRecordId = brResult.recordset[0].ID;
             }
 
-            return { success: true, recordsProcessed: records.length };
-        } catch (error) {
-            console.error('Error submitting pregnancy check:', error);
-            throw new Error(`Failed to submit pregnancy check: ${error.message}`);
+            
+
+            // Accept boolean or string ('Pregnant' / 'Open')
+            const isPregnantBit = typeof IsPregnant === 'boolean'
+                ? IsPregnant
+                : IsPregnant === 'Pregnant';
+
+            const request = this.pool.request();
+            request.input('breedingRecordId', sql.Int,               breedingRecordId);
+            request.input('cowTag',           sql.NVarChar,          cowTag);
+            request.input('isPregnant',       sql.Bit,               isPregnantBit);
+            request.input('pregCheckDate',    sql.DateTime,          PregCheckDate ? new Date(PregCheckDate) : new Date());
+            request.input('fetusSex',         sql.NVarChar,          FetusSex);
+            request.input('monthsPregnant',   sql.Decimal(4, 2),     MonthsPregnant != null ? parseFloat(MonthsPregnant) : null);
+            request.input('notes',            sql.NVarChar(sql.MAX), PregNotes);
+
+            const result = await request.query(`
+                INSERT INTO PregancyCheck (BreedingRecordID, CowTag, IsPregnant, PregCheckDate, FetusSex, MonthsPregnant, Notes)
+                OUTPUT INSERTED.ID
+                VALUES (@breedingRecordId, @cowTag, @isPregnant, @pregCheckDate, @fetusSex, @monthsPregnant, @notes)`);
+
+            results.push({ cowTag, recordId: result.recordset[0].ID });
         }
+
+        if (!isArray) {
+            return { success: true, recordId: results[0]?.recordId ?? null };
+        }
+
+        return { success: true, created: results.length, results };
     }
 
 
 
     /**
-     * Update a pregnancy check record by ID
-     * @param {Object} params
-     * @param {number} params.id - ID of the PregancyCheck record to update (required)
-     * @param {string} params.cowTag - Cow tag, required only if Weight is being set and no WeightRecord exists yet
-     * @param {Object} params.updates - Fields to update
-     * @param {string}  [params.updates.PregCheckDate]  - Date string (yyyy-MM-dd)
-     * @param {string|boolean} [params.updates.IsPregnant] - 'Pregnant' | 'Open' | boolean
-     * @param {number}  [params.updates.MonthsPregnant]  - Decimal months pregnant
-     * @param {string}  [params.updates.FetusSex]        - Sex of fetus
-     * @param {number}  [params.updates.Weight]          - Weight in lbs (routed through WeightRecords, not a direct column)
-     * @param {string}  [params.updates.Notes]           - Free text notes
+     * Update a pregnancy check record by ID.
+     * Accepts the sheet-standard { recordId, cowTag, fields } shape.
+     *
+     * fields: {
+     *   IsPregnant     - boolean | 'Pregnant' | 'Open'
+     *   PregCheckDate  - date string
+     *   FetusSex       - string
+     *   MonthsPregnant - number
+     *   PregNotes      - string
+     * }
+     *
+     * @param {{ recordId: number, cowTag: string, fields: Object }} params
      * @returns {Promise<{ success: boolean, updated: number }>}
      */
-    async updatePregancyCheck({ id, cowTag, updates }) {
+    async updatePregancyCheck({ recordId, cowTag, fields = {} }) {
         await this.ensureConnection();
 
-        if (!id) throw new Error('id is required for updatePregancyCheck');
-        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+        if (!recordId) throw new Error('recordId is required for updatePregancyCheck');
+        if (Object.keys(fields).length === 0) return { success: true, updated: 0 };
 
         try {
+            // Remap catalogue keys to DB column names
+            let updates = { ...fields };
+            if ('PregNotes' in updates) {
+                updates.Notes = updates.PregNotes;
+                delete updates.PregNotes;
+            }
+
+            // Weight is not a direct column — route through WeightRecords
             if ('Weight' in updates) {
                 const weightValue = parseInt(updates.Weight);
 
                 if (!weightValue || weightValue <= 0) {
                     const clearRequest = this.pool.request();
-                    clearRequest.input('id', sql.Int, id);
+                    clearRequest.input('id', sql.Int, recordId);
                     await clearRequest.query(`
                         UPDATE PregancyCheck 
                         SET WeightRecordID = NULL
                         WHERE ID = @id`);
                 } else {
                     const pregRequest = this.pool.request();
-                    pregRequest.input('id', sql.Int, id);
+                    pregRequest.input('id', sql.Int, recordId);
                     const pregResult = await pregRequest.query(`
-                        SELECT ID, WeightRecordID
-                        FROM PregancyCheck 
-                        WHERE ID = @id`);
+                        SELECT WeightRecordID FROM PregancyCheck WHERE ID = @id`);
 
                     if (pregResult.recordset.length === 0) {
-                        throw new Error(`No pregnancy check found with ID ${id}`);
+                        throw new Error(`No pregnancy check found with ID ${recordId}`);
                     }
 
                     const { WeightRecordID: existingWeightRecordId } = pregResult.recordset[0];
 
                     if (existingWeightRecordId) {
-                        await this.updateWeightRecord({ recordId: existingWeightRecordId, weight: weightValue });
+                        await this.updateWeightRecord({ recordId: existingWeightRecordId, Weight: weightValue });
                     } else {
-                        const { recordId: weightRecordId } = await this.createWeightRecord({ cowTag, weight: weightValue });
-
+                        const { recordId: weightRecordId } = await this.createWeightRecord({ cowTag, Weight: weightValue });
                         const linkRequest = this.pool.request();
-                        linkRequest.input('id', sql.Int, id);
+                        linkRequest.input('id', sql.Int, recordId);
                         linkRequest.input('weightRecordId', sql.Int, weightRecordId);
                         await linkRequest.query(`
-                            UPDATE PregancyCheck 
-                            SET WeightRecordID = @weightRecordId
-                            WHERE ID = @id`);
+                            UPDATE PregancyCheck SET WeightRecordID = @weightRecordId WHERE ID = @id`);
                     }
                 }
 
-                const { Weight, ...remainingUpdates } = updates;
-                updates = remainingUpdates;
+                delete updates.Weight;
             }
 
-            if (Object.keys(updates).length === 0) return { success: true };
+            if (Object.keys(updates).length === 0) return { success: true, updated: 0 };
 
             const request = this.pool.request();
-            request.input('id', sql.Int, id);
+            request.input('id', sql.Int, recordId);
 
             const setClauses = [];
 
@@ -3394,7 +3438,7 @@ class DatabaseOperations {
                 if (field === 'PregCheckDate') {
                     request.input(field, sql.Date, value);
                 } else if (field === 'IsPregnant') {
-                    request.input(field, sql.Bit, typeof value === 'string' ? value === 'Pregnant' : value);
+                    request.input(field, sql.Bit, typeof value === 'boolean' ? value : value === 'Pregnant');
                 } else if (field === 'MonthsPregnant') {
                     request.input(field, sql.Decimal(4, 2), parseFloat(value) || null);
                 } else if (field === 'FetusSex') {
@@ -3413,7 +3457,6 @@ class DatabaseOperations {
                 SET ${setClauses.join(', ')}
                 WHERE ID = @id`);
 
-            console.log('updatePregancyCheck result:', result.rowsAffected);
             return { success: true, updated: result.rowsAffected[0] };
 
         } catch (error) {
@@ -3423,22 +3466,21 @@ class DatabaseOperations {
     }
 
 
-
     /**
      * Delete a pregnancy check record by ID
      * Weight records linked to this check are left intact
      * @param {Object} params
-     * @param {number} params.id - ID of the PregancyCheck record to delete (required)
+     * @param {number} params.recordId - ID of the PregancyCheck record to delete (required)
      * @returns {Promise<{ success: boolean, deleted: number }>}
      */
-    async deletePregancyCheck({ id }) {
+    async deletePregancyCheck({ recordId }) {
         await this.ensureConnection();
 
-        if (!id) throw new Error('id is required for deletePregancyCheck');
+        if (!recordId) throw new Error('id is required for deletePregancyCheck');
 
         try {
             const request = this.pool.request();
-            request.input('id', sql.Int, id);
+            request.input('id', sql.Int, recordId);
 
             const result = await request.query(`
                 DELETE FROM PregancyCheck
@@ -5366,9 +5408,9 @@ class DatabaseOperations {
                     si.ID               as id,
                     si.TemplateID       as templateId,
                     st.SheetName        as templateName,
-                    si.DateCreated      as dateCreated,
-                    si.BreedingYear     as breedingYear,
-                    si.CreatedBy        as createdBy,
+                    si.DateCreated       as dateCreated,
+                    si.PrimaryRecordDate as primaryRecordDate,
+                    si.CreatedBy         as createdBy,
                     si.LastUpdated      as lastUpdated,
                     si.LastEditedBy     as lastEditedBy,
                     si.ColumnData       as columnData,
@@ -5392,7 +5434,7 @@ class DatabaseOperations {
                 templateName: row.templateName,
                 instanceName: row.instanceName,
                 dateCreated:  row.dateCreated,
-                breedingYear: row.breedingYear,
+                primaryRecordDate: row.primaryRecordDate,
                 createdBy:    row.createdBy,
                 lastUpdated:  row.lastUpdated,
                 lastEditedBy: row.lastEditedBy,
@@ -5426,7 +5468,7 @@ class DatabaseOperations {
                     si.TemplateID       as templateId,
                     st.SheetName        as templateName,
                     si.DateCreated      as dateCreated,
-                    si.BreedingYear     as breedingYear,
+                    si.PrimaryRecordDate  as primaryRecordDate,
                     si.CreatedBy        as createdBy,
                     si.LastUpdated      as lastUpdated,
                     si.LastEditedBy     as lastEditedBy,
@@ -5443,7 +5485,6 @@ class DatabaseOperations {
             query += ` ORDER BY si.DateCreated DESC`;
 
             const result = await request.query(query);
-            console.log(result.recordset);
             return {
                 instances: result.recordset.map(row => ({
                     ...row,
@@ -5804,17 +5845,23 @@ class DatabaseOperations {
 
 
 
-
+        {
+            key: 'AnimalTested',
+            name: 'Test Performed?',
+            source: 'PregancyCheck',
+            type: 'boolean',
+            storageHint: 'record',
+        },
         {
             key: 'IsPregnant',
-            name: 'Preg Result',
+            name: 'Test Results',
             source: 'PregancyCheck',
             type: 'select',
             storageHint: 'record',
         },
         {
             key: 'PregCheckDate',
-            name: 'Preg Check Date',
+            name: 'Test Date',
             source: 'PregancyCheck',
             type: 'date',
             storageHint: 'record',
@@ -5835,7 +5882,7 @@ class DatabaseOperations {
         },
         {
             key: 'PregNotes',
-            name: 'Preg Notes',
+            name: 'Test Notes',
             source: 'PregancyCheck',
             type: 'text',
             storageHint: 'record',
@@ -5870,11 +5917,12 @@ class DatabaseOperations {
             storageHint: 'record',
         },
         {
-            key: 'TreatmentMedicine',
+            key: 'TreatmentMedicineID',
             name: 'Treatment Medicine',
             source: 'MedicalTable',
             type: 'select',
             storageHint: 'record',
+            hidden: true,
         },
         {
             key: 'TreatmentDate',
@@ -5884,7 +5932,7 @@ class DatabaseOperations {
             storageHint: 'record',
         },
         {
-            key: 'TreatmentNotes',
+            key: 'Note',
             name: 'Treatment Notes',
             source: 'MedicalTable',
             type: 'text',
@@ -5909,41 +5957,49 @@ class DatabaseOperations {
             get:    'getCowTableData',
             update: 'updateCowTableData',
             add:    null, // CowTable rows are never added via a sheet
+            delete: null,
         },
 
         PregancyCheck: {
             get:    'getPregancyCheck',
             update: 'updatePregancyCheck',
             add:    'createPregancyCheck',
+            delete: 'deletePregancyCheck',
         },
 
         WeightRecords: {
             get:    'getWeightRecord',
             update: 'updateWeightRecord',
             add:    'createWeightRecord',
+            delete: 'deleteWeightRecord',
         },
 
         MedicalTable: {
-            get:    'getMedicalRecordDetails',
+            get:    'getMedicalRecord',
             update: 'updateMedicalRecord',
             add:    'createMedicalRecord',
+            delete: 'deleteMedicalRecord',
         },
 
     };
 
-
+    // Maps each record source to the field that governs whether a backing record should exist.
     REQUIRED_FIELD_KEYS = {
-        PregancyCheck: 'IsPregnant',
-        WeightRecords: 'NewWeight',
+        PregancyCheck: 'AnimalTested',
         MedicalTable:  'MedicineApplied',
+        WeightRecords: 'NewWeight',
     };
 
+    // Guard fields that have no real DB column & only control record creation/deletion.
+    VIRTUAL_GUARD_FIELDS = new Set(['MedicineApplied', 'AnimalTested']);
 
+    // Field values for selector boxes that are treated as equivalent to null
     NULL_ADJACENT_VALUES = {
         PregancyCheck: {
-            IsPregnant: ['Unexposed']
+            IsPregnant: ['Unexposed', 'Untested']
         }
     };
+
 
 
     /**
@@ -5995,7 +6051,7 @@ class DatabaseOperations {
             Temperament:        dropdownData.temperaments,
             RegCert:            dropdownData.regCerts,
             AnimalClass:        dropdownData.animalClasses,
-            TreatmentMedicine:  dropdownData.medicines,
+            TreatmentMedicineID:  dropdownData.medicines,
             IsPregnant:         dropdownData.pregTestResults,
             FetusSex:           dropdownData.sexes,
         };
@@ -6017,6 +6073,10 @@ class DatabaseOperations {
             if (templateCol.storage === 'record') {
                 const handler = this.SOURCE_HANDLERS[templateCol.source]; 
                 if (handler instanceof Error) throw handler;
+                
+                const hiddenCatalogueCols = this.COLUMN_CATALOGUE.filter(
+                    c => c.source === templateCol.source && c.hidden && !templateCol.fields.some(f => f.key === c.key)
+                );
 
                 return {
                     recordSlot: templateCol.recordSlot,
@@ -6028,18 +6088,27 @@ class DatabaseOperations {
                     add: handler.add ? this[handler.add].bind(this) : null,
                     ...(templateCol.medicine && { medicine: templateCol.medicine }),
                     ...(templateCol.defaults && { defaults: templateCol.defaults }),
-                    fields: templateCol.fields.map(field => {
-                        const col = {
-                            key:      field.key,
-                            name:     field.name,
-                            editable: field.editable ?? false,
-                            type:     field.type
-                        };
-                        if (field.type === 'select') {
-                            col.options = this.getSelectOptions(field.key, dropdownData);
-                        }
-                        return col;
-                    })
+                    fields: [
+                        ...templateCol.fields.map(field => {
+                            const col = {
+                                key:      field.key,
+                                name:     field.name,
+                                editable: field.editable ?? false,
+                                type:     field.type,
+                            };
+                            if (field.type === 'select') {
+                                col.options = this.getSelectOptions(field.key, dropdownData);
+                            }
+                            return col;
+                        }),
+                        ...hiddenCatalogueCols.map(c => ({
+                            key:     c.key,
+                            name:    c.name,
+                            editable: false,
+                            type:    c.type,
+                            hidden:  true,
+                        })),
+                    ]
                 };
             }
 
@@ -6088,7 +6157,8 @@ class DatabaseOperations {
                 idsByHandler.set(col.get, new Set());
             }
             for (const row of rows) {
-                const id = row[col.recordSlot];
+                const slotVal = row[col.recordSlot];
+                const id = typeof slotVal === 'object' ? slotVal?.recordId : slotVal;
                 if (id != null) idsByHandler.get(col.get).add(id);
             }
         }
@@ -6101,7 +6171,7 @@ class DatabaseOperations {
                 const ids = [...idSet];
                 if (ids.length === 0) return;
 
-                const results = await Promise.all(ids.map(id => handlerFn.call(this, id)));
+                const results = await Promise.all(ids.map(id => handlerFn.call(this, { recordId: id })));
                 dataMapsByHandler.set(
                     handlerFn,
                     Object.fromEntries(ids.map((id, i) => [id, results[i]]))
@@ -6114,23 +6184,34 @@ class DatabaseOperations {
             const resolved = { ...row };
 
             for (const col of recordSlotCols) {
-                const id      = row[col.recordSlot];
-                const dataMap = dataMapsByHandler.get(col.get) ?? {};
-                const record  = id != null ? dataMap[id] : null;
+                const slotVal  = row[col.recordSlot];
+                const id       = typeof slotVal === 'object' ? slotVal?.recordId : slotVal;
+                const pending = (slotVal !== null && typeof slotVal === 'object') ? slotVal : {};
+                const dataMap  = dataMapsByHandler.get(col.get) ?? {};
+                const record   = id != null ? dataMap[id] : null;
 
                 if (!record) {
-                    resolved[col.recordSlot] = null;
+                    // No backing record — preserve pending field values if any, otherwise null
+                    resolved[col.recordSlot] = id == null && Object.keys(pending).length > 1
+                        ? pending
+                        : null;
                     continue;
                 }
 
                 // Expand record into { recordId, field1, field2, ... }
+                // Virtual guard field have no DB column; if a backing record exists, they are implicitly true.
                 resolved[col.recordSlot] = {
                     recordId: id,
                     ...Object.fromEntries(
-                        col.fields.map(field => [field.key, record[field.key] ?? null])
+                        col.fields.map(field => [
+                            field.key,
+                            this.VIRTUAL_GUARD_FIELDS.has(field.key)
+                                ? true
+                                : (record[field.key] ?? null)
+                        ])
                     )
                 };
-            }
+                            }
 
             return resolved;
         });
@@ -6160,7 +6241,7 @@ class DatabaseOperations {
      * @returns {Promise<{ success: boolean, instanceId: number }>}
      */
     async createSheetInstance(params) {
-        const { templateId, instanceName, herdName, breedingYear, createdBy, defaults = {}} = params;
+        const { templateId, instanceName, herdName, primaryRecordDate, createdBy, defaults = {} } = params;
         await this.ensureConnection();
 
         try {
@@ -6176,13 +6257,16 @@ class DatabaseOperations {
                 const { _medicine, ...fieldDefaults } = slotDefaults;
                 return {
                     ...col,
-                    // Promote _medicine to medicine for select-on-creation slots
                     ...(_medicine && { medicine: _medicine }),
-                    defaults: fieldDefaults,
+                    defaults: {
+                        ...fieldDefaults,
+                        ...(_medicine && { TreatmentMedicineID: _medicine }),
+                    },
                 };
             });
 
-            const cowList = await this.getCowListForSheet(herdName, sheetDef.name, breedingYear);
+            const year = new Date(primaryRecordDate).getFullYear();
+            const cowList = await this.getCowListForSheet(herdName, sheetDef.name, year);
             const cowDataMap = await this.getCowTableData(cowList);
 
             const rowData = cowList.map(cowTag => {
@@ -6205,24 +6289,24 @@ class DatabaseOperations {
             const now = new Date();
 
             const request = this.pool.request();
-            request.input('templateId',   sql.Int,                  templateId);
-            request.input('dateCreated',  sql.DateTime,             now);
-            request.input('columnData',   sql.NVarChar(sql.MAX),    JSON.stringify(columnConfig));
-            request.input('rowData',      sql.NVarChar(sql.MAX),    JSON.stringify(rowData));
-            request.input('breedingYear', sql.Int,                  breedingYear ?? null);
-            request.input('createdBy',    sql.NVarChar,             createdBy);
-            request.input('lastUpdated',  sql.DateTime,             now);
-            request.input('lastEditedBy', sql.NVarChar,             createdBy);
-            request.input('animalTags',   sql.NVarChar(sql.MAX),    JSON.stringify(cowList));
-            request.input('instanceName', sql.NVarChar,             instanceName);
+            request.input('templateId', sql.Int, templateId);
+            request.input('dateCreated', sql.DateTime, now);
+            request.input('columnData', sql.NVarChar(sql.MAX), JSON.stringify(columnConfig));
+            request.input('rowData', sql.NVarChar(sql.MAX), JSON.stringify(rowData));
+            request.input('primaryRecordDate', sql.DateTime, primaryRecordDate ?? null);
+            request.input('createdBy', sql.NVarChar, createdBy);
+            request.input('lastUpdated', sql.DateTime, now);
+            request.input('lastEditedBy', sql.NVarChar, createdBy);
+            request.input('animalTags', sql.NVarChar(sql.MAX), JSON.stringify(cowList));
+            request.input('instanceName', sql.NVarChar, instanceName);
 
 
             const query = `
                 INSERT INTO SheetInstances 
-                    (TemplateID, DateCreated, ColumnData, RowData, BreedingYear, CreatedBy, LastUpdated, LastEditedBy, AnimalTags, InstanceName)
+                    (TemplateID, DateCreated, ColumnData, RowData, PrimaryRecordDate, CreatedBy, LastUpdated, LastEditedBy, AnimalTags, InstanceName)
                 OUTPUT INSERTED.ID
                 VALUES 
-                    (@templateId, @dateCreated, @columnData, @rowData, @breedingYear, @createdBy, @lastUpdated, @lastEditedBy, @animalTags, @instanceName)`;
+                    (@templateId, @dateCreated, @columnData, @rowData, @primaryRecordDate, @createdBy, @lastUpdated, @lastEditedBy, @animalTags, @instanceName)`;
 
             const result = await request.query(query);
             return {
@@ -6256,7 +6340,7 @@ class DatabaseOperations {
                     si.TemplateID       as templateId,
                     st.SheetName        as templateName,
                     si.DateCreated      as dateCreated,
-                    si.BreedingYear     as breedingYear,
+                    si.PrimaryRecordDate  as primaryRecordDate,
                     si.CreatedBy        as createdBy,
                     si.LastUpdated      as lastUpdated,
                     si.LastEditedBy     as lastEditedBy,
@@ -6287,7 +6371,7 @@ class DatabaseOperations {
                 templateName: instance.templateName,
                 instanceName: instance.instanceName,
                 dateCreated:  instance.dateCreated,
-                breedingYear: instance.breedingYear,
+                primaryRecordDate: instance.primaryRecordDate,
                 createdBy:    instance.createdBy,
                 lastUpdated:  instance.lastUpdated,
                 lastEditedBy: instance.lastEditedBy,
@@ -6307,7 +6391,7 @@ class DatabaseOperations {
      * Attempts to load an instance, creates a new one if not found
      */
     async tryLoadSheetInstance(params) {
-        const { instanceId, templateId, herdName, breedingYear, createdBy } = params;
+        const { instanceId, templateId, herdName, primaryRecordDate, createdBy } = params;
 
         if (instanceId) {
             try {
@@ -6317,7 +6401,7 @@ class DatabaseOperations {
             }
         }
 
-        const createResult = await this.createSheetInstance({ templateId, herdName, breedingYear, createdBy });
+        const createResult = await this.createSheetInstance({ templateId, herdName, primaryRecordDate, createdBy });
         return await this.loadSheetInstance({ instanceId: createResult.instanceId });
     }
 
@@ -6339,66 +6423,271 @@ class DatabaseOperations {
      * Updates a single field value within a record slot for one animal.
      * If the slot has no linked record yet and the value is not null-adjacent,
      * creates a new record and writes the new record ID back into RowData.
-     * If null-adjacent, ensures no record exists and clears the slot.
+     * If null-adjacent or the required guard field is falsy, clears the slot.
      *
-     * @param {{ instanceId, cowTag, recordSlot, source, fieldKey, fieldValue, medicine?, createdBy }} params
+     * @param {{ instanceId: number, cowTag: string, recordSlot: string, source: string, fieldKey: string, fieldValue: *, medicine?: string, createdBy: string }} params
+     * @returns {Promise<{ success: boolean, action: 'created'|'updated'|'cleared'|'skipped' }>}
      */
-    async updateSheetCell(params) {
-        ```
-        The logic flow inside is:
+    async updateSheetCell({ instanceId, cowTag, recordSlot, source, fieldKey, fieldValue, medicine, createdBy }) {
+        await this.ensureConnection();
 
-        1. Load the current RowData for this instance
-        2. Find the row matching cowTag
-        3. Check if the slot already has a record ID
-        YES → call handler.update with { recordId, fieldKey, fieldValue }
-        NO  → check null-adjacent
-                NULL-ADJACENT → do nothing, ensure slot stays null
-                NOT NULL-ADJACENT → call handler.add to create record,
-                                    write returned recordId back into row[recordSlot],
-                                    persist updated RowData via a targeted UPDATE
-        ```
+        const fetchRequest = this.pool.request();
+        fetchRequest.input('instanceId', sql.Int, instanceId);
+        const fetchResult = await fetchRequest.query(`
+            SELECT RowData, ColumnData, PrimaryRecordDate
+            FROM SheetInstances
+            WHERE ID = @instanceId`);
+
+        if (fetchResult.recordset.length === 0) throw new Error(`Sheet instance ${instanceId} not found`);
+
+        const { RowData: rawRowData, ColumnData: rawColumnData, PrimaryRecordDate: primaryRecordDate } = fetchResult.recordset[0];
+        const rowData    = JSON.parse(rawRowData);
+        const columnData = JSON.parse(rawColumnData);
+
+        const rowIndex = rowData.findIndex(r => r.CowTag === cowTag);
+        if (rowIndex === -1) throw new Error(`CowTag ${cowTag} not found in instance ${instanceId}`);
+
+        const row        = rowData[rowIndex];
+        const slotValue  = row[recordSlot] ?? null;                      // null | { recordId: null, ...pending } | number (legacy)
+        const existingId = slotValue && typeof slotValue === 'object' ? slotValue.recordId : slotValue;
+
+        const handlerConfig = this.SOURCE_HANDLERS[source];
+        if (!handlerConfig) throw new Error(`Unknown source: ${source}`);
+
+        const requiredKey   = this.REQUIRED_FIELD_KEYS[source];
+        const isGuardField  = fieldKey === requiredKey;
+        const nullAdjacent  = this.NULL_ADJACENT_VALUES[source]?.[requiredKey]?.includes(fieldValue) ?? false;
+        const shouldClear   = isGuardField && (fieldValue === false || fieldValue == null || nullAdjacent);
+
+        let action = 'skipped';
+
+        if (existingId) {
+            if (shouldClear) {
+                // Fetch current field values before deleting so they remain visible
+                const current = await this[handlerConfig.get]({ recordId: existingId });
+
+                if (handlerConfig.delete) {
+                    await this[handlerConfig.delete]({ recordId: existingId });
+                }
+
+                // Preserve field values as pending so clicking then unclicking is a no-op
+                const colDef = columnData.columns.find(c => c.recordSlot === recordSlot);
+                const preservedFields = {};
+                for (const field of (colDef?.fields ?? [])) {
+                    preservedFields[field.key] = current?.[field.key] ?? colDef?.defaults?.[field.key] ?? null;
+                }
+
+                // Guard field itself goes back to its cleared state
+                preservedFields[fieldKey] = fieldValue;
+
+                rowData[rowIndex][recordSlot] = { recordId: null, ...preservedFields };
+                action = 'cleared';
+
+            }  else {
+                // Record exists. Skip update if the field is virtual
+                if (!this.VIRTUAL_GUARD_FIELDS.has(fieldKey)) {
+                    await this[handlerConfig.update]({ recordId: existingId, fields: { [fieldKey]: fieldValue } });
+                }
+                action = 'updated';
+            }
+        } else if (isGuardField && !shouldClear) {
+            // Guard field fired true — collect all pending + defaults and create the record
+
+            // Column defaults from template
+            const colDef      = columnData.columns.find(c => c.recordSlot === recordSlot);
+            const colDefaults = colDef?.defaults ?? {};
+
+            // Pending field edits already stored in RowData (may be null or { recordId: null, ...fields })
+            const pending = (slotValue && typeof slotValue === 'object') ? slotValue : {};
+
+            // Merge defaults < pending < this edit < pinned medicine
+            const allFields = {
+                ...colDefaults,
+                ...pending,
+                [fieldKey]: fieldValue
+            };
+            delete allFields.recordId; 
+
+            // Seed any date fields not yet set with the instance's primary record date.
+            // Only runs for record slots (snapshot/inline columns never reach this branch).
+            for (const field of (colDef?.fields ?? [])) {
+                if (field.type === 'date' && !(field.key in allFields)) {
+                    allFields[field.key] = primaryRecordDate;
+                }
+            }
+
+            const created = await this[handlerConfig.add]({
+                cowTag,
+                fields: allFields,
+                primaryRecordDate,
+            });
+
+            rowData[rowIndex][recordSlot] = created.recordId;
+            action = 'created';
+
+        } else if (!isGuardField) {
+            // No record yet, non-guard field — store as pending in RowData
+            const existing = (slotValue && typeof slotValue === 'object') ? slotValue : { recordId: null };
+            rowData[rowIndex][recordSlot] = { ...existing, [fieldKey]: fieldValue };
+            action = 'pending';
+        }
+
+        if (action !== 'skipped') {
+            await this.updateSheetInstance({
+                instanceId,
+                rowData,
+                animalTags:   rowData.map(r => r.CowTag),
+                lastEditedBy: createdBy,
+            });
+        }
+
+        return { success: true, action };
     }
-
-
 
 
     /**
      * Processes a full set of submitted row data from an imported/filled sheet.
      * For each row and each record slot, decides whether to create, update, or
-     * clear the linked record based on the submitted field values.
-     * Writes all record IDs back into RowData and persists the instance.
+     * clear the linked record, then persists all record IDs in a single write.
      *
-     * @param {{ instanceId, rows: Array<{ cowTag, slots: { [recordSlot]: { [fieldKey]: value } } }>, createdBy }} params
+     * @param {{ instanceId: number, rows: Array<{ cowTag: string, slots: { [recordSlot: string]: { [fieldKey: string]: * } } }>, createdBy: string }} params
+     * @returns {Promise<{ success: boolean, created: number, updated: number, cleared: number }>>}
      */
-    async bulkUpdateSheetRows(params) {
-        ```
-        This is essentially updateSheetCell1 logic applied in a loop across all rows and slots, but batched — you want all the record creates/updates to complete before doing a single updateSheetInstance write at the end, rather than hammering the DB with one write per cell.
+    async bulkUpdateSheetRows({ instanceId, rows, createdBy }) {
+        await this.ensureConnection();
 
-        ---
+        const fetchRequest = this.pool.request();
+        fetchRequest.input('instanceId', sql.Int, instanceId);
+        const fetchResult = await fetchRequest.query(`
+            SELECT RowData, ColumnData, PrimaryRecordDate
+            FROM SheetInstances
+            WHERE ID = @instanceId`);
 
-        **What the frontend is responsible for (not the backend):**
+        if (fetchResult.recordset.length === 0) {
+            throw new Error(`Sheet instance ${instanceId} not found`);
+        }
 
-        - Filling in default values before sending — the backend receives fully-formed field values, it never looks at col.defaults to fill gaps
-        - Knowing which fields belong to which slot
-        - For the single cell path: knowing the source, recordSlot, fieldKey, and current record ID (or null) for the cell being edited
-        - For the bulk path: assembling the full rows payload from the current sheet state
+        const {
+            RowData:           rawRowData,
+            ColumnData:        rawColumnData,
+            PrimaryRecordDate: primaryRecordDate,
+        } = fetchResult.recordset[0];
 
+        const rowData    = JSON.parse(rawRowData);
+        const columnData = JSON.parse(rawColumnData);
 
+        // Build per-slot lookup tables from the stored column config
+        const sourceBySlot   = {};
+        const medicineBySlot = {};
+        const colDefBySlot   = {};
+        for (const col of columnData.columns) {
+            if (col.storage !== 'record') continue;
+            sourceBySlot[col.recordSlot]  = col.source;
+            colDefBySlot[col.recordSlot]  = col;
+            if (col.medicine) medicineBySlot[col.recordSlot] = col.medicine;
+        }
 
-        **API routes needed:**
+        // Collect operations — creates must be sequential (IDs written back),
+        // updates can be parallelised
+        const pendingUpdates = [];
+        const pendingCreates = [];
+        let cleared = 0;
 
-        PATCH /api/sheets/instances/:instanceId/cell
-        Body: { cowTag, recordSlot, source, fieldKey, fieldValue, medicine? }
+        for (const { cowTag, slots } of rows) {
+            const rowIndex = rowData.findIndex(r => r.CowTag === cowTag);
+            if (rowIndex === -1) continue;
 
-        PUT   /api/sheets/instances/:instanceId/bulk
-        Body: { rows: [...] }
+            const row = rowData[rowIndex];
 
+            for (const [recordSlot, fields] of Object.entries(slots)) {
+                const source = sourceBySlot[recordSlot];
+                if (!source) continue;
 
-        updateSheetInstance (the existing full overwrite) stays as-is for admin-level operations. The two new routes are the user-facing write paths.
+                const handlerConfig = this.SOURCE_HANDLERS[source];
+                if (!handlerConfig) continue;
 
-        What you do NOT yet have that needs building:
-        The individual handler.add and handler.update methods (createPregancyCheck, updatePregancyCheck, createWeightRecord, etc.) need to accept a standardized { cowTag, fields: { [key]: value }, medicine? } shape so updateSheetCell can call them uniformly without knowing the source. Right now they likely each have their own parameter shapes — those need normalizing before the sheet update layer can call them generically.
-        ```
+                const slotVal    = row[recordSlot] ?? null;
+                const existingId = (slotVal !== null && typeof slotVal === 'object') ? slotVal.recordId : slotVal;
+                const requiredKey = this.REQUIRED_FIELD_KEYS[source];
+
+                // Evaluate guard field from the submitted fields object
+                const requiredValue = requiredKey ? (fields[requiredKey] ?? null) : true;
+                const nullAdjacent  = requiredKey
+                    ? (this.NULL_ADJACENT_VALUES[source]?.[requiredKey]?.includes(requiredValue) ?? false)
+                    : false;
+                const shouldClear   = requiredKey != null &&
+                    (requiredValue === false || requiredValue == null || nullAdjacent);
+
+                if (shouldClear) {
+                    if (existingId != null) {
+                        rowData[rowIndex][recordSlot] = null;
+                        cleared++;
+                    }
+
+                } else if (existingId != null) {
+                    pendingUpdates.push({
+                        source, recordSlot,
+                        recordId: existingId,
+                        cowTag, fields,
+                    });
+
+                } else {
+                    const colDef      = colDefBySlot[recordSlot];
+                    const colDefaults = colDef?.defaults ?? {};
+                    const colMedicine = medicineBySlot[recordSlot] ?? null;
+
+                    const allFields = {
+                        ...colDefaults,
+                        ...fields,
+                        ...(colMedicine && { TreatmentMedicineID: colMedicine }),
+                    };
+
+                    // Seed unset date fields with primaryRecordDate
+                    for (const field of (colDef?.fields ?? [])) {
+                        if (field.type === 'date' && !(field.key in allFields)) {
+                            allFields[field.key] = primaryRecordDate;
+                        }
+                    }
+
+                    pendingCreates.push({
+                        source, rowIndex, recordSlot,
+                        cowTag,
+                        fields: allFields,
+                    });
+                }
+            }
+        }
+
+        // Run all updates in parallel
+        await Promise.all(
+            pendingUpdates.map(({ source, recordId, cowTag, fields }) =>
+                this[this.SOURCE_HANDLERS[source].update]({ recordId, cowTag, fields })
+            )
+        );
+
+        // Run creates sequentially — each result writes an ID back into rowData
+        for (const { source, rowIndex, recordSlot, cowTag, fields } of pendingCreates) {
+            const handlerConfig = this.SOURCE_HANDLERS[source];
+            if (!handlerConfig.add) continue;
+
+            const created = await this[handlerConfig.add]({ cowTag, fields });
+            rowData[rowIndex][recordSlot] = created.recordId;
+        }
+
+        // Single DB write for everything
+        await this.updateSheetInstance({
+            instanceId,
+            rowData,
+            animalTags:   rowData.map(r => r.CowTag),
+            lastEditedBy: createdBy,
+        });
+
+        return {
+            success: true,
+            created: pendingCreates.length,
+            updated: pendingUpdates.length,
+            cleared,
+        };
     }
 
 
@@ -6668,91 +6957,91 @@ class DatabaseOperations {
         return { results, successCount: results.filter(r => r.success).length };
     }
 
-    async updateSheetCell(params) {
-        const { handler, cowTag, value, breedingYear, breedingPlanId } = params;
-        await this.ensureConnection();
-        console.log('updateSheetCell called with:', params);
+    // async updateSheetCell(params) {
+    //     const { handler, cowTag, value, breedingYear, breedingPlanId } = params;
+    //     await this.ensureConnection();
+    //     console.log('updateSheetCell called with:', params);
 
-        try {
-            // Get current breeding year if not provided
-            let currentBreedingYear = breedingYear;
-            if (!currentBreedingYear) {
-                const breedingPlans = await this.getBreedingPlans();
-                const activePlan = breedingPlans.plans.find(p => p.IsActive) || breedingPlans.plans[0];
-                currentBreedingYear = activePlan ? activePlan.PlanYear : new Date().getFullYear();
-                console.log('Using default breeding year:', currentBreedingYear);
-            }
+    //     try {
+    //         // Get current breeding year if not provided
+    //         let currentBreedingYear = breedingYear;
+    //         if (!currentBreedingYear) {
+    //             const breedingPlans = await this.getBreedingPlans();
+    //             const activePlan = breedingPlans.plans.find(p => p.IsActive) || breedingPlans.plans[0];
+    //             currentBreedingYear = activePlan ? activePlan.PlanYear : new Date().getFullYear();
+    //             console.log('Using default breeding year:', currentBreedingYear);
+    //         }
 
-            switch (handler) {
-                case 'updatePregancyResult':
-                    //console.log('Calling updatePregancyResult');
-                    return await this.updatePregancyResult(cowTag, value, currentBreedingYear);
+    //         switch (handler) {
+    //             case 'updatePregancyResult':
+    //                 //console.log('Calling updatePregancyResult');
+    //                 return await this.updatePregancyResult(cowTag, value, currentBreedingYear);
 
-                case 'updateFetusSex':
-                    //console.log('Calling updateFetusSex');
-                    return await this.updateFetusSex(cowTag, value);
+    //             case 'updateFetusSex':
+    //                 //console.log('Calling updateFetusSex');
+    //                 return await this.updateFetusSex(cowTag, value);
 
-                case 'updatePregCheckWeight':
-                    //console.log('Calling updatePregCheckWeight');
-                    return await this.updatePregCheckWeight(cowTag, value);
+    //             case 'updatePregCheckWeight':
+    //                 //console.log('Calling updatePregCheckWeight');
+    //                 return await this.updatePregCheckWeight(cowTag, value);
 
-                case 'updatePregCheckNotes':
-                    //console.log('Calling updatePregCheckNotes');
-                    return await this.updatePregCheckNotes(cowTag, value);
+    //             case 'updatePregCheckNotes':
+    //                 //console.log('Calling updatePregCheckNotes');
+    //                 return await this.updatePregCheckNotes(cowTag, value);
 
-                case 'updatePregCheckDate':
-                    //console.log('Calling updatePregCheckDate');
-                    return await this.updatePregCheckDate(cowTag, value, currentBreedingYear);
+    //             case 'updatePregCheckDate':
+    //                 //console.log('Calling updatePregCheckDate');
+    //                 return await this.updatePregCheckDate(cowTag, value, currentBreedingYear);
 
-                case 'updateMonthsPregnant':
-                    //console.log('Calling updateMonthsPregnant');
-                    return await this.updateMonthsPregnant(cowTag, value);
+    //             case 'updateMonthsPregnant':
+    //                 //console.log('Calling updateMonthsPregnant');
+    //                 return await this.updateMonthsPregnant(cowTag, value);
 
-                case 'updateBreedingStatus':
-                    //console.log('Calling updateBreedingStatus');
-                    return await this.updateBreedingStatus(cowTag, value, currentBreedingYear);
+    //             case 'updateBreedingStatus':
+    //                 //console.log('Calling updateBreedingStatus');
+    //                 return await this.updateBreedingStatus(cowTag, value, currentBreedingYear);
 
-                case 'updateWeaningStatus':
-                    //console.log('Calling updateWeaningStatus');
-                    return await this.updateWeaningStatus(cowTag, value, currentBreedingYear);
+    //             case 'updateWeaningStatus':
+    //                 //console.log('Calling updateWeaningStatus');
+    //                 return await this.updateWeaningStatus(cowTag, value, currentBreedingYear);
 
-                case 'recordNewWeight':
-                    //console.log('Calling recordNewWeight');
-                    return await this.recordNewWeight(cowTag, value);
+    //             case 'recordNewWeight':
+    //                 //console.log('Calling recordNewWeight');
+    //                 return await this.recordNewWeight(cowTag, value);
 
-                case 'addCalvingNote':
-                    //console.log('Calling addCalvingNote');
-                    return await this.addCalvingNote(cowTag, value, currentBreedingYear);
+    //             case 'addCalvingNote':
+    //                 //console.log('Calling addCalvingNote');
+    //                 return await this.addCalvingNote(cowTag, value, currentBreedingYear);
 
-                default:
-                    //console.error(`Unknown update handler: ${handler}`);
-                    throw new Error(`Unknown update handler: ${handler}`);
-            }
-        } catch (error) {
-            console.error(`Error in updateSheetCell for ${handler}:`, error);
-            throw error;
-        }
-    }
+    //             default:
+    //                 //console.error(`Unknown update handler: ${handler}`);
+    //                 throw new Error(`Unknown update handler: ${handler}`);
+    //         }
+    //     } catch (error) {
+    //         console.error(`Error in updateSheetCell for ${handler}:`, error);
+    //         throw error;
+    //     }
+    // }
 
-    async batchUpdateSheetCells(params) {
-        const { updates } = params; // Array of {cowTag, columnKey, value, handler}
-        const results = [];
+    // async batchUpdateSheetCells(params) {
+    //     const { updates } = params; // Array of {cowTag, columnKey, value, handler}
+    //     const results = [];
         
-        for (const update of updates) {
-            try {
-                const result = await this.updateSheetCell({
-                    handler: update.handler,
-                    cowTag: update.cowTag,
-                    value: update.value
-                });
-                results.push({ ...update, success: true, result });
-            } catch (error) {
-                results.push({ ...update, success: false, error: error.message });
-            }
-        }
+    //     for (const update of updates) {
+    //         try {
+    //             const result = await this.updateSheetCell({
+    //                 handler: update.handler,
+    //                 cowTag: update.cowTag,
+    //                 value: update.value
+    //             });
+    //             results.push({ ...update, success: true, result });
+    //         } catch (error) {
+    //             results.push({ ...update, success: false, error: error.message });
+    //         }
+    //     }
         
-        return { results, successCount: results.filter(r => r.success).length };
-    }
+    //     return { results, successCount: results.filter(r => r.success).length };
+    // }
 
     async getSheetDataDynamic(params) {
         const { sheetId, herdName, breedingYear, sheetName } = params;
@@ -8338,6 +8627,8 @@ module.exports = {
     getCurrentWeight: (params) => dbOps.getCurrentWeight(params),
     getWeightRecord: (params) => dbOps.getWeightRecord(params),
     updateWeightRecord: (params) => dbOps.updateWeightRecord(params),
+    deleteWeightRecord: (params) => dbOps.deleteWeightRecord(params),
+
 
 
     addCow: (params) => dbOps.addCow(params),
@@ -8347,9 +8638,11 @@ module.exports = {
     // Medical records
     fetchCowMedicalRecords: (params) => dbOps.fetchCowMedicalRecords(params),
     createMedicalRecord: (params) => dbOps.createMedicalRecord(params),
-    getMedicalRecordDetails: (params) => dbOps.getMedicalRecordDetails(params),
+    getMedicalRecord: (params) => dbOps.getMedicalRecord(params),
     updateMedicalRecord: (params) => dbOps.updateMedicalRecord(params),
+    deleteMedicalRecord: (params) => dbOps.deleteMedicalRecord(params),
     resolveIssue: (params) => dbOps.resolveIssue(params),
+
     getMedicines: (params) => dbOps.getMedicines(params),
     addMedicine: (params) => dbOps.addMedicine(params),
     updateMedicine: (params) => dbOps.updateMedicine(params),
@@ -8486,18 +8779,17 @@ module.exports = {
     loadSheetInstance: (params) => dbOps.loadSheetInstance(params),
     createSheetInstance: (params) => dbOps.createSheetInstance(params),
     tryLoadSheetInstance: (params) => dbOps.tryLoadSheetInstance(params),
-    updateSheetInstanceCell: (params) => dbOps.updateSheetInstanceCell(params),
-    batchUpdateSheetInstanceCells: (params) => dbOps.batchUpdateSheetInstanceCells(params),
-
-
+    
     // Dynamic sheet data & updaters
-    getSheetDataDynamic: (params) => dbOps.getSheetDataDynamic(params),
     updateSheetCell: (params) => dbOps.updateSheetCell(params),
-    batchUpdateSheetCells: (params) => dbOps.batchUpdateSheetCells(params),
+    bulkUpdateSheetRows: (params) => dbOps.bulkUpdateSheetRows(params),
 
     getFormDropdownData: () => dbOps.getFormDropdownData(), 
     addFormDropdownData: (params) => dbOps.addFormDropdownData(params),
 
+
+
+    // Uhh? ??? Dunno, TODO look into
     generateTagSuggestions: (params) => dbOps.generateTagSuggestions(params),
     createWeightRecordBatch: (params) => dbOps.createWeightRecordBatch(params),
 
