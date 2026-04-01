@@ -3244,11 +3244,12 @@ class DatabaseOperations {
                 SELECT TOP 1
                     pc.ID,
                     pc.IsPregnant,
+                    pc.TestResults,
                     FORMAT(pc.PregCheckDate, 'yyyy-MM-dd') AS PregCheckDate,
                     pc.FetusSex,
                     pc.MonthsPregnant,
                     pc.Notes,
-                    wr.Weight AS WeightAtCheck
+                    wr.Weight
                 FROM PregancyCheck pc
                 LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
                 WHERE pc.ID = @id`);
@@ -3258,12 +3259,13 @@ class DatabaseOperations {
             const row = result.recordset[0];
             return {
                 ID: row.ID,
-                IsPregnant: row.IsPregnant === 1 ? 'Pregnant' : (row.IsPregnant === 0 ? 'Open' : ''),
+                IsPregnant: !!row.IsPregnant,
                 PregCheckDate: row.PregCheckDate || '',
                 FetusSex: row.FetusSex || '',
                 MonthsPregnant: row.MonthsPregnant ?? '',
                 Notes: row.Notes || '',
-                WeightAtCheck: row.WeightAtCheck || ''
+                Weight: row.Weight || '',
+                TestResults: row.TestResults,
             };
 
         } catch (error) {
@@ -3308,6 +3310,7 @@ class DatabaseOperations {
                 FetusSex = null,
                 MonthsPregnant = null,
                 Notes = null,
+                TestResults = null,
             } = fields;
 
             // Resolve most recent breeding record for this cow
@@ -3326,26 +3329,23 @@ class DatabaseOperations {
                 breedingRecordId = brResult.recordset[0].ID;
             }
 
-
-
-            // Accept boolean or string ('Pregnant' / 'Open')
-            const isPregnantBit = typeof IsPregnant === 'boolean'
-                ? IsPregnant
-                : IsPregnant === 'Pregnant';
-
             const request = this.pool.request();
             request.input('breedingRecordId', sql.Int, breedingRecordId);
             request.input('cowTag', sql.NVarChar, cowTag);
-            request.input('isPregnant', sql.Bit, isPregnantBit);
+            request.input('isPregnant', sql.Bit, IsPregnant);
             request.input('pregCheckDate', sql.DateTime, PregCheckDate ? new Date(PregCheckDate) : new Date());
             request.input('fetusSex', sql.NVarChar, FetusSex);
             request.input('monthsPregnant', sql.Decimal(4, 2), MonthsPregnant != null ? parseFloat(MonthsPregnant) : null);
             request.input('notes', sql.NVarChar(sql.MAX), Notes);
+            request.input('testResults', sql.NVarChar(255), TestResults);
 
             const result = await request.query(`
-                INSERT INTO PregancyCheck (BreedingRecordID, CowTag, IsPregnant, PregCheckDate, FetusSex, MonthsPregnant, Notes)
+                INSERT INTO PregancyCheck 
+                (BreedingRecordID, CowTag, IsPregnant, PregCheckDate, FetusSex, MonthsPregnant, Notes, TestResults)
                 OUTPUT INSERTED.ID
-                VALUES (@breedingRecordId, @cowTag, @isPregnant, @pregCheckDate, @fetusSex, @monthsPregnant, @notes)`);
+                VALUES 
+                (@breedingRecordId, @cowTag, @isPregnant, @pregCheckDate, @fetusSex, @monthsPregnant, @notes, @testResults)
+            `);
 
             results.push({ cowTag, recordId: result.recordset[0].ID });
         }
@@ -3437,13 +3437,16 @@ class DatabaseOperations {
                 if (field === 'PregCheckDate') {
                     request.input(field, sql.Date, value);
                 } else if (field === 'IsPregnant') {
-                    request.input(field, sql.Bit, typeof value === 'boolean' ? value : value === 'Pregnant');
-                } else if (field === 'MonthsPregnant') {
+                    request.input(field, sql.Bit, value);
+                }
+                else if (field === 'MonthsPregnant') {
                     request.input(field, sql.Decimal(4, 2), parseFloat(value) || null);
                 } else if (field === 'FetusSex') {
                     request.input(field, sql.NVarChar, value);
                 } else if (field === 'Notes') {
                     request.input(field, sql.NVarChar(sql.MAX), value);
+                } else if (field === 'TestResults') {
+                    request.input(field, sql.NVarChar(255), value);
                 } else {
                     throw new Error(`Unknown PregancyCheck field: ${field}`);
                 }
@@ -5852,12 +5855,20 @@ class DatabaseOperations {
             storageHint: 'record',
         },
         {
-            key: 'IsPregnant',
+            key: 'TestResults',
             name: 'Test Results',
             source: 'PregancyCheck',
             type: 'select',
             storageHint: 'record',
         },
+        // {
+        //     key: 'IsPregnant',
+        //     name: 'Test Results',
+        //     source: 'PregancyCheck',
+        //     type: 'bool',
+        //     storageHint: 'record',
+        //     hidden: true,
+        // },
         {
             key: 'PregCheckDate',
             name: 'Test Date',
@@ -6058,7 +6069,7 @@ class DatabaseOperations {
             RegCert: dropdownData.regCerts,
             AnimalClass: dropdownData.animalClasses,
             TreatmentMedicineID: dropdownData.medicines,
-            IsPregnant: dropdownData.pregTestResults,
+            TestResults: dropdownData.pregTestResults,
             FetusSex: dropdownData.sexes,
         };
         return map[columnKey] ?? [];
