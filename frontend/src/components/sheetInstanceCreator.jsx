@@ -378,7 +378,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
             onClose={onClose}
             title="Create New Sheet Instance"
             maxWidth="820px"
-            contentStyle={{ overflow: 'hidden' }}
+            contentStyle={{ overflow: 'hidden', paddingBottom: '100px' }}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 

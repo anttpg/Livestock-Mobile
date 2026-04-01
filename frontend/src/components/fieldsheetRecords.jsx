@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Sheet from './sheet';
+import Popup from './popup';
 import ConfirmPopup from './popupConfirm';
+import SheetImporter from './sheetImporter';
 import SheetInstanceCreator from './sheetInstanceCreator';
 
 function FieldsheetRecords() {
@@ -10,6 +12,7 @@ function FieldsheetRecords() {
   const [filterSheet, setFilterSheet] = useState('all');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [herds, setHerds] = useState([]);
@@ -96,6 +99,9 @@ function FieldsheetRecords() {
       setShowDeleteConfirm(true);
     }
   };
+
+  const handleImport = () => setShowImporter(true);
+  const handleImporterClose = () => setShowImporter(false);
 
   const confirmDelete = async () => {
     if (selectedInstance) {
@@ -227,6 +233,18 @@ function FieldsheetRecords() {
             </div>
 
             <button
+              onClick={handleImport}
+              className="button"
+              style={{
+                padding: '12px 20px',
+                fontSize: '16px',
+                fontWeight: 'bold'
+              }}
+            >
+              Import
+            </button>
+
+            <button
               onClick={handleDelete}
               disabled={!selectedInstance}
               className="button"
@@ -242,6 +260,8 @@ function FieldsheetRecords() {
             >
               Delete Instance
             </button>
+
+
           </div>
 
           {selectedInstance && (
@@ -302,6 +322,22 @@ function FieldsheetRecords() {
         confirmText="Delete"
         cancelText="Cancel"
       />
+
+      {/* Sheet Importer Popup */}
+      <Popup
+        isOpen={showImporter}
+        onClose={handleImporterClose}
+        title="Import Sheet Data"
+        contentStyle={{paddingBottom: '50px'}}
+      >
+        <SheetImporter 
+          onClose={handleImporterClose}
+          onImportComplete={() => {
+            handleImporterClose();
+            fetchInstances();
+          }}
+        />
+      </Popup>
     </div>
   );
 }

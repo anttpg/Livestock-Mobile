@@ -69,15 +69,23 @@ function SheetImporter({ onClose, onImportComplete }) {
 
       if (!instanceId) throw new Error('Could not read instance ID from file metadata.');
 
-      // Build a name->column lookup for record slot fields
-      // Shape: { [displayName]: { recordSlot, fieldKey } }
+      // Build colIndex -> field lookup, mirroring the exporter's cellMap exactly
       const fieldLookup = {};
+      let ec = 1;
       for (const col of columnData) {
-        if (col.storage !== 'record') continue;
-        for (const field of (col.fields || [])) {
-          if (!field.editable || field.hidden) continue;
-          fieldLookup[field.name] = { recordSlot: col.recordSlot, fieldKey: field.key };
-        }
+          if (col.storage === 'record') {
+              for (const field of (col.fields || []).filter(f => !f.hidden)) {
+                  if (field.editable) {
+                      fieldLookup[ec] = { recordSlot: col.recordSlot, fieldKey: field.key, inline: false };
+                  }
+                  ec++;
+              }
+          } else {
+              if (col.storage === 'inline' && col.editable) {
+                  fieldLookup[ec] = { inlineKey: col.key, inline: true };
+              }
+              ec++;
+          }
       }
 
       // Read data sheet headers (row 1 is group headers, row 2 is field names)
@@ -89,7 +97,7 @@ function SheetImporter({ onClose, onImportComplete }) {
       let _ec = 1;
       for (const col of columnData) {
         if (col.storage === 'record') {
-          _ec += (col.fields || []).length;
+          _ec += (col.fields || []).filter(f => !f.hidden).length;
         } else {
           if (col.key === 'CowTag') cowTagColIndex = _ec;
           _ec++;
@@ -102,6 +110,40 @@ function SheetImporter({ onClose, onImportComplete }) {
         if (cell.value) fieldHeaders[colIndex] = String(cell.value);
       });
 
+
+
+      // Names belonging to snapshot/inline columns — these bleed into row 2 via merged cells
+      const nonRecordNames = new Set(
+          columnData
+              .filter(col => col.storage !== 'record')
+              .map(col => col.name)
+      );
+
+      const expectedFieldNames = new Set(
+        Object.values(fieldLookup)
+            .filter(l => !l.inline)
+            .map(({ recordSlot, fieldKey }) => {
+                const col = columnData.find(c => c.recordSlot === recordSlot);
+                return col?.fields.find(f => f.key === fieldKey)?.name;
+            }).filter(Boolean)
+      );
+
+      const actualFieldNames   = new Set(
+          Object.values(fieldHeaders).filter(n => !nonRecordNames.has(n))
+      );
+
+      const missing = [...expectedFieldNames].filter(n => !actualFieldNames.has(n));
+      const extra   = [...actualFieldNames].filter(n => !expectedFieldNames.has(n));
+
+      if (missing.length > 0 || extra.length > 0) {
+          const lines = [];
+          if (missing.length > 0) lines.push(`Missing from file: ${missing.join(', ')}`);
+          if (extra.length > 0)   lines.push(`Unexpected in file: ${extra.join(', ')}`);
+          throw new Error(
+              `Column mismatch — this file does not match the sheet instance.\n\n${lines.join('\n')}\n\nMake sure you are importing a file exported from this exact sheet instance.`
+          );
+      }
+
       // Build rows payload: [{ cowTag, slots: { [recordSlot]: { [fieldKey]: value } } }]
       const rows = [];
 
@@ -113,20 +155,23 @@ function SheetImporter({ onClose, onImportComplete }) {
         if (!cowTag || !animalTags.includes(cowTag)) continue;
 
         const slots = {};
+        const inlineFields = {};
 
         row.eachCell((cell, colIndex) => {
-          const fieldName = fieldHeaders[colIndex];
-          if (!fieldName) return;
-          const lookup = fieldLookup[fieldName];
+          const lookup = fieldLookup[colIndex];
           if (!lookup) return;
 
-          const { recordSlot, fieldKey } = lookup;
-          if (!slots[recordSlot]) slots[recordSlot] = {};
-          slots[recordSlot][fieldKey] = cell.value ?? null;
+          if (lookup.inline) {
+              inlineFields[lookup.inlineKey] = cell.value ?? null;
+          } else {
+              const { recordSlot, fieldKey } = lookup;
+              if (!slots[recordSlot]) slots[recordSlot] = {};
+              slots[recordSlot][fieldKey] = cell.value ?? null;
+          }
         });
 
-        if (Object.keys(slots).length > 0) {
-          rows.push({ cowTag: String(cowTag), slots });
+        if (Object.keys(slots).length > 0 || Object.keys(inlineFields).length > 0) {
+          rows.push({ cowTag: String(cowTag), slots, inlineFields });
         }
       }
 
@@ -182,7 +227,7 @@ function SheetImporter({ onClose, onImportComplete }) {
         color: '#856404'
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-          This will overwrite existing sheet data
+          Warning: This will overwrite existing sheet data
         </div>
         <div style={{ fontSize: '14px', marginBottom: '10px' }}>
           Importing will overwrite all editable field values in this sheet instance with the values from the file.
@@ -294,10 +339,8 @@ function SheetImporter({ onClose, onImportComplete }) {
       <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#e3f2fd', borderRadius: '5px', fontSize: '14px', color: '#1565c0' }}>
         <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Import Instructions:</div>
         <ul style={{ margin: 0, paddingLeft: '20px' }}>
-          <li>File must be exported directly from this system using the Export Excel button</li>
-          <li>Only editable fields will be processed — read-only and snapshot columns are ignored</li>
-          <li>All editable values in the sheet instance will be overwritten with the file values</li>
-          <li>Empty rows will be skipped</li>
+          <li>Only editable fields will be processed. Read-only and snapshot columns are ignored</li>
+          <li><u>All</u> editable values in the current sheet instance will be overwritten. This may cause records to dissapear if they exist on the website, but not on the excel file!</li>
         </ul>
       </div>
     </div>

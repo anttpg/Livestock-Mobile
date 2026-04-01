@@ -117,9 +117,13 @@ function AddWeightRecord({ cowTag: propCowTag, eventId: propEventId = null, onSu
                     Date
                 </label>
                 <input
-                    type="date"
+                    type="datetime-local"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => {
+                        const localDate = new Date(e.target.value);
+                        const utcValue = localDate.toISOString().slice(0, 16);
+                        setDate(utcValue);
+                    }}
                     style={inputStyle}
                 />
             </div>

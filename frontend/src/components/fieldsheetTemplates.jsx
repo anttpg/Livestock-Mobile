@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import SheetTemplate from './sheetTemplate';
-import SheetImporter from './sheetImporter';
 import SheetTemplateEditor from './sheetTemplateEditor';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
@@ -12,7 +11,6 @@ function FieldsheetTemplates({ filterSheets = null }) {
   const [showEditor, setShowEditor] = useState(false);
   const [editingSheet, setEditingSheet] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showImporter, setShowImporter] = useState(false);
   const [loading, setLoading] = useState(true);
 
 
@@ -131,7 +129,7 @@ function FieldsheetTemplates({ filterSheets = null }) {
   };
 
   const handleDelete = () => {
-    if (selectedSheet /*&& !selectedSheet.locked*/) {
+    if (selectedSheet && !selectedSheet.locked) {
       setShowDeleteConfirm(true);
     }
   };
@@ -164,13 +162,7 @@ function FieldsheetTemplates({ filterSheets = null }) {
     fetchAllSheets();
   };
 
-  const handleImport = () => {
-    setShowImporter(true);
-  };
 
-  const handleImporterClose = () => {
-    setShowImporter(false);
-  };
 
   if (loading) {
     return (
@@ -246,17 +238,7 @@ function FieldsheetTemplates({ filterSheets = null }) {
             </div>
 
 
-            <button
-              onClick={handleImport}
-              className="button"
-              style={{
-                padding: '12px 20px',
-                fontSize: '16px',
-                fontWeight: 'bold'
-              }}
-            >
-              Import
-            </button>
+
             
             <button
               onClick={handleEdit}
@@ -318,21 +300,6 @@ function FieldsheetTemplates({ filterSheets = null }) {
         cancelText="Cancel"
       />
 
-      {/* Sheet Importer Popup */}
-      <Popup
-        isOpen={showImporter}
-        onClose={handleImporterClose}
-        title="Import Sheet Data"
-        contentStyle={{paddingBottom: '50px'}}
-      >
-        <SheetImporter 
-          onClose={handleImporterClose}
-          onImportComplete={() => {
-            handleImporterClose();
-            fetchAllSheets();
-          }}
-        />
-      </Popup>
 
       {/* Sheet Editor Popup */}
       {showEditor && (

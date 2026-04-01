@@ -237,7 +237,7 @@ function Sheet({ instanceId, showImportButton = false }) {
         }));
     };
 
-    //  Export / Print 
+    /*  Export / Print, REQUIRES EXCEL 2007 OR LATER */ 
     const handleExport = async () => {
         if (!sheetData?.data) return;
         try {
@@ -446,6 +446,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                 ['instanceName',  sheetData.instanceName],
                 ['templateName',  sheetData.templateName],
                 ['breedingYear',  sheetData.breedingYear],
+                ['primaryRecordDate', sheetData.primaryRecordDate],
                 ['dateCreated',   sheetData.dateCreated],
                 ['exportedAt',    new Date().toISOString()],
                 ['animalTags',    JSON.stringify(sheetData.animalTags)],

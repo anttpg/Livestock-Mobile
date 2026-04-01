@@ -978,6 +978,9 @@ class APIWrapper {
 
 
 
+
+
+    
     /**
      * SHEET MANAGEMENT API FUNCTIONS
      */
@@ -1068,7 +1071,7 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'createSheetInstance', (req) => ({
             templateId:   parseInt(req.params.templateId),
             herdName:     req.body.herdName,
-            breedingYear: req.body.breedingYear || null,
+            primaryRecordDate: req.body.primaryRecordDate || null,
             createdBy:    req.session?.user?.username || 'Unknown',
             instanceName: req.body.instanceName || '',
             defaults:     req.body.defaults || {},
@@ -1096,7 +1099,7 @@ class APIWrapper {
             instanceId:   req.body.instanceId || null,
             templateId:   req.body.templateId,
             herdName:     req.body.herdName,
-            breedingYear: req.body.breedingYear || null,
+            primaryRecordDate: req.body.primaryRecordDate || null,
             createdBy:    req.session?.user?.username || 'Unknown'
         }));
     }
