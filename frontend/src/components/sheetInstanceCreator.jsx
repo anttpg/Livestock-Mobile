@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 import SelectMedicine from './selectMedicine';
+import SubmitHerdAnimals from './submitHerdAnimals';
 
 //  Visual constants (mirrors SheetTemplateEditor) 
 
@@ -94,6 +95,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
     const [defaults,        setDefaults]        = useState({});
     const [loading,         setLoading]         = useState(false);
     const [loadingCols,     setLoadingCols]     = useState(false);
+    const [showAnimalSelector, setShowAnimalSelector] = useState(false);
 
     // Primary record date — user-editable, stored as UTC ISO string
     const [primaryRecordDate, setPrimaryRecordDate] = useState(new Date().toISOString());
@@ -112,6 +114,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
         setPrimaryRecordDate(new Date().toISOString());
         setTemplateId('');
         setHerd('');
+        setShowAnimalSelector(false);
         setResolvedColumns([]);
         setDefaults({});
         fetchTemplates();
@@ -141,7 +144,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
             const res = await fetch('/api/herds', { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json();
-                setHerds((data.herds || []).map(h => h.herdName));
+                setHerds((data.herds || []).map(h => ({ id: h.herdID, name: h.herdName })));
             }
         } catch (e) { console.error('Error fetching herds:', e); }
     };
@@ -163,15 +166,22 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
         finally { setLoadingCols(false); }
     };
 
+    const handleHerdChange = (e) => {
+        setHerd(e.target.value);
+    };
+
     //  Default mutation 
 
-    const setFieldDefault = (slot, key, value) =>
-        setDefaults(prev => ({ ...prev, [slot]: { ...prev[slot], [key]: value } }));
+    const setFieldDefault = (slot, key, value) =>        setDefaults(prev => ({ ...prev, [slot]: { ...prev[slot], [key]: value } }));
 
     //  Create 
 
-    const handleCreate = async () => {
+    const handleCreate = () => {
         if (!templateId || !herd || !instanceName.trim()) return;
+        setShowAnimalSelector(true);
+    };
+
+    const handleCreateWithAnimals = async (animals) => {
         setLoading(true);
         try {
             const res = await fetch(`/api/sheets/${templateId}/instances/create`, {
@@ -183,10 +193,12 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                     herdName:     herd,
                     primaryRecordDate,
                     defaults,
+                    animals,
                 }),
             });
             if (res.ok) {
                 const data = await res.json();
+                setShowAnimalSelector(false);
                 onCreated?.(data);
                 onClose();
             } else {
@@ -373,6 +385,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
     //  Render 
 
     return (
+        <>
         <Popup
             isOpen={isOpen}
             onClose={onClose}
@@ -424,12 +437,12 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                         <label style={labelStyle}>Herd</label>
                         <select
                             value={herd}
-                            onChange={e => setHerd(e.target.value)}
+                            onChange={handleHerdChange}
                             style={{ width: '95%', padding: '7px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '14px', backgroundColor: 'white' }}
                         >
                             <option value="">Select a herd...</option>
                             {herds.map(h => (
-                                <option key={h} value={h}>{h}</option>
+                                <option key={h.id} value={h.name}>{h.name}</option>
                             ))}
                         </select>
                     </div>
@@ -490,6 +503,24 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
 
             </div>
         </Popup>
+
+        {/* Animal selector — opens after form is filled, before creation */}
+        <Popup
+            isOpen={showAnimalSelector}
+            onClose={() => setShowAnimalSelector(false)}
+            title={`Select Animals — ${instanceName}`}
+            maxWidth="560px"
+            contentStyle={{ paddingBottom: '20px' }}
+        >
+            <SubmitHerdAnimals
+                isOpen={showAnimalSelector}
+                herdName={herd}
+                loading={loading}
+                onClose={() => setShowAnimalSelector(false)}
+                onSubmit={handleCreateWithAnimals}
+            />
+        </Popup>
+        </>
     );
 }
 

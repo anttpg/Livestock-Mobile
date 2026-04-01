@@ -798,6 +798,14 @@ app.get('/api/herds', async (req, res) => {
     return apiWrapper.getHerds(req, res);
 });
 
+// Get a specific herd animal
+app.get('/api/herds/:herdName/animals', 
+    createValidationMiddleware('', true),
+    async (req, res) => {
+      return apiWrapper.getHerdAnimals(req, res);
+    }
+);
+
 // Move herd to new pasture
 app.post('/api/herds/pasture',
   createValidationMiddleware('moveHerd'),

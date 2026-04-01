@@ -300,29 +300,7 @@ class APIWrapper {
     }
 
 
-    /**
-     * Move one or more cows to a herd.
-     * Body: { cowTags: string[] | string, herdName: string }
-     */
-    async setCowsHerd(req, res) {
-        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
-            const { cowTags, herdName } = req.body;
-            const tags = Array.isArray(cowTags) ? cowTags : [cowTags];
-            return { cowTags: tags, herdName };
-        });
-    }
 
-    /**
-     * Move one or more goats to a herd.
-     * Body: { goatTags: string[] | string, herdName: string }
-     */
-    async setGoatsHerd(req, res) {
-        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
-            const { goatTags, herdName } = req.body;
-            const tags = Array.isArray(goatTags) ? goatTags : [goatTags];
-            return { goatTags: tags, herdName };
-        });
-    }
 
 
 
@@ -761,12 +739,6 @@ class APIWrapper {
     }
 
 
-    /**
-    * Only the herd names
-    */
-    async getHerds(req, res) {
-        return this.executeDBOperation(req, res, 'getHerds', (req) => ({}));
-    }
 
 
 
@@ -812,6 +784,48 @@ class APIWrapper {
     }
 
 
+
+
+    /**
+     * Move one or more cows to a herd.
+     * Body: { cowTags: string[] | string, herdName: string }
+     */
+    async setCowsHerd(req, res) {
+        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
+            const { cowTags, herdName } = req.body;
+            const tags = Array.isArray(cowTags) ? cowTags : [cowTags];
+            return { cowTags: tags, herdName };
+        });
+    }
+
+    /**
+     * Move one or more goats to a herd.
+     * Body: { goatTags: string[] | string, herdName: string }
+     */
+    async setGoatsHerd(req, res) {
+        return this.executeDBOperation(req, res, 'setAnimalsHerd', (req) => {
+            const { goatTags, herdName } = req.body;
+            const tags = Array.isArray(goatTags) ? goatTags : [goatTags];
+            return { goatTags: tags, herdName };
+        });
+    }
+
+    
+    async getHerdAnimals(req, res) {
+        return this.executeDBOperation(req, res, 'getHerdAnimals', (req) => ({
+            herdName: req.params.herdName,
+            getInactive: req.query.getInactive === 'true',
+            cattleOnly: req.query.cattleOnly === 'true'
+        }));
+    }
+
+    /**
+    * Only the herd names
+    */
+    async getHerds(req, res) {
+        return this.executeDBOperation(req, res, 'getHerds', (req) => ({}));
+    }
+
     /**
      * Move herd to a new pasture
      */
@@ -819,6 +833,14 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'moveHerd', (req) => ({
             herdName: req.body.herdName,
             newPastureName: req.body.newPastureName
+        }));
+    }
+
+    async createHerd(req, res) {
+        return this.executeDBOperation(req, res, 'createHerd', (req) => ({
+            herdName: req.body.herdName,
+            cows: req.body.cows || [],
+            currentPasture: req.body.currentPasture || null
         }));
     }
 
@@ -929,13 +951,6 @@ class APIWrapper {
         }));
     }
 
-    async createHerd(req, res) {
-        return this.executeDBOperation(req, res, 'createHerd', (req) => ({
-            herdName: req.body.herdName,
-            cows: req.body.cows || [],
-            currentPasture: req.body.currentPasture || null
-        }));
-    }
 
 
 
@@ -1069,12 +1084,23 @@ class APIWrapper {
 
     async createSheetInstance(req, res) {
         return this.executeDBOperation(req, res, 'createSheetInstance', (req) => ({
-            templateId:   parseInt(req.params.templateId),
+            templateId:        parseInt(req.params.templateId),
+            herdName:          req.body.herdName,
+            primaryRecordDate: req.body.primaryRecordDate || null,
+            createdBy:         req.session?.user?.username || 'Unknown',
+            instanceName:      req.body.instanceName || '',
+            defaults:          req.body.defaults || {},
+            animals:           req.body.animals || null,
+        }));
+    }
+
+    async tryLoadSheetInstance(req, res) {
+        return this.executeDBOperation(req, res, 'tryLoadSheetInstance', (req) => ({
+            instanceId:   req.body.instanceId || null,
+            templateId:   req.body.templateId,
             herdName:     req.body.herdName,
             primaryRecordDate: req.body.primaryRecordDate || null,
-            createdBy:    req.session?.user?.username || 'Unknown',
-            instanceName: req.body.instanceName || '',
-            defaults:     req.body.defaults || {},
+            createdBy:    req.session?.user?.username || 'Unknown'
         }));
     }
 
@@ -1094,15 +1120,6 @@ class APIWrapper {
         }));
     }
 
-    async tryLoadSheetInstance(req, res) {
-        return this.executeDBOperation(req, res, 'tryLoadSheetInstance', (req) => ({
-            instanceId:   req.body.instanceId || null,
-            templateId:   req.body.templateId,
-            herdName:     req.body.herdName,
-            primaryRecordDate: req.body.primaryRecordDate || null,
-            createdBy:    req.session?.user?.username || 'Unknown'
-        }));
-    }
 
     async updateSheetCell(req, res) {
         return this.executeDBOperation(req, res, 'updateSheetCell', (req) => ({

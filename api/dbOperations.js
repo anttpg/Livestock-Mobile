@@ -2269,10 +2269,11 @@ class DatabaseOperations {
             const goatsRequest = this.pool.request();
             let goatsQuery;
 
+
             if (herdID) {
                 goatsRequest.input('herdID', sql.Int, herdID);
                 goatsQuery = `
-                    SELECT GoatTag AS CowTag, DateOfBirth AS DOB, Sex, Status, Description,
+                    SELECT GoatTag AS CowTag, DateOfBirth AS DOB, GoatType, Status, [Color Markings],
                         NULL AS FormattedDOB
                     FROM Goats
                     WHERE HerdID = @herdID
@@ -6247,7 +6248,7 @@ class DatabaseOperations {
      * @returns {Promise<{ success: boolean, instanceId: number }>}
      */
     async createSheetInstance(params) {
-        const { templateId, instanceName, herdName, primaryRecordDate, createdBy, defaults = {} } = params;
+        const { templateId, instanceName, herdName, primaryRecordDate, createdBy, defaults = {}, animals = {} } = params;
         await this.ensureConnection();
 
         try {
@@ -6299,7 +6300,10 @@ class DatabaseOperations {
 
 
             const year = new Date(primaryRecordDate).getFullYear();
-            const cowList = await this.getCowListForSheet(herdName, sheetDef.name, year);
+            const cowList = (animals && animals.length > 0)
+                ? animals
+                : await this.getCowListForSheet(herdName, sheetDef.name, year);
+            
             const cowDataMap = await this.getCowTableData(cowList);
 
             const rowData = cowList.map(cowTag => {
