@@ -718,13 +718,17 @@ app.get('/api/breeding-plan/:planId/overview',
   }
 );
 
-// Get breeding candidates for pregnancy check
-app.get('/api/breeding-candidates/:herdName',
-  createValidationMiddleware('getHerdBreedingCandidates'),
-  async (req, res) => {
-    return apiWrapper.getHerdBreedingCandidates(req, res);
-  }
-);
+
+
+// Get available bulls for breeding assignment
+app.get('/api/breeding-animal-status', async (req, res) => {
+    return apiWrapper.getBreedingAnimalStatus(req, res);
+});
+
+
+
+
+
 
 // Submit pregnancy check results
 app.post('/api/pregnancy-check',
@@ -734,21 +738,60 @@ app.post('/api/pregnancy-check',
   }
 );
 
+
+
+
+
+
+
+
+
+
+
 // Get calving status for herd
-app.get('/api/calving-status/:herdName',
-  createValidationMiddleware('getCalvingStatus'),
+app.get('/api/calving/status/:herdName',
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.getCalvingStatus(req, res);
   }
 );
 
 // Add calving record
-app.post('/api/calving-record',
-  createValidationMiddleware('createCalvingRecord'),
+app.post('/api/calving',
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.createCalvingRecord(req, res);
   }
 );
+
+// Get calving record by ID
+app.get('/api/calving/:id',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.getCalvingRecord(req, res);
+  }
+);
+
+// Update calving record by ID
+app.put('/api/calving/:id',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.updateCalvingRecord(req, res);
+  }
+);
+
+// Delete calving record by ID
+app.delete('/api/calving/:id',
+  createValidationMiddleware('', true),
+  async (req, res) => {
+    return apiWrapper.deleteCalvingRecord(req, res);
+  }
+);
+
+
+
+
+
 
 // Get weaning candidates
 app.get('/api/weaning-candidates/:herdName',
@@ -770,6 +813,8 @@ app.post('/api/weaning-record',
 
 
 
+
+
 // All animals (including inactive)
 app.get('/api/animals', async (req, res) => {
     return apiWrapper.getAllAnimals(req, res, { activeOnly: false });
@@ -781,8 +826,8 @@ app.get('/api/animals/active', async (req, res) => {
 });
 
 // Add new cow
-app.post('/api/add-cow',
-  createValidationMiddleware('addCow'),
+app.post('/api/cows',
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.addCow(req, res);
   }
@@ -1117,18 +1162,7 @@ app.get('/api/tag-suggestions/*',
 
 
 
-// Get available bulls for breeding assignment
-app.get('/api/breeding-animal-status', async (req, res) => {
-    return apiWrapper.getBreedingAnimalStatus(req, res);
-});
 
-// Assign breeding records to a plan
-app.post('/api/assign-breeding-records',
-    createValidationMiddleware('assignBreedingRecords'),
-    async (req, res) => {
-        return apiWrapper.assignBreedingRecords(req, res);
-    }
-);
 
 
 // Get main map

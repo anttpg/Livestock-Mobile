@@ -7,46 +7,27 @@ FUTURE DBOPERATION OPTIMIZATIONS
 
 
 CHANGES MADE TO DB
-SheetInstances
-Add bool column Archive, default false
+(ALREADY PERFORMED ON PROD, JUST HERE TO REMEMBER)
 
-ALTER TABLE dbo.SheetInstances
-ADD Archive BIT NOT NULL DEFAULT 0;
+[BreedingRecords]
+Drop WeightID column 
+Drop EventID
+Changed Primary/Cleanup bulls to JSON lists
 
-
-
-
-
-
-
-getSaleRecord
-createSaleRecord
-updateSaleRecord
+[BreedingPlan]
+Added DATE column
+Drop  ,[PregSheetInstanceID]
+      ,[BreedingSheetInstanceID]
+      ,[CalvingSheetInstanceID]
 
 
-getPurchaseRecord
-createPurchaseRecord
-updatePurchaseRecord
+[PregnancyCheck]
+Rename EventID -> PlanID
+
+[CalvingRecord]
+Added PlanID
 
 
-updateMedicine
-addMedicine
-getMedicines
-
-
-getWeightRecord
-updateWeightRecord
-createWeightRecord
-
-
-----Breeding Records 
-getPregnancyCheck
-createPregancyCheck
-updatePregancyCheck
-
-getCalvingRecord
-createCalvingRecord
-updateCalvingRecord
 
 
 getWeaningRecord TODO
@@ -57,59 +38,17 @@ deleteWeaningRecord TODO
 
 
 
+
 BIG IDEA GOALS
--Importing / exporting event data & fieldsheets... should be made easy
--Fix page switching / general tab bug.
+-Webhooks to keep changes cached locally.
 
 
--Build pages to create / plan / record an event
--Webhooks to keep changes cached locally
--REMOVE PHOTO OF CAT FROM COW 17 BODY
--LOAD IN PAPER DATA & INSERT INTO DB.
-
- 
-TODO for breeding plan; Importing & migrating real data 
--Text exporting to excel
--Test importing of all three types
--Copy data into actual excel docs, so its saved per year.
--Build multi-file importer
--make importing more versitale..?
-
-
--Storing animal feeds IS THE LOWEST POSSIBLE PRIORITY...
-
-
-
-
-
-
-
-Forms.jsx
-
-Sheet.jsx edits;
-
-PregCheck
--Is Pregnant does not display, for some odd reason.
--Pregnancy Weight date is wrong, needs to use the check date given, not the current date.
-
-Calving Tracker
-
-Weanling Tracker
-
-
-SheetEditor 
--Fix column editing (Doesn't currently work.)
--Combobox appears below other rows.
 
 
 **HIGHEST PRIORITY**
 MedicalRecords (medical.jsx)
 -Allow take/save/load photos & connect to issues
 -Remove max table size on Issues & Injuries
--Hook up medicines to the ms access table
--Make sure everything else still works.
--Search & find all different medicines, display combobox of medicines.
--Update DB option list func to give medicines back
 
 
 BreedingFitness
@@ -117,9 +56,6 @@ BreedingFitness
 -Design a form to upload EPDs
 
 
-General/Medical/BreedingFitness
--Swiping back & back arrow does not return to previous cow. Make the URL search actually update the search bar. Should fix lots of other issues too.
--When loading a large # of calves, cant scroll in the 'All current calves' table.
 
 
 

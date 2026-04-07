@@ -1157,19 +1157,6 @@ const validationSchemas = {
         ...fieldValidators.dateOptional('resolutionDate')
     ],
 
-    addCow: [
-        ...fieldValidators.cowTag(),
-        ...fieldValidators.dateOptional('dateOfEntry'),
-        ...fieldValidators.description(),
-        ...fieldValidators.cowTag(body, 'dam'),
-        ...fieldValidators.cowTag(body, 'sire'),
-        body('createCalvingRecord')
-            .optional()
-            .isBoolean().withMessage('createCalvingRecord must be true or false')
-            .toBoolean(),
-        ...fieldValidators.breedingYear(),
-    ],
-
     updateWeightRecord: [
         ...fieldValidators.cowTag(),
         ...fieldValidators.weight()
@@ -1306,12 +1293,6 @@ const validationSchemas = {
         body('preferences').isObject().withMessage('Preferences must be an object')
     ],
 
-    updateSheetCell: [
-        ...fieldValidators.updateHandler(),
-        ...fieldValidators.cowTag(),
-        ...fieldValidators.cellValue()
-    ],
-
     createSheet: [
         ...fieldValidators.sheetName(),
         ...fieldValidators.dataColumnsArray(),
@@ -1325,10 +1306,6 @@ const validationSchemas = {
         ...fieldValidators.dataColumnsArray(),
         ...fieldValidators.fillableColumnsArray(),
         ...fieldValidators.sheetColumns()
-    ],
-
-    getHerdBreedingCandidates: [
-        ...fieldValidators.herdName(param)
     ],
 
     createPregancyCheck: [
@@ -1394,15 +1371,7 @@ const validationSchemas = {
         ...fieldValidators.breedingYear()
     ],
 
-    assignBreedingRecords: [
-        body('planId').isInt({ min: 1 }).withMessage('Plan ID must be a positive integer').toInt(),
-        ...fieldValidators.cowTag(body, 'primaryBull'),
-        ...fieldValidators.cowTag(body, 'cleanupBull', allowEmpty = true),
-        ...fieldValidators.cowTags(),
-        body('exposureStartDate').isISO8601().withMessage('Exposure start date must be valid').toDate(),
-        body('exposureEndDate').isISO8601().withMessage('Exposure end date must be valid').toDate(),
-        body('pasture').optional().isString().trim()
-    ],
+
 
     updateSheetCell: [
         ...fieldValidators.updateHandler(),

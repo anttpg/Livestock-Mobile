@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Form from './forms';
 import TagGenerator from './tagGenerator';
+import AnimalCombobox from './animalCombobox';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -8,9 +9,8 @@ function AddAnimal({
     motherTag = null,
     fatherTag = null,
     initialTag = null,   // Pre-fills AND locks the cowTag field
+    calvingRecordID = null,
     showTwinsOption = false,
-    createCalvingRecord = false,
-    breedingYear = null,
     onClose,
     onSuccess
 }) {
@@ -21,7 +21,10 @@ function AddAnimal({
         dam: motherTag || '',
         sire: fatherTag || '',
         sex: '',
+        castrated: null,
         status: 'Current',
+        damDiedAtBirth: false,
+        calfDiedAtBirth: false,
         currentHerd: '',
         breed: '',
         temperament: '',
@@ -42,10 +45,14 @@ function AddAnimal({
 
     const [herds, setHerds] = useState([]);
     const [existingTags, setExistingTags] = useState([]);
+    const [animalOptions, setAnimalOptions] = useState([]);
+    const [tagsLoaded, setTagsLoaded] = useState(false);
     const [invalidCharacters, setInvalidCharacters] = useState([]);
     const [showTagGenerator, setShowTagGenerator] = useState(false);
     const [tagValidationError, setTagValidationError] = useState('');
     const [sexValidationError, setSexValidationError] = useState('');
+    const [damWarningDismissed, setDamWarningDismissed] = useState(false);
+    const [sireWarningDismissed, setSireWarningDismissed] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [isTwins, setIsTwins] = useState(false);
     const topRef = useRef(null);
@@ -92,10 +99,9 @@ function AddAnimal({
         }
     };
 
-
     const fetchExistingTags = async () => {
         try {
-            const response = await fetch('/api/animals/active', {
+            const response = await fetch('/api/animals', {
                 credentials: 'include'
             });
 
@@ -103,15 +109,21 @@ function AddAnimal({
                 const data = await response.json();
                 const tags = data.cows.map(cow => cow.CowTag);
                 setExistingTags(tags);
+                setAnimalOptions(data.cows.map(cow => ({
+                    name: cow.CowTag,
+                    value: cow.CowTag,
+                    status: cow.Status,
+                    sex: cow.Sex
+                })));
             } else {
                 console.error('Failed to fetch existing tags');
             }
         } catch (error) {
             console.error('Error fetching existing tags:', error);
+        } finally {
+            setTagsLoaded(true);
         }
     };
-
-
 
     // Fetch invalid characters on component mount
     useEffect(() => {
@@ -128,33 +140,35 @@ function AddAnimal({
         fetchInvalidCharacters();
     }, []);
 
-    const validateTag = (tag) => {
+    const validateTag = (tag, tags = existingTags) => {
         if (!tag.trim()) {
             return 'Tag is required';
         }
-        if (existingTags.includes(tag)) {
-            return 'Tag already exists, try generating a unique tag?';
+        if (!tagsLoaded) {
+            return 'Checking tag availability...';
         }
-        // Check if tag contains any invalid characters
+        if (tags.map(t => t.toLowerCase()).includes(tag.toLowerCase())) {
+            return 'Tag already exists. Try generating a unique tag.';
+        }
         const hasInvalidChar = invalidCharacters.some(char => tag.includes(char));
         if (hasInvalidChar) {
-            return `Invalid Tag Name. Must not contain any of the following characters: ${invalidCharacters.join(' ')}`;
+            return `Invalid tag. Must not contain: ${invalidCharacters.join(' ')}`;
         }
         return '';
     };
 
-
     const handleInputChange = (field, value) => {
         setFormData(prev => ({
             ...prev,
-            [field]: value
+            [field]: value,
+            ...(field === 'sex' && value !== 'Male' ? { castrated: null } : {}),
+            ...(field === 'calfDiedAtBirth' && value ? { status: 'Dead' } : {})
         }));
 
-        // Validate tag in real-time
-        if (field === 'cowTag') {
-            const error = validateTag(value);
-            setTagValidationError(error);
-        }
+        if (field === 'cowTag') setTagValidationError(validateTag(value));
+        if (field === 'sex') setSexValidationError('');
+        if (field === 'dam') setDamWarningDismissed(false);
+        if (field === 'sire') setSireWarningDismissed(false);
     };
 
     const handleTwinInputChange = (field, value) => {
@@ -173,16 +187,18 @@ function AddAnimal({
         setShowTagGenerator(false);
     };
 
+    const tagExistsInOptions = (tag, options) => {
+        if (!tag) return true; // empty is fine, no warning
+        return options.some(o => o.value.toLowerCase() === tag.toLowerCase());
+    };
+
     const handleSubmit = async () => {
-        // Validate cow tag
         const tagError = validateTag(formData.cowTag);
         setTagValidationError(tagError);
 
-        // Validate sex
-        const sexError = !formData.sex ? 'Please select a sex for the cow' : '';
+        const sexError = !formData.sex ? 'Please select a sex' : '';
         setSexValidationError(sexError);
 
-        // If there are errors, scroll to error...
         if (tagError) {
             topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
@@ -196,13 +212,12 @@ function AddAnimal({
         try {
             const payload = {
                 ...formData,
-                createCalvingRecord,
-                breedingYear,
-                calvingNotes: null,
-                twins: false
+                castrated: formData.sex === 'Male' ? formData.castrated : null,
+                twins: false,
+                calvingRecordID,
             };
 
-            const response = await fetch('/api/add-cow', {
+            const response = await fetch('/api/cows', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -225,10 +240,66 @@ function AddAnimal({
         }
     };
 
-
     const handleCancel = () => {
         if (onClose) onClose();
     };
+
+    const inputStyle = {
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #ccc',
+        borderRadius: '3px'
+    };
+
+    const requiredError = (message) => (
+        <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+            {message}
+        </div>
+    );
+
+    const unknownTagHint = (tag, onDismiss) => (
+        <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            color: '#7d4e00',
+            backgroundColor: '#fff8e1',
+            border: '1px solid #ffc107',
+            borderRadius: '3px',
+            fontSize: '12px',
+            marginTop: '5px',
+            padding: '5px 8px',
+            gap: '8px'
+        }}>
+            <span>The animal <strong>{tag}</strong> does not exist in the database. If this is intentional, you may dismiss this message.</span>
+            <button
+                type="button"
+                onClick={onDismiss}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#7d4e00',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    lineHeight: 1,
+                    padding: '0 2px',
+                    flexShrink: 0
+                }}
+                aria-label="Dismiss"
+            >
+                ×
+            </button>
+        </div>
+    );
+
+    const errorStyle = (hasError) => ({
+        border: `1px solid ${hasError ? '#dc3545' : '#ccc'}`,
+        backgroundColor: hasError ? '#fff5f5' : 'white',
+    });
+
+    const damNotFound = !!formData.dam && !tagExistsInOptions(formData.dam, animalOptions.filter(o => o.sex === 'Female'));
+    const sireNotFound = !!formData.sire && !tagExistsInOptions(formData.sire, animalOptions.filter(o => o.sex === 'Male'));
 
     const bodyContent = (
         <div ref={topRef} className="bubble-container" style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -278,11 +349,7 @@ function AddAnimal({
                                 Generate
                             </button>
                         </div>
-                        {tagValidationError && (
-                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
-                                {tagValidationError}
-                            </div>
-                        )}
+                        {tagValidationError && requiredError(tagValidationError)}
                     </div>
 
                     <div style={{ marginBottom: '15px' }}>
@@ -293,12 +360,7 @@ function AddAnimal({
                             type="date"
                             value={formData.dateOfBirth}
                             onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                         />
                     </div>
 
@@ -310,12 +372,7 @@ function AddAnimal({
                             type="text"
                             value={formData.description}
                             onChange={(e) => handleInputChange('description', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                             placeholder="Optional description"
                         />
                     </div>
@@ -327,91 +384,137 @@ function AddAnimal({
                         Parentage & Classification
                     </h4>
 
-                    <div style={{ marginBottom: '15px' }}>
+                    {/* Dam */}
+                    <div style={{ marginBottom: '5px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
                             Dam
                         </label>
-                        <input
-                            type="text"
+                        <AnimalCombobox
+                            options={animalOptions.filter(o => o.sex === 'Female')}
                             value={formData.dam}
-                            onChange={(e) => handleInputChange('dam', e.target.value)}
+                            onChange={(val) => handleInputChange('dam', val)}
+                            onSelect={(val) => handleInputChange('dam', val)}
+                            placeholder="Mother's tag"
+                            allowCustomValue
+                            clearOnOpen={false}
                             disabled={!!motherTag}
                             style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px',
-                                backgroundColor: motherTag ? '#f5f5f5' : 'white'
+                                ...inputStyle,
+                                ...(damNotFound && !damWarningDismissed
+                                    ? { backgroundColor: '#fff8e1', border: '1px solid #ffc107' }
+                                    : {})
                             }}
-                            placeholder="Mother's tag"
                         />
+                        {damNotFound && !damWarningDismissed && unknownTagHint(formData.dam, () => setDamWarningDismissed(true))}
                     </div>
 
+                    {/* Dam died */}
+                    <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            type="checkbox"
+                            id="damDiedAtBirth"
+                            checked={formData.damDiedAtBirth}
+                            onChange={(e) => handleInputChange('damDiedAtBirth', e.target.checked)}
+                        />
+                        <label htmlFor="damDiedAtBirth" style={{ fontSize: '13px', color: '#555' }}>
+                            Mother died during childbirth?
+                        </label>
+                    </div>
+
+                    {/* Sire */}
                     <div style={{ marginBottom: '15px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
                             Sire
                         </label>
-                        <input
-                            type="text"
+                        <AnimalCombobox
+                            options={animalOptions.filter(o => o.sex === 'Male')}
                             value={formData.sire}
-                            onChange={(e) => handleInputChange('sire', e.target.value)}
+                            onChange={(val) => handleInputChange('sire', val)}
+                            onSelect={(val) => handleInputChange('sire', val)}
+                            placeholder="Father's tag"
+                            allowCustomValue
+                            clearOnOpen={false}
                             disabled={!!fatherTag}
                             style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px',
-                                backgroundColor: fatherTag ? '#f5f5f5' : 'white'
+                                ...inputStyle,
+                                ...(sireNotFound && !sireWarningDismissed
+                                    ? { backgroundColor: '#fff8e1', border: '1px solid #ffc107' }
+                                    : {})
                             }}
-                            placeholder="Father's tag"
                         />
+                        {sireNotFound && !sireWarningDismissed && unknownTagHint(formData.sire, () => setSireWarningDismissed(true))}
                     </div>
 
+                    {/* Sex */}
                     <div style={{ marginBottom: '15px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                            Sex
+                            Sex <span style={{ color: '#dc3545' }}>*</span>
                         </label>
                         <select
                             value={formData.sex}
                             onChange={(e) => handleInputChange('sex', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: `1px solid ${tagValidationError ? '#dc3545' : '#ccc'}`,
-                                backgroundColor: tagValidationError ? '#fff5f5' : 'white',
-                                borderRadius: '3px'
-                            }}
+                            style={{ ...inputStyle, ...errorStyle(!formData.sex) }}
                         >
                             <option value="">Select sex...</option>
                             {dropdownData.sexes.map((sex, index) => (
                                 <option key={index} value={sex}>{sex}</option>
                             ))}
                         </select>
-                        {sexValidationError && (
-                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
-                                {sexValidationError}
-                            </div>
-                        )}
+                        {!formData.sex && requiredError('Sex is required')}
                     </div>
 
-                    <div style={{ marginBottom: '15px' }}>
+                    {/* Castrated — only shown when Male is selected */}
+                    {formData.sex === 'Male' && (
+                        <div style={{ marginBottom: '15px' }}>
+                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                                Castrated
+                            </label>
+                            <select
+                                value={formData.castrated === null ? '' : formData.castrated ? 'yes' : 'no'}
+                                onChange={(e) => handleInputChange(
+                                    'castrated',
+                                    e.target.value === '' ? null : e.target.value === 'yes'
+                                )}
+                                style={inputStyle}
+                            >
+                                <option value="">Select...</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Status */}
+                    <div style={{ marginBottom: '5px' }}>
                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
                             Status
                         </label>
                         <select
-                            value={formData.status}
+                            value={formData.calfDiedAtBirth ? 'Dead' : formData.status}
                             onChange={(e) => handleInputChange('status', e.target.value)}
+                            disabled={formData.calfDiedAtBirth}
                             style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
+                                ...inputStyle,
+                                ...(formData.calfDiedAtBirth ? { backgroundColor: '#f5f5f5', cursor: 'not-allowed' } : {})
                             }}
                         >
                             {dropdownData.statuses.map((status, index) => (
                                 <option key={index} value={status}>{status}</option>
                             ))}
                         </select>
+                    </div>
+
+                    {/* Calf died */}
+                    <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            type="checkbox"
+                            id="calfDiedAtBirth"
+                            checked={formData.calfDiedAtBirth}
+                            onChange={(e) => handleInputChange('calfDiedAtBirth', e.target.checked)}
+                        />
+                        <label htmlFor="calfDiedAtBirth" style={{ fontSize: '13px', color: '#555' }}>
+                            Animal died during childbirth?
+                        </label>
                     </div>
                 </div>
 
@@ -428,12 +531,7 @@ function AddAnimal({
                         <select
                             value={formData.currentHerd}
                             onChange={(e) => handleInputChange('currentHerd', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                         >
                             <option value="">Select herd...</option>
                             {herds.map((herd, index) => (
@@ -448,13 +546,8 @@ function AddAnimal({
                         </label>
                         <select
                             value={formData.breed}
-                            onChange={(e) => handleInputChange('Breed', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            onChange={(e) => handleInputChange('breed', e.target.value)}
+                            style={inputStyle}
                         >
                             <option value="">Select breed...</option>
                             {dropdownData.breeds.map((breed, index) => (
@@ -470,12 +563,7 @@ function AddAnimal({
                         <select
                             value={formData.temperament}
                             onChange={(e) => handleInputChange('temperament', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                         >
                             <option value="">Select temperament...</option>
                             {dropdownData.temperaments.map((temperament, index) => (
@@ -498,12 +586,7 @@ function AddAnimal({
                         <select
                             value={formData.regCert}
                             onChange={(e) => handleInputChange('regCert', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                         >
                             <option value="">Select certification...</option>
                             {dropdownData.regCerts.map((cert, index) => (
@@ -520,12 +603,7 @@ function AddAnimal({
                             type="text"
                             value={formData.regCertNumber}
                             onChange={(e) => handleInputChange('regCertNumber', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                             placeholder="Certificate number"
                         />
                     </div>
@@ -538,12 +616,7 @@ function AddAnimal({
                             type="text"
                             value={formData.birthweight}
                             onChange={(e) => handleInputChange('birthweight', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                             placeholder="Birth weight"
                         />
                     </div>
@@ -557,12 +630,7 @@ function AddAnimal({
                             step="0.01"
                             value={formData.targetPrice}
                             onChange={(e) => handleInputChange('targetPrice', e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px'
-                            }}
+                            style={inputStyle}
                             placeholder="Target sale price"
                         />
                     </div>
@@ -600,12 +668,7 @@ function AddAnimal({
                                     type="text"
                                     value={twinData.cowTag}
                                     onChange={(e) => handleTwinInputChange('cowTag', e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '3px'
-                                    }}
+                                    style={inputStyle}
                                     placeholder="Tag for twin"
                                 />
                             </div>
@@ -617,12 +680,7 @@ function AddAnimal({
                                     type="text"
                                     value={twinData.description}
                                     onChange={(e) => handleTwinInputChange('description', e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '3px'
-                                    }}
+                                    style={inputStyle}
                                     placeholder="Optional description for twin"
                                 />
                             </div>
@@ -668,7 +726,6 @@ function AddAnimal({
                 >
                     {submitting ? 'Adding...' : 'Add Animal'}
                 </button>
-
             </div>
 
             {/* Tag Generator Modal */}
@@ -703,9 +760,7 @@ function AddAnimal({
         </div>
     );
 
-    return (
-        bodyContent
-    );
+    return bodyContent;
 }
 
 export default AddAnimal;

@@ -6,10 +6,13 @@ import General from './general';
 import Medical from './medical';
 import BreedingFitness from './breedingFitness';
 import Sales from './sales';
+import AddAnimal from './addAnimal';
+import Popup from './popup';
 
 function AnimalFolder() {
     const [hasSeriousIssues, setHasSeriousIssues] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const [addAnimalOpen, setAddAnimalOpen] = useState(false); 
     const searchTerm = searchParams.get('search') || '36';
 
     const tabs = useMemo(() => [
@@ -85,10 +88,27 @@ function AnimalFolder() {
 
     return (
         <div>
-            <SearchBar
-                value={searchTerm}
-                placeholder="Search by tag"
-            />
+            <div id="search-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <SearchBar
+                    value={searchTerm}
+                    placeholder="Search by tag"
+                />
+
+                <button onClick={() => setAddAnimalOpen(true)}>
+                    Add Animal
+                </button>
+            </div>
+
+
+
+            <Popup 
+                isOpen={addAnimalOpen}
+                onClose={() => setAddAnimalOpen(false)} 
+                fullscreen={true}
+            >
+                <AddAnimal onClose={() => setAddAnimalOpen(false)} onSuccess={() => setAddAnimalOpen(false)}/>
+            </Popup>
+
             <Folder
                 title="Animal Records"
                 tabs={tabs}

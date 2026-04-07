@@ -141,7 +141,6 @@ function SearchBar({
     const canGoBack      = currentIndex > 0;
     const canGoForward   = currentIndex < history.length - 1;
     const showNavigation = history.length > 1;
-    const useAutoComplete = cowOptions.length > 0;
 
     const buttonStyle = {
         padding: '5px 10px', backgroundColor: '#28a745', color: 'white',
@@ -151,51 +150,39 @@ function SearchBar({
     const imageStyle = { position: 'absolute', top: '0%', left: '0%', width: '100%', height: '100%', objectFit: 'contain' };
 
     return (
-        <div id="search-container">
-            <div id="search-bar-container">
-                <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
-                    {useAutoComplete ? (
-                        <AnimalCombobox
-                            options={getFilteredOptions()}
-                            value={searchValue}
-                            onChange={setSearchValue}
-                            onBlur={handleAutoComboboxBlur}
-                            onSelect={handleOptionSelect}
-                            placeholder={placeholder}
-                            allowCustomValue={true}
-                            style={{ fontSize: '20px', padding: '8px 7px', outline: 'none' }}
-                            searchPlaceholder={`Search ${herdFilter ? `in ${herdFilter}` : 'all cows'}...`}
-                            emptyMessage={`No animals found${herdFilter ? ` in ${herdFilter}` : ''}`}
-                            onKeyDown={handleKeyDown}
-                        />
-                    ) : (
-                        <input
-                            id="search-bar"
-                            type="text"
-                            value={searchValue}
-                            onChange={(e) => setSearchValue(e.target.value)}
-                            placeholder={placeholder}
-                            style={{ fontSize: '20px', padding: '8px 12px', border: '1px solid #ccc', borderRadius: '4px 0 0 4px', outline: 'none' }}
-                            required
-                        />
-                    )}
-                    <button
-                        id="search-button"
-                        type="submit"
-                        style={{ padding: '8px 12px', border: '1px solid #ccc', borderLeft: 'none', borderRadius: '0 4px 4px 0', backgroundColor: '#7dbdce', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                        <img src={buttonImage} alt="Search" style={imageStyle} />
-                    </button>
-                </form>
+        <div id="search-bar-container">
+            <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0px' }}>
+                <AnimalCombobox
+                    options={getFilteredOptions()}
+                    value={searchValue}
+                    onChange={setSearchValue}
+                    onBlur={handleAutoComboboxBlur}
+                    onSelect={handleOptionSelect}
+                    placeholder={placeholder}
+                    allowCustomValue={true}
+                    style={{ fontSize: '20px', padding: '8px 7px', outline: 'none' }}
+                    searchPlaceholder={`Search ${herdFilter ? `in ${herdFilter}` : 'all cows'}...`}
+                    emptyMessage={`No animals found${herdFilter ? ` in ${herdFilter}` : ''}`}
+                    onKeyDown={handleKeyDown}
+                />
+            
+                <button
+                    id="search-button"
+                    type="submit"
+                    style={{ padding: '8px 12px', border: '1px solid #ccc', borderLeft: 'none', borderRadius: '0 4px 4px 0', backgroundColor: '#7dbdce', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                    <img src={buttonImage} alt="Search" style={imageStyle} />
+                </button>
+            </form>
 
-                {showNavigation && (
-                    <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
-                        <button type="button" onClick={handleBack}    disabled={!canGoBack}    style={canGoBack    ? buttonStyle : disabledButtonStyle}>← {canGoBack    ? history[currentIndex - 1] : 'Back'}</button>
-                        <button type="button" onClick={handleForward} disabled={!canGoForward} style={canGoForward ? buttonStyle : disabledButtonStyle}>{canGoForward ? history[currentIndex + 1] : 'Fwd'} →</button>
-                    </div>
-                )}
-            </div>
+            {showNavigation && (
+                <div style={{ display: 'flex', gap: '5px', marginTop: '10px' }}>
+                    <button type="button" onClick={handleBack} disabled={!canGoBack} style={canGoBack ? buttonStyle : disabledButtonStyle}>← {canGoBack ? history[currentIndex - 1] : 'Back'}</button>
+                    <button type="button" onClick={handleForward} disabled={!canGoForward} style={canGoForward ? buttonStyle : disabledButtonStyle}>{canGoForward ? history[currentIndex + 1] : 'Fwd'} →</button>
+                </div>
+            )}
         </div>
+
     );
 }
 

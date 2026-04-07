@@ -205,244 +205,284 @@ function General({ cowTag, cowData, onRefresh }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', zIndex: -1 }}>
 
             {/* Images and Basic Info */}
-            <div className="bubble-container" style={{ display: 'flex', minHeight: '420px' }}>
-                {/* Left side - Photo Viewers (responsive sizing) */}
+            <div className="bubble-container" style={{ display: 'flex', minHeight: '20px' }}>
+
+                {/* If animal doesnt exist... */}
+                {!cow ? (
                 <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    flex: 1,
-                    minWidth: '200px',
-                    maxWidth: '400px',
-                    aspectRatio: '1 / 1',
-                    width: '100%'
+                    padding: '20px',
+                    textAlign: 'center',
+                    fontStyle: 'italic',
+                    color: '#666',
+                    border: '2px dashed #ccc',
+                    borderRadius: '5px',
+                    width: '100%',
+                    height: '100%',
+                    boxSizing: 'border-box'
                 }}>
-                    <AnimalPhotoViewer
-                        cowTag={cowTag}
-                        imageType="headshot"
-                        style={{
-                            flex: 1,
-                            borderRadius: '5px',
-                            minHeight: '0',
-                            width: '100%'
-                        }}
-                    />
-                    <AnimalPhotoViewer
-                        cowTag={cowTag}
-                        imageType="body"
-                        style={{
-                            flex: 1,
-                            borderRadius: '5px',
-                            minHeight: '0',
-                            width: '100%'
-                        }}
-                    />
+                    Animal Not Found
                 </div>
+                ) : (
+                    <>
+                        {/* Left side - Photo Viewers (responsive sizing) */}
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            flex: 1,
+                            minWidth: '200px',
+                            maxWidth: '400px',
+                            aspectRatio: '1 / 1',
+                            width: '100%'
+                        }}>
+                            <AnimalPhotoViewer
+                                cowTag={cowTag}
+                                imageType="headshot"
+                                style={{
+                                    flex: 1,
+                                    borderRadius: '5px',
+                                    minHeight: '0',
+                                    width: '100%'
+                                }}
+                            />
+                            <AnimalPhotoViewer
+                                cowTag={cowTag}
+                                imageType="body"
+                                style={{
+                                    flex: 1,
+                                    borderRadius: '5px',
+                                    minHeight: '0',
+                                    width: '100%'
+                                }}
+                            />
+                        </div>
 
-                {/* Right side - Minimap and Info (fixed width) */}
-                <div style={{
-                    width: '200px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '15px',
-                    flexShrink: 1
-                }}>
-                    {/* Minimap Component */}
-                    <div style={{
-                        width: 'var(--minimap)',
-                        height: 'var(--minimap)'
-                    }}>
-                        <Minimap
-                            pastureName={cow?.PastureName}
-                            minimapSrc={minimap?.path}
-                        />
-                    </div>
+                        {/* Right side - Minimap and Info (fixed width) */}
+                        <div style={{
+                            width: '200px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '15px',
+                            flexShrink: 1
+                        }}>
+                            {/* Minimap Component */}
+                            <div style={{
+                                width: 'var(--minimap)',
+                                height: 'var(--minimap)'
+                            }}>
+                                <Minimap
+                                    pastureName={cow?.PastureName}
+                                    minimapSrc={minimap?.path}
+                                />
+                            </div>
 
-                    {/* Basic Info */}
-                    <div>
-                        {/* Location Information */}
-                        {cow?.IsActive && cow?.PastureName && (
-                            <>
-                                <b>Location:</b>
-                                <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-                                    <br />{cow.PastureName}
-                                </span>
-                                <br /><br />
-                            </>
-                        )}
+                            {/* Basic Info */}
+                            <div>
+                                {/* Location Information */}
+                                {cow?.IsActive && cow?.PastureName && (
+                                    <>
+                                        <b>Location:</b>
+                                        <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+                                            <br />{cow.PastureName}
+                                        </span>
+                                        <br /><br />
+                                    </>
+                                )}
 
-                        {/* Current Herd with dropdown - Only show if animal is active */}
-                        {cow?.IsActive && (
-                            <>
-                                <b>Herd:</b><br />
+                                {/* Current Herd with dropdown - Only show if animal is active */}
+                                {cow?.IsActive && (
+                                    <>
+                                        <b>Herd:</b><br />
+                                        <select
+                                            value={cow?.CurrentHerd || ''}
+                                            onChange={(e) => {
+                                                if (e.target.value === '+ New Herd') {
+                                                    setShowHerdSplitter(true);
+                                                } else {
+                                                    handleHerdChange(e.target.value);
+                                                }
+                                            }}
+                                            style={{
+                                                marginLeft: '10px',
+                                                padding: '2px 5px',
+                                                fontSize: '14px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '3px'
+                                            }}
+                                        >
+                                            <option value="">Select Herd</option>
+                                            {allHerds.map((herd, index) => (
+                                                <option key={index} value={herd}>
+                                                    {herd}
+                                                </option>
+                                            ))}
+                                            <option value="+ New Herd">+ New Herd</option>
+                                        </select>
+                                        <br /><br />
+                                    </>
+                                )}
+
+                                {/* Status selector */}
+                                <b>Status:</b><br />
                                 <select
-                                    value={cow?.CurrentHerd || ''}
-                                    onChange={(e) => {
-                                        if (e.target.value === '+ New Herd') {
-                                            setShowHerdSplitter(true);
-                                        } else {
-                                            handleHerdChange(e.target.value);
-                                        }
-                                    }}
-                                    style={{
-                                        marginLeft: '10px',
-                                        padding: '2px 5px',
-                                        fontSize: '14px',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '3px'
-                                    }}
+                                    value={cow?.Status || ''}
+                                    onChange={(e) => handleStatusChange(e.target.value)}
+                                    style={{ marginLeft: '10px' }}
                                 >
-                                    <option value="">Select Herd</option>
-                                    {allHerds.map((herd, index) => (
-                                        <option key={index} value={herd}>
-                                            {herd}
-                                        </option>
-                                    ))}
-                                    <option value="+ New Herd">+ New Herd</option>
+                                    <option value="">Select Status</option>
+                                    {statuses
+                                        .filter(status => status !== 'CULL LIST, Current')
+                                        .map((status, index) => (
+                                            <option key={index} value={status}>
+                                                {status}
+                                            </option>
+                                        ))
+                                    }
                                 </select>
                                 <br /><br />
-                            </>
-                        )}
-
-                        {/* Status selector */}
-                        <b>Status:</b><br />
-                        <select
-                            value={cow?.Status || ''}
-                            onChange={(e) => handleStatusChange(e.target.value)}
-                            style={{marginLeft: '10px'}}
-                        >
-                            <option value="">Select Status</option>
-                            {statuses
-                                .filter(status => status !== 'CULL LIST, Current')
-                                .map((status, index) => (
-                                    <option key={index} value={status}>
-                                        {status}
-                                    </option>
-                                ))
-                            }
-                        </select>
-                        <br /><br />
 
 
-                        <b>Sex:</b>
-                        <br />
-                        <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-                            {cow?.Sex ? (
-                                cow.Sex === 'Male' ? (
-                                    cow.Castrated ? 'Steer' : 'Bull'
-                                ) : 'Heifer'
-                            ) : 'Not recorded'}
-                        </span>
-                        <br /><br />
+                                <b>Sex:</b>
+                                <br />
+                                <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+                                    {cow?.Sex ? (
+                                        cow.Sex === 'Male' ? (
+                                            cow.Castrated ? 'Steer' : 'Bull'
+                                        ) : 'Heifer'
+                                    ) : 'Not recorded'}
+                                </span>
+                                <br /><br />
 
-                        <b>Date of Birth:</b>
-                        <br />
-                        <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-                            {cow?.DateOfBirth ? formatDate(cow.DateOfBirth) : 'Not recorded'}
-                        </span>
-                        <br /><br />
+                                <b>Date of Birth:</b>
+                                <br />
+                                <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
+                                    {cow?.DateOfBirth ? formatDate(cow.DateOfBirth) : 'Not recorded'}
+                                </span>
+                                <br /><br />
 
-                        <b>Last Weight:</b>
-                        <br />
-                        <span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
-                            {currentWeight ? (
-                                <>
-                                    {currentWeight.weight} lbs
-                                    <br />
-                                    ({formatDate(currentWeight.date)})
-                                </>
-                            ) : (
-                                'No weight recorded'
-                            )}
-                            <span
-                                className="material-symbols-outlined"
-                                onClick={() => setShowAddWeightPopup(true)}
-                                title="Add weight record"
-                                style={{
-                                    marginLeft: '8px',
-                                    fontSize: '18px',
-                                    verticalAlign: 'middle',
-                                    cursor: 'pointer',
-                                    color: '#4CAF50',
-                                    userSelect: 'none'
-                                }}
-                            >
-                                add_circle
-                            </span>
-                        </span>
-                        <br /><br />
+                                <b>Last Weight:</b>
+                                <br />
+                                <span style={{ marginLeft: '10px', fontStyle: currentWeight ? 'normal' : 'italic' }}>
+                                    {currentWeight ? (
+                                        <>
+                                            {currentWeight.weight} lbs
+                                            <br />
+                                            ({formatDate(currentWeight.date)})
+                                        </>
+                                    ) : (
+                                        'No weight recorded'
+                                    )}
+                                    <span
+                                        className="material-symbols-outlined"
+                                        onClick={() => setShowAddWeightPopup(true)}
+                                        title="Add weight record"
+                                        style={{
+                                            marginLeft: '8px',
+                                            fontSize: '18px',
+                                            verticalAlign: 'middle',
+                                            cursor: 'pointer',
+                                            color: '#4CAF50',
+                                            userSelect: 'none'
+                                        }}
+                                    >
+                                        add_circle
+                                    </span>
+                                </span>
+                                <br /><br />
 
-                        <b>Temperament:</b>
-                        <select
-                            value={cow?.Temperament || ''}
-                            onChange={(e) => handleTemperamentChange(e.target.value)}
-                        >
-                            <option value="">Select...</option>
-                            {temperaments.map((temp, index) => (
-                                <option key={index} value={temp}>
-                                    {temp}
-                                </option>
-                            ))}
-                            <option value="+ New Temperament">+ Add New</option>
-                        </select>
-                        <br /><br />
+                                <b>Temperament:</b>
+                                <select
+                                    value={cow?.Temperament || ''}
+                                    onChange={(e) => handleTemperamentChange(e.target.value)}
+                                >
+                                    <option value="">Select...</option>
+                                    {temperaments.map((temp, index) => (
+                                        <option key={index} value={temp}>
+                                            {temp}
+                                        </option>
+                                    ))}
+                                    <option value="+ New Temperament">+ Add New</option>
+                                </select>
+                                <br /><br />
 
-                        <b>Description:</b>
-                        <textarea
-                            value={editableDescription}
-                            onChange={(e) => setEditableDescription(e.target.value)}
-                            onBlur={handleDescriptionChange}
-                            placeholder="Enter description..."
-                            style={{
-                                marginLeft: '10px',
-                                width: 'calc(100% - 20px)',
-                                minHeight: '60px',
-                                padding: '5px',
-                                fontSize: '14px',
-                                border: '1px solid #ccc',
-                                borderRadius: '3px',
-                                fontFamily: 'inherit',
-                                resize: 'vertical'
-                            }}
-                        />
-                    </div>
-                </div>
+                                <b>Description:</b>
+                                <textarea
+                                    value={editableDescription}
+                                    onChange={(e) => setEditableDescription(e.target.value)}
+                                    onBlur={handleDescriptionChange}
+                                    placeholder="Enter description..."
+                                    style={{
+                                        marginLeft: '10px',
+                                        width: 'calc(100% - 20px)',
+                                        minHeight: '60px',
+                                        padding: '5px',
+                                        fontSize: '14px',
+                                        border: '1px solid #ccc',
+                                        borderRadius: '3px',
+                                        fontFamily: 'inherit',
+                                        resize: 'vertical'
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
-            {/* Reg / Cert status */}
             <div className="bubble-container">
                 <h3 style={{ margin: 0 }}>Registration & Certification</h3>
                 <div style={{ marginTop: ".4rem" }}>
-                    <span>Status:</span>
-                    <select
-                        value={cow?.RegCert || ''}
-                        onChange={(e) => updateCowData({RegCert: e.target.value})}
-                        style={{marginLeft: '.8rem'}}
-                    >
-                        <option value="">None</option>
-                        {regCerts
-                            .filter((val) => val != "None")
-                            .map((temp, index) => (
-                                <option key={index} value={temp}>
-                                    {temp}
-                                </option>
-                            ))}
-                    </select>
-                    <br/>
-                    <span> Number:</span>
-                    <input
-                        type="text"
-                        style={{width: "8.5rem", marginLeft: '.8rem'}}
-                        value={editableRegCertNumber}
-                        onChange={(e) => setEditableRegCertNumber(e.target.value)}
-                        onBlur={() => {
-                            if (editableRegCertNumber !== cow?.RegCertNumber) {
-                                updateCowData({ RegCertNumber: editableRegCertNumber });
-                            }
-                        }}
-                        placeholder="Enter value..."
-                    />
+                    {!cow ? (
+                        <div style={{
+                            padding: '20px',
+                            textAlign: 'center',
+                            fontStyle: 'italic',
+                            color: '#666',
+                            border: '2px dashed #ccc',
+                            borderRadius: '5px',
+                            width: '100%',
+                            height: '100%',
+                            boxSizing: 'border-box'
+                        }}>
+                            Animal Not Found
+                        </div>
+                    ) : (
+                        <>
+                            {/* Reg / Cert status */}
 
+                            <span>Status:</span>
+                            <select
+                                value={cow?.RegCert || ''}
+                                onChange={(e) => updateCowData({ RegCert: e.target.value })}
+                                style={{ marginLeft: '.8rem' }}
+                            >
+                                <option value="">None</option>
+                                {regCerts
+                                    .filter((val) => val != "None")
+                                    .map((temp, index) => (
+                                        <option key={index} value={temp}>
+                                            {temp}
+                                        </option>
+                                    ))}
+                            </select>
+                            <br />
+                            <span> Number:</span>
+                            <input
+                                type="text"
+                                style={{ width: "8.5rem", marginLeft: '.8rem' }}
+                                value={editableRegCertNumber}
+                                onChange={(e) => setEditableRegCertNumber(e.target.value)}
+                                onBlur={() => {
+                                    if (editableRegCertNumber !== cow?.RegCertNumber) {
+                                        updateCowData({ RegCertNumber: editableRegCertNumber });
+                                    }
+                                }}
+                                placeholder="Enter value..."
+                            />
+
+
+                        </>
+                    )}
                 </div>
             </div>
 

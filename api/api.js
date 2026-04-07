@@ -55,6 +55,46 @@ class APIWrapper {
         }
     }
 
+
+    async executeBatchDBOperation(req, res, operation, itemExtractor) {
+        try {
+            const validationErrors = validationResult(req);
+            if (!validationErrors.isEmpty()) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: validationErrors.array()
+                });
+            }
+
+            if (!dbOperations[operation]) {
+                throw new Error(`Operation '${operation}' not found in dbOperations`);
+            }
+
+            const items = itemExtractor(req);
+
+            if (!Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Request body must be a non-empty array'
+                });
+            }
+
+            const result = await dbOperations[operation](items);
+
+            return res.status(200).json(result);
+
+        } catch (error) {
+            console.error(`API Batch Error in ${operation}:`, error);
+            return res.status(500).json({
+                success: false,
+                error: 'Internal server error',
+                operation: operation
+            });
+        }
+    }
+
+
+
     /**
      * Execute file operation with validation and access control
      */
@@ -457,7 +497,7 @@ class APIWrapper {
     async updateMedicalRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateMedicalRecord', (req) => ({
             recordId: parseInt(req.params.recordId),
-            ...req.body
+            fields: req.body
         }));
     }
 
@@ -519,25 +559,128 @@ class APIWrapper {
         }));
     }
 
+
+
+
+
     /**
-     * Get breeding candidates for pregnancy check
+     * Get breeding plans
      */
-    async getHerdBreedingCandidates(req, res) {
-        return this.executeDBOperation(req, res, 'getHerdBreedingCandidates', (req) => ({
-            herdName: req.params.herdName
+    async getBreedingPlans(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingPlans', (req) => ({}));
+    }
+
+    /**
+     * Get breeding plan overview
+     */
+    async getBreedingPlanOverview(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingPlanOverview', (req) => {
+            const planId = parseInt(req.params.planId, 10);
+            if (isNaN(planId)) {
+                throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
+            }
+            
+            return { planId };
+        });
+    }
+
+
+
+
+
+
+    // Breeding Records
+    async getBreedingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingRecord', (req) => ({
+            recordId: parseInt(req.params.recordId)
         }));
     }
+
+
+    /**
+     * Create one or more breeding records
+     */
+    async createBreedingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createBreedingRecord', (req) => {
+            if (Array.isArray(req.body)) return req.body;
+            return {
+                planID:            req.body.planID            ?? null,
+                cowTag:            req.body.cowTag            ?? null,
+                primaryBulls:      req.body.primaryBulls      ?? [],
+                cleanupBulls:      req.body.cleanupBulls      ?? [],
+                isAI:              req.body.isAI              ?? false,
+                exposureStartDate: req.body.exposureStartDate ?? null,
+                exposureEndDate:   req.body.exposureEndDate   ?? null,
+                pasture:           req.body.pasture           ?? null,
+            };
+        });
+    }
+
+
+    async updateBreedingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updateBreedingRecord', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            fields: req.body
+        }));
+    }
+
+    async deleteBreedingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'deleteBreedingRecord', (req) => ({
+            recordId: parseInt(req.params.recordId)
+        }));
+    }
+
+
+
+
+
+
+    // Pregnancy Check
 
     /**
      * Submit pregnancy check results
      */
     async createPregancyCheck(req, res) {
-        return this.executeDBOperation(req, res, 'createPregancyCheck', (req) => ({
-            herdName: req.body.herdName,
-            date: req.body.date,
-            records: req.body.records
+        return this.executeDBOperation(req, res, 'createPregancyCheck', (req) => {
+            if (Array.isArray(req.body)) return req.body;
+            return {
+                cowTag:           req.body.cowTag           ?? null,
+                planID:           req.body.planID           ?? null,
+                breedingRecordID: req.body.breedingRecordID ?? null,
+                isPregnant:       req.body.isPregnant       ?? null,
+                pregCheckDate:    req.body.pregCheckDate    ?? null,
+                fetusSex:         req.body.fetusSex         ?? null,
+                monthsPregnant:   req.body.monthsPregnant   ?? null,
+                notes:            req.body.notes            ?? null,
+                testResults:      req.body.testResults      ?? null,
+            };
+        });
+    }
+
+    async getPregancyCheck(req, res) {
+        return this.executeDBOperation(req, res, 'getPregancyCheck', (req) => ({
+            recordId: parseInt(req.params.recordId)
         }));
     }
+
+    async updatePregancyCheck(req, res) {
+        return this.executeDBOperation(req, res, 'updatePregancyCheck', (req) => ({
+            recordId: parseInt(req.params.recordId),
+            fields: req.body
+        }));
+    }
+
+    async deletePregancyCheck(req, res) {
+        return this.executeDBOperation(req, res, 'deletePregancyCheck', (req) => ({
+            recordId: parseInt(req.params.recordId)
+        }));
+    }
+
+
+
+
+
+    
 
     /**
      * Get calving status for herd
@@ -549,19 +692,61 @@ class APIWrapper {
     }
 
     /**
-     * Add calving record
+     * Create one or more calving records
      */
     async createCalvingRecord(req, res) {
-        return this.executeDBOperation(req, res, 'createCalvingRecord', (req) => ({
-            breedingRecordId: req.body.breedingRecordId,
-            calfTag: req.body.calfTag,
-            damTag: req.body.damTag,
-            birthDate: req.body.birthDate,
-            calfSex: req.body.calfSex,
-            notes: req.body.notes,
-            twins: req.body.twins || false
+        return this.executeDBOperation(req, res, 'createCalvingRecord', (req) => {
+            if (Array.isArray(req.body)) return req.body;
+            return {
+                planID:           req.body.planID           ?? null,
+                breedingRecordId: req.body.breedingRecordId ?? null,
+                isTagged:         req.body.isTagged         ?? false,
+                calfTag:          req.body.calfTag          ?? null,
+                damTag:           req.body.damTag           ?? null,
+                birthDate:        req.body.birthDate        ?? null,
+                calfSex:          req.body.calfSex          ?? null,
+                notes:            req.body.notes            ?? null,
+                calfDiedAtBirth:  req.body.calfDiedAtBirth  ?? false,
+                damDiedAtBirth:   req.body.damDiedAtBirth   ?? false,
+            };
+        });
+    }
+
+    /**
+     * Get calving record by ID
+     */
+    async getCalvingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getCalvingRecord', (req) => ({
+            id: req.params.id
         }));
     }
+
+    /**
+     * Update calving record by ID
+     */
+    async updateCalvingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updateCalvingRecord', (req) => ({
+            id: req.params.id,
+            updates: req.body.updates
+        }));
+    }
+
+    /**
+     * Delete calving record by ID
+     */
+    async deleteCalvingRecord(req, res) {
+        return this.executeDBOperation(req, res, 'deleteCalvingRecord', (req) => ({
+            id: req.params.id
+        }));
+    }
+
+
+
+
+
+
+
+
 
     /**
      * Get weaning candidates
@@ -604,27 +789,6 @@ class APIWrapper {
 
 
     /**
-     * Get breeding plans
-     */
-    async getBreedingPlans(req, res) {
-        return this.executeDBOperation(req, res, 'getBreedingPlans', (req) => ({}));
-    }
-
-    /**
-     * Get breeding plan overview
-     */
-    async getBreedingPlanOverview(req, res) {
-        return this.executeDBOperation(req, res, 'getBreedingPlanOverview', (req) => {
-            const planId = parseInt(req.params.planId, 10);
-            if (isNaN(planId)) {
-                throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
-            }
-            
-            return { planId };
-        });
-    }
-
-    /**
      * Get form dropdown data
      */
     async getFormDropdownData(req, res) {
@@ -639,66 +803,81 @@ class APIWrapper {
     }
 
 
-    /**
-     * Add a new cow to the database with optional calving record creation
-     */
     async addCow(req, res) {
         try {
-            // Validation check
             const validationErrors = validationResult(req);
             if (!validationErrors.isEmpty()) {
-                return res.status(400).json({
-                    error: 'Validation failed',
-                    details: validationErrors.array()
-                });
+                return res.status(400).json({ error: 'Validation failed', details: validationErrors.array() });
             }
 
-            // Extract parameters
             const cowData = {
-                cowTag: req.body.cowTag,
-                dateOfBirth: req.body.dateOfBirth,
-                description: req.body.description,
-                dam: req.body.dam,
-                sire: req.body.sire,
-                sex: req.body.sex,
-                status: req.body.status,
-                currentHerd: req.body.currentHerd,
-                breed: req.body.breed,
-                temperament: req.body.temperament,
-                regCert: req.body.regCert,
-                regCertNumber: req.body.regCertNumber,
-                birthweight: req.body.birthweight,
-                birthweightClass: req.body.birthweightClass,
-                targetPrice: req.body.targetPrice,
-                origin: req.body.origin
+                cowTag:          req.body.cowTag,
+                dateOfBirth:     req.body.dateOfBirth,
+                description:     req.body.description,
+                dam:             req.body.dam,
+                sire:            req.body.sire,
+                sex:             req.body.sex,
+                castrated:       req.body.castrated,
+                status:          req.body.status,
+                currentHerd:     req.body.currentHerd,
+                breed:           req.body.breed,
+                temperament:     req.body.temperament,
+                regCert:         req.body.regCert,
+                regCertNumber:   req.body.regCertNumber,
+                birthweight:     req.body.birthweight,
+                targetPrice:     req.body.targetPrice,
             };
 
-            const createCalvingRecord = req.body.createCalvingRecord === true;
-            const breedingYear = req.body.breedingYear || new Date().getFullYear();
+            // Calving record data extracted from payload
+            const calvingRecordID   = req.body.calvingRecordID || null;
+            const calfDiedAtBirth   = req.body.calfDiedAtBirth === true;
+            const damDiedAtBirth    = req.body.damDiedAtBirth === true;
+            const calvingNotes      = req.body.calvingNotes || null;
+            const isTagged          = !!cowData.cowTag;
 
-            // Step 1: Add the cow
+            // Add the cow
             const cowResult = await dbOperations.addCow(cowData);
-            console.log("=== cowData extracted ===");
-            console.log(JSON.stringify(cowData, null, 2));
-            console.log("Normalized createCalvingRecord:", createCalvingRecord);
-            console.log("Breeding year:", breedingYear);
 
-            // Step 2: Optionally create calving record if this is a calf
-            if (createCalvingRecord && cowData.dam && cowData.dateOfBirth) {
-                try {
-                    // Find breeding record for the dam
-                    const breedingRecordId = await dbOperations.findBreedingRecordForDam(cowData.dam, breedingYear);
-                    
+            try {
+                if (calvingRecordID) {
+                    // Update existing calving record if it already exists
+                    await dbOperations.updateCalvingRecord({
+                        id: calvingRecordID,
+                        updates: {
+                            IsTagged:        isTagged,
+                            CalfTag:         cowData.cowTag,
+                            DamTag:          cowData.dam,
+                            BirthDate:       cowData.dateOfBirth,
+                            CalfSex:         cowData.sex,
+                            CalfDiedAtBirth: calfDiedAtBirth,
+                            DamDiedAtBirth:  damDiedAtBirth,
+                            CalvingNotes:    calvingNotes,
+                        }
+                    });
+
+                    return res.status(200).json({
+                        ...cowResult,
+                        calvingRecordCreated: false,
+                        calvingRecordUpdated: true,
+                        message: 'Cow added and calving record updated successfully'
+                    });
+
+                } else if (cowData.dam) {
+                    // Otherwise create a new calving record, find the breeding record for the dam first
+                    const breedingRecordId = await dbOperations.getClosestDamBreedingRecord(cowData.dam, cowData.dateOfBirth);
+
                     if (breedingRecordId) {
-                        // Create calving record
                         await dbOperations.createCalvingRecord({
-                            breedingRecordId: breedingRecordId,
-                            calfTag: cowData.cowTag,
-                            damTag: cowData.dam,
-                            birthDate: cowData.dateOfBirth,
-                            calfSex: cowData.sex,
-                            notes: req.body.calvingNotes || null,
-                            twins: req.body.twins || false
+                            breedingRecordId,
+                            isTagged,
+                            calfTag:         cowData.cowTag,
+                            damTag:          cowData.dam,
+                            birthDate:       cowData.dateOfBirth,
+                            calfSex:         cowData.sex,
+                            calfDiedAtBirth,
+                            damDiedAtBirth,
+                            notes:           calvingNotes,
+                            twins:           req.body.twins || false,
                         });
 
                         return res.status(200).json({
@@ -707,34 +886,27 @@ class APIWrapper {
                             message: 'Cow and calving record created successfully'
                         });
                     } else {
-                        // Cow created but no breeding record found for dam
                         return res.status(200).json({
                             ...cowResult,
                             calvingRecordCreated: false,
-                            warning: `Cow created but no breeding record found for dam '${cowData.dam}' in year ${breedingYear}`
+                            warning: `Cow created but no breeding record found for dam '${cowData.dam}'`
                         });
                     }
-                } catch (calvingError) {
-                    console.error('Error creating calving record:', calvingError);
-                    // Cow was created successfully, but calving record failed
-                    return res.status(200).json({
-                        ...cowResult,
-                        calvingRecordCreated: false,
-                        warning: `Cow created but failed to create calving record: ${calvingError.message}`
-                    });
                 }
+            } catch (calvingError) {
+                console.error('Error handling calving record:', calvingError);
+                return res.status(200).json({
+                    ...cowResult,
+                    calvingRecordCreated: false,
+                    warning: `Cow created but calving record failed: ${calvingError.message}`
+                });
             }
 
-            // Standard cow creation without calving record
             return res.status(200).json(cowResult);
 
         } catch (error) {
             console.error('API Error in addCow:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Internal server error',
-                operation: 'addCow'
-            });
+            return res.status(500).json({ success: false, error: 'Internal server error', operation: 'addCow' });
         }
     }
 
@@ -976,20 +1148,6 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'getBreedingAnimalStatus', (req) => ({}));
     }
 
-    /**
-     * Assign breeding records for a plan
-     */
-    async assignBreedingRecords(req, res) {
-        return this.executeDBOperation(req, res, 'assignBreedingRecords', (req) => ({
-            planId: parseInt(req.body.planId),
-            primaryBull: req.body.primaryBull,
-            cowTags: req.body.cowTags,
-            exposureStartDate: req.body.exposureStartDate,
-            exposureEndDate: req.body.exposureEndDate,
-            cleanupBull: req.body.cleanupBull || null,
-            pasture: req.body.pasture || null
-        }));
-    }
 
 
 

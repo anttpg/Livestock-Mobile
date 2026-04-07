@@ -688,6 +688,7 @@ function IssueSubform({
         message={`Are you sure you want to delete "${fileToDelete}"?<br/><br/><span style="color:#dc3545;font-weight:bold">This action cannot be undone.</span>`}
         confirmText="Delete"
         cancelText="Cancel"
+        requireDelay={true}
       />
     </div>
   );

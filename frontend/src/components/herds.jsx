@@ -452,7 +452,6 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                             display: 'flex',
                             padding: '15px',
                             gap: '20px',
-                            minHeight: '400px',
                             overflow: 'hidden'
                         }}>
 
@@ -570,7 +569,8 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                                             }
                                         </div>
                                     </div>
-
+                                    
+                                    {/* Disabled for now 
                                     <div style={layoutStyles.gridThreeColumn}>
                                         {feedStatus.map((feed, index) => (
                                             <StatusRow
@@ -600,6 +600,8 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                                             Customize Tracked Items
                                         </button>
                                     </div>
+                                    */}
+
                                 </div>
                             </div>
                         </div>

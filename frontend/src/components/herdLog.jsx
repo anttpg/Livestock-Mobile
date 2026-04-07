@@ -75,7 +75,7 @@ function HerdLog({
 
   return (
     <div style={{ width: '100%' }}>
-      <div className="timeline-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3>Timeline: {herdName}</h3>
         {herdEvents.length > 0 && (
           <span style={{ color: '#666', fontSize: '14px' }}>

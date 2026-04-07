@@ -131,7 +131,7 @@ function AutoCombobox({
   };
 
   return (
-    <div style={{ position: 'relative', ...style }} ref={dropdownRef}>
+    <div style={{ position: 'relative' }} ref={dropdownRef}>
       <input
         ref={inputRef}
         type="text"

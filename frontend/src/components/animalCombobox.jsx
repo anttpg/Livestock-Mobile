@@ -9,7 +9,7 @@ export const STATUS_COLORS = {
     'Sold':               { bg: '#c89807', color: '#fdfdfd' },
     'Dead':               { bg: '#343a40', color: '#ffffff' },
     'Undefined':          { bg: '#e2e3e5', color: '#383d41' },
-};
+};``
 
 export function StatusBadge({ status }) {
     if (!status) return null;
@@ -30,35 +30,12 @@ export function StatusBadge({ status }) {
     );
 }
 
-function AnimalCombobox({
-    options,
-    value,
-    onChange,
-    onSelect,
-    onBlur,
-    onKeyDown,
-    placeholder,
-    allowCustomValue = true,
-    style,
-    searchPlaceholder,
-    emptyMessage,
-}) {
-    const renderStatusBubble = (option) => <StatusBadge status={option.status} />;
-
+function AnimalCombobox({ options, ...rest }) {
     return (
         <AutoCombobox
             options={options}
-            value={value}
-            onChange={onChange}
-            onSelect={onSelect}
-            onBlur={onBlur}
-            onKeyDown={onKeyDown}
-            placeholder={placeholder}
-            allowCustomValue={allowCustomValue}
-            style={style}
-            searchPlaceholder={searchPlaceholder}
-            emptyMessage={emptyMessage}
-            renderOptionRight={renderStatusBubble}
+            renderOptionRight={(option) => <StatusBadge status={option.status} />}
+            {...rest}
         />
     );
 }

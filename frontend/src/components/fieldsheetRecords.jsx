@@ -321,6 +321,7 @@ function FieldsheetRecords() {
         message='Are you sure you want to delete this record?<br/><br/><span style="color:#dc3545;font-weight:bold">This action cannot be undone.</span>'
         confirmText="Delete"
         cancelText="Cancel"
+        requireDelay={true}
       />
 
       {/* Sheet Importer Popup */}

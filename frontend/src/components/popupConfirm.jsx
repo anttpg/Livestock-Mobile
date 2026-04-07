@@ -8,15 +8,16 @@ function popupConfirm({
   title = "Confirm Action", 
   message = "Are you sure?", 
   requireDelay = false,
+  delaySeconds = 3,
   confirmText = "Confirm",
   cancelText = "Cancel"
 }) {
-  const [countdown, setCountdown] = useState(requireDelay ? 5 : 0);
+  const [countdown, setCountdown] = useState(requireDelay ? delaySeconds : 0);
   const [canConfirm, setCanConfirm] = useState(!requireDelay);
 
   useEffect(() => {
     if (isOpen && requireDelay) {
-      setCountdown(5);
+      setCountdown(delaySeconds);
       setCanConfirm(false);
       
       const timer = setInterval(() => {
