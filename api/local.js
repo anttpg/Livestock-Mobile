@@ -2151,7 +2151,6 @@ class LocalFileOperations {
     async backupSqlDatabase(params = {}) {
         const { userPermissions } = params;
 
-        // VALIDATION: Must have dev permission
         if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
             return {
                 success: false,
@@ -2161,6 +2160,7 @@ class LocalFileOperations {
         }
 
         const { hasDevConnection, getDevConnection } = require('./db');
+        const fs = require('fs');
 
         if (!hasDevConnection()) {
             return {
@@ -2173,10 +2173,8 @@ class LocalFileOperations {
         try {
             const pool = getDevConnection();
 
-            // Ensure backup table exists
             await this.createBackupTable();
 
-            // Get SQL Server's default backup directory
             const dirQuery = `EXEC master.dbo.xp_instance_regread 
                             N'HKEY_LOCAL_MACHINE', 
                             N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',
@@ -2193,13 +2191,12 @@ class LocalFileOperations {
                 };
             }
 
-            // Create timestamp for backup filename
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const backupFileName = `${process.env.DB_DATABASE}_backup_${timestamp}.bak`;
             const backupFilePath = path.join(sqlBackupDir, backupFileName);
             const escapedPath = path.resolve(backupFilePath).replace(/\\/g, '\\\\');
 
-            // STEP 1: Create permanent backup file in SQL Server's backup directory
+            // STEP 1: Create the .bak file
             const backupQuery = `
                 BACKUP DATABASE [${process.env.DB_DATABASE}] 
                 TO DISK = N'${escapedPath}' 
@@ -2211,68 +2208,42 @@ class LocalFileOperations {
             await pool.request().query(backupQuery);
             console.log(`✓ Backup file created: ${backupFilePath}`);
 
-            // STEP 2: Read the backup file and store in database table for easy download
+            // STEP 2: Get file size from disk directly — no SQL permissions needed
+            const backupSize = fs.statSync(backupFilePath).size;
+
+            // STEP 3: Record metadata — OUTPUT clause avoids SCOPE_IDENTITY() scope issues with tedious
             const insertQuery = `
-                DECLARE @BackupData VARBINARY(MAX);
-                
-                -- Read the backup file
-                SELECT @BackupData = BulkColumn 
-                FROM OPENROWSET(
-                    BULK N'${escapedPath}', 
-                    SINGLE_BLOB
-                ) AS BackupFile;
-                
-                -- Store in database table (for easy web download)
-                INSERT INTO DatabaseBackups (DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupSize)
+                INSERT INTO DatabaseBackups (DatabaseName, BackupFileName, BackupFilePath, BackupSize)
+                OUTPUT INSERTED.BackupID
                 VALUES (
                     '${process.env.DB_DATABASE}',
                     '${backupFileName}',
                     '${backupFilePath}',
-                    @BackupData,
-                    DATALENGTH(@BackupData)
+                    ${backupSize}
                 );
-                
-                -- Return the BackupID
-                SELECT SCOPE_IDENTITY() AS BackupID, DATALENGTH(@BackupData) AS BackupSize;
             `;
 
             const result = await pool.request().query(insertQuery);
             const backupID = result.recordset[0]?.BackupID;
-            const backupSize = result.recordset[0]?.BackupSize;
 
-            console.log(`✓ Backup stored in database table (BackupID: ${backupID})`);
+            console.log(`✓ Backup metadata recorded (BackupID: ${backupID}, Size: ${backupSize} bytes)`);
 
             return {
                 success: true,
-                message: `Database backed up successfully`,
-                backupID: backupID,
-                backupFileName: backupFileName,
-                backupFilePath: backupFilePath,
-                backupSize: backupSize,
+                message: 'Database backed up successfully',
+                backupID,
+                backupFileName,
+                backupFilePath,
+                backupSize,
                 database: process.env.DB_DATABASE,
                 permanent: {
                     location: sqlBackupDir,
-                    note: 'Permanent backup file saved - will accumulate over time'
-                },
-                downloadable: {
-                    backupID: backupID,
-                    note: 'Also stored in database table for easy download'
+                    note: 'Backup file saved to SQL Server backup directory'
                 }
             };
 
         } catch (error) {
             console.error('Error backing up database:', error);
-
-            if (error.message?.includes('OPENROWSET')) {
-                return {
-                    success: false,
-                    message: 'Backup file created, but OPENROWSET is not enabled. Backup is saved but cannot be downloaded via web.',
-                    code: 'PARTIAL_SUCCESS',
-                    solution: 'Ask administrator to enable: EXEC sp_configure \'Ad Hoc Distributed Queries\', 1; RECONFIGURE;',
-                    note: 'Backup file exists in SQL Server backup directory but cannot be stored in database table'
-                };
-            }
-
             return {
                 success: false,
                 message: `Failed to backup database: ${error.message}`,
@@ -2318,13 +2289,11 @@ class LocalFileOperations {
 
             // If specific backupID requested, get that one
             if (backupID) {
-                const query = `
-                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupDate, BackupSize
+                const result = await pool.request().query(`
+                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupDate, BackupSize
                     FROM DatabaseBackups
                     WHERE BackupID = ${backupID}
-                `;
-
-                const result = await pool.request().query(query);
+                `);
 
                 if (!result.recordset || result.recordset.length === 0) {
                     return {
@@ -2336,25 +2305,21 @@ class LocalFileOperations {
 
                 backup = result.recordset[0];
             }
-            // Otherwise, create a fresh backup
+            // Otherwise create a fresh backup
             else {
                 console.log('Creating new backup for download...');
 
-                // Call backupSqlDatabase to create a new backup
                 const backupResult = await this.backupSqlDatabase({ userPermissions });
 
                 if (!backupResult.success) {
                     return backupResult;
                 }
 
-                // Now fetch the backup we just created
-                const query = `
-                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupData, BackupDate, BackupSize
+                const result = await pool.request().query(`
+                    SELECT BackupID, DatabaseName, BackupFileName, BackupFilePath, BackupDate, BackupSize
                     FROM DatabaseBackups
                     WHERE BackupID = ${backupResult.backupID}
-                `;
-
-                const result = await pool.request().query(query);
+                `);
 
                 if (!result.recordset || result.recordset.length === 0) {
                     return {
@@ -2367,19 +2332,15 @@ class LocalFileOperations {
                 backup = result.recordset[0];
             }
 
-            // Convert VARBINARY to base64 for transmission
-            const backupData = backup.BackupData;
-
             return {
                 success: true,
-                message: 'Database backup retrieved successfully',
+                message: 'Database backup ready',
                 fileName: backup.BackupFileName,
                 fileSize: backup.BackupSize,
-                fileData: backupData.toString('base64'),
+                filePath: backup.BackupFilePath,
                 database: backup.DatabaseName,
                 backupDate: backup.BackupDate,
-                backupID: backup.BackupID,
-                permanentLocation: backup.BackupFilePath
+                backupID: backup.BackupID
             };
 
         } catch (error) {

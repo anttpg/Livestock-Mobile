@@ -2928,86 +2928,126 @@ class DatabaseOperations {
 
 
 
-
-
-
-
-
-
-
-    async getBreedingPlanOverview(params) {
+    /**
+     * Get a full overview of a breeding plan, resolving all related records and pre-filtering
+     * into useful categories. Uses existing getters to avoid code duplication.
+     *
+     * @param {{ planId: number, daysUntilBirthThreshold?: number }}
+     * @returns {Promise<{
+     *   plan:                { ID: number, PlanName: string, PlanYear: number, Notes: string, IsActive: boolean, DateCreated: string },
+     *   breedingRecords:     Array<Object>,
+     *   pregChecks:          Array<Object>,
+     *   calvingRecords:      Array<Object>,
+     *   calvingAlerts:       Array<{ cowTag: string, breedingRecordId: number, earliestBirth: Date, latestBirth: Date, primaryBulls: Array<{tag: string}>, cleanupBulls: Array<{tag: string}> }>,
+     *   expectedBirths:      Array<{ cowTag: string, breedingRecordId: number, earliestBirth: Date, latestBirth: Date, daysUntilEarliest: number, primaryBulls: Array<{tag: string}>, cleanupBulls: Array<{tag: string}> }>,
+     *   unassignedAnimals:   Array<{ CowTag: string, HerdName: string }>,
+     *   assignedAnimals:     Array<{ cowTag: string, primaryBulls: Array<{tag: string}>, cleanupBulls: Array<{tag: string}> }>
+     * }>}
+     */
+    async getBreedingOverview({ planId, daysUntilBirthThreshold = 14 }) {
+        if (!planId) throw new Error('planId is required');
         await this.ensureConnection();
 
+        const GESTATION_DAYS = 283;
+        
+
         try {
-            const request = this.pool.request();
-            const planId = params.planId || params;
-            request.input('planId', sql.Int, planId);
+            const [plan, { records: breedingRecords }, { records: pregChecks }, { records: calvingRecords }] = await Promise.all([
+                this.getBreedingPlan({ planId }),
+                this.getBreedingRecords({ planId }),
+                this.getPregancyChecks({ planId }).catch(() => ({ records: [] })),
+                this.getCalvingRecords({ planId }).catch(() => ({ records: [] })),
+            ]);
 
-            // Get unassigned animals (active cows without breeding records for this plan)
-            const unassignedQuery = `
-            SELECT c.CowTag, h.HerdName
-            FROM CowTable c
-            LEFT JOIN Herds h ON h.HerdID = c.HerdID
-            LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @planId
-            WHERE ${STATUS_ACTIVE}
-            AND br.ID IS NULL
-            ORDER BY c.CowTag`;
-            const unassignedResult = await request.query(unassignedQuery);
+            if (!plan) throw new Error(`No breeding plan found with ID ${planId}`);
 
-            // Get pregnant count
-            const pregnantQuery = `
-            SELECT COUNT(DISTINCT pc.CowTag) as PregnantCount
-            FROM PregancyCheck pc
-            INNER JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
-            WHERE br.PlanID = @planId AND pc.IsPregnant = 1`;
-            const pregnantResult = await request.query(pregnantQuery);
+            // Build lookup sets from already fetched records
+            const calvedCowTags = new Set(calvingRecords.map(r => r.DamTag));
+            const calvingAlertTags = new Set(
+                pregChecks.filter(pc => pc.CalvingAlert && pc.IsPregnant).map(pc => pc.CowTag)
+            );
 
-            // Get calves count for this year
-            const plan = await this.getBreedingPlan(planId);
-            const calvesQuery = `
-            SELECT COUNT(*) as CalvesCount
-            FROM CalvingRecords
-            WHERE YEAR(BirthDate) = ${plan.PlanYear}`;
-            const calvesResult = await this.pool.request().query(calvesQuery);
+            const today = new Date();
 
-            // Calculate pregnancy rate
-            const totalBreedingQuery = `
-            SELECT COUNT(DISTINCT CowTag) as TotalBred
-            FROM BreedingRecords
-            WHERE PlanID = @planId`;
-            const totalBreedingResult = await request.query(totalBreedingQuery);
+            const buildBirthDates = (br) => {
+                const earliestBirth = new Date(br.ExposureStartDate);
+                earliestBirth.setDate(earliestBirth.getDate() + GESTATION_DAYS);
+                const latestBirth = new Date(br.ExposureEndDate || br.ExposureStartDate);
+                latestBirth.setDate(latestBirth.getDate() + GESTATION_DAYS);
+                const daysUntilEarliest = Math.round((earliestBirth - today) / (1000 * 60 * 60 * 24));
+                return { earliestBirth, latestBirth, daysUntilEarliest };
+            };
 
-            const pregnantCount = pregnantResult.recordset[0].PregnantCount || 0;
-            const totalBred = totalBreedingResult.recordset[0].TotalBred || 0;
-            const pregnancyRate = totalBred > 0 ? Math.round((pregnantCount / totalBred) * 100) : 0;
+            const buildAnimalEntry = (br) => {
+                const { earliestBirth, latestBirth, daysUntilEarliest } = buildBirthDates(br);
+                return {
+                    cowTag: br.CowTag,
+                    breedingRecordId: br.ID,
+                    earliestBirth,
+                    latestBirth,
+                    daysUntilEarliest,
+                    primaryBulls: br.PrimaryBulls ?? [],
+                    cleanupBulls: br.CleanupBulls ?? [],
+                };
+            };
+
+            const calvingAlerts = breedingRecords
+                .filter(br =>
+                    !calvedCowTags.has(br.CowTag) &&
+                    calvingAlertTags.has(br.CowTag) &&
+                    br.ExposureStartDate
+                )
+                .map(buildAnimalEntry);
+
+            // Estimated within the threshold window based on exposure dates, but NOT already in calvingAlerts to avoid double-counting
+            const expectedBirths = breedingRecords
+                .filter(br => {
+                    if (!br.ExposureStartDate) return false;
+                    if (calvedCowTags.has(br.CowTag)) return false;
+                    if (calvingAlertTags.has(br.CowTag)) return false;
+                    const { daysUntilEarliest } = buildBirthDates(br);
+                    return daysUntilEarliest <= daysUntilBirthThreshold;
+                })
+                .map(buildAnimalEntry);
+
+            const unassignedResult = await this.pool.request()
+                .input('planId', sql.Int, planId)
+                .query(`
+                    SELECT c.CowTag, h.HerdName
+                    FROM CowTable c
+                    LEFT JOIN Herds h ON h.HerdID = c.HerdID
+                    LEFT JOIN BreedingRecords br ON c.CowTag = br.CowTag AND br.PlanID = @planId
+                    WHERE ${STATUS_ACTIVE}
+                    AND br.ID IS NULL
+                    AND (c.Sex = 'Female' OR c.Sex IS NULL)
+                    ORDER BY c.CowTag
+                `);
+
+            const assignedAnimals = breedingRecords.map(br => ({
+                cowTag: br.CowTag,
+                primaryBulls: br.PrimaryBulls ?? [],
+                cleanupBulls: br.CleanupBulls ?? [],
+            }));
 
             return {
-                unassignedCount: unassignedResult.recordset.length,
+                plan,
+                breedingRecords,
+                pregChecks,
+                calvingRecords,
+                calvingAlerts,
+                expectedBirths,
                 unassignedAnimals: unassignedResult.recordset,
-                pregnantCount: pregnantCount,
-                pregnancyRate: pregnancyRate,
-                calvesCount: calvesResult.recordset[0].CalvesCount || 0,
-                calvingSeason: this.getCalvingSeason(plan.PlanYear)
+                assignedAnimals,
             };
+
         } catch (error) {
-            console.error('Error fetching breeding plan overview:', error);
-            throw error;
+            console.error('Error fetching breeding overview:', error);
+            throw new Error(`Failed to fetch breeding overview: ${error.message}`);
         }
     }
 
 
 
-    getCalvingSeason(year) {
-        const currentMonth = new Date().getMonth() + 1; // 1-12
-
-        if (currentMonth >= 1 && currentMonth <= 4) {
-            return `Spring ${year}`;
-        } else if (currentMonth >= 5 && currentMonth <= 8) {
-            return `Summer ${year}`;
-        } else {
-            return `Fall ${year}`;
-        }
-    }
 
 
     /**
@@ -3177,6 +3217,44 @@ class DatabaseOperations {
         }
     }
 
+
+    /**
+     * Gets all breeding records that match the optional filters
+     * @param {{ planId?: number, cowTag?: string }} filters
+     * @returns {Promise<{ records: Array<...> }>}
+     */
+    async getBreedingRecords({ planId = null, cowTag = null } = {}) {
+        if (!planId && !cowTag) throw new Error('At least one filter (planId or cowTag) is required');
+        await this.ensureConnection();
+
+        const request = this.pool.request();
+        const conditions = [];
+
+        if (planId) {
+            request.input('planId', sql.Int, planId);
+            conditions.push('PlanID = @planId');
+        }
+        if (cowTag) {
+            request.input('cowTag', sql.NVarChar, cowTag);
+            conditions.push('CowTag = @cowTag');
+        }
+
+        const result = await request.query(`
+            SELECT ID, PlanID, CowTag, PrimaryBulls, CleanupBulls,
+                IsAI, ExposureStartDate, ExposureEndDate, Pasture
+            FROM BreedingRecords
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY ExposureStartDate DESC
+        `);
+
+        return {
+            records: result.recordset.map(row => ({
+                ...row,
+                PrimaryBulls: row.PrimaryBulls ? JSON.parse(row.PrimaryBulls) : [],
+                CleanupBulls: row.CleanupBulls ? JSON.parse(row.CleanupBulls) : [],
+            }))
+        };
+    }
 
 
     /**
@@ -3443,6 +3521,7 @@ class DatabaseOperations {
     //              PREGNANCY CHECK  //////////////////////////////////////////////////////////////////////////////////////////
 
 
+
     /**
      * Get a pregnancy check record by ID
      * @param {{ recordId: number }}
@@ -3458,7 +3537,8 @@ class DatabaseOperations {
      *   MonthsPregnant:   number | null,
      *   Notes:            string,
      *   TestResults:      string,
-     *   Weight:           number | null
+     *   Weight:           number | null,
+     *   CalvingAlert:     boolean
      * } | null>}
      */
     async getPregancyCheck({ recordId }) {
@@ -3480,6 +3560,7 @@ class DatabaseOperations {
                         pc.MonthsPregnant,
                         pc.Notes,
                         pc.TestResults,
+                        pc.CalvingAlert,
                         wr.Weight
                     FROM PregancyCheck pc
                     LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
@@ -3500,6 +3581,7 @@ class DatabaseOperations {
                 MonthsPregnant:   row.MonthsPregnant   ?? null,
                 Notes:            row.Notes            || '',
                 TestResults:      row.TestResults      || '',
+                CalvingAlert:     !!row.CalvingAlert,
                 Weight:           row.Weight           ?? null,
             };
         } catch (error) {
@@ -3508,35 +3590,91 @@ class DatabaseOperations {
         }
     }
 
-    
+
+    /**
+     * Get all pregnancy checks matching the filters (at least one required)
+     * @param {{ planId?: number, cowTag?: string, breedingRecordId?: number }}
+     * @returns {Promise<{ records: Array<{
+     *   ID:               number,
+     *   PlanID:           number | null,
+     *   BreedingRecordID: number | null,
+     *   WeightRecordID:   number | null,
+     *   CowTag:           string,
+     *   IsPregnant:       boolean,
+     *   PregCheckDate:    string,
+     *   FetusSex:         string,
+     *   MonthsPregnant:   number | null,
+     *   Notes:            string,
+     *   TestResults:      string,
+     *   CalvingAlert:     boolean,
+     *   Weight:           number | null
+     * }> }>}
+     */
+    async getPregancyChecks({ planId = null, cowTag = null, breedingRecordId = null } = {}) {
+        if (!planId && !cowTag && !breedingRecordId) throw new Error('At least one filter (planId, cowTag, or breedingRecordId) is required');
+        await this.ensureConnection();
+
+        const request = this.pool.request();
+        const conditions = [];
+
+        if (planId) {
+            request.input('planId', sql.Int, planId);
+            conditions.push('pc.PlanID = @planId');
+        }
+        if (cowTag) {
+            request.input('cowTag', sql.NVarChar, cowTag);
+            conditions.push('pc.CowTag = @cowTag');
+        }
+        if (breedingRecordId) {
+            request.input('breedingRecordId', sql.Int, breedingRecordId);
+            conditions.push('pc.BreedingRecordID = @breedingRecordId');
+        }
+
+        const result = await request.query(`
+            SELECT
+                pc.ID, pc.PlanID, pc.BreedingRecordID, pc.WeightRecordID, pc.CowTag,
+                pc.IsPregnant, FORMAT(pc.PregCheckDate, 'yyyy-MM-dd') AS PregCheckDate,
+                pc.FetusSex, pc.MonthsPregnant, pc.Notes, pc.TestResults,
+                pc.CalvingAlert, wr.Weight
+            FROM PregancyCheck pc
+            LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY pc.PregCheckDate DESC
+        `);
+
+        return { records: result.recordset };
+    }
+
 
     /**
      * Create one or more pregnancy check records.
      * Accepts a single record object or an array of them.
      *
      * @param {({
-     *   cowTag:            string,
+     *   cowTag:             string,
      *   fields: {
-     *     IsPregnant:       boolean,
-     *     PregCheckDate?:   Date|string,
-     *     FetusSex?:        string,
-     *     MonthsPregnant?:  number,
-     *     Notes?:           string,
-     *     TestResults?:     string,
-     *     PlanID?:          number,
-     *     BreedingRecordID?: number
+     *     IsPregnant:        boolean,
+     *     PregCheckDate?:    Date|string,
+     *     FetusSex?:         string,
+     *     MonthsPregnant?:   number,
+     *     Notes?:            string,
+     *     TestResults?:      string,
+     *     PlanID?:           number,
+     *     BreedingRecordID?: number,
+     *     CalvingAlert?:     boolean
      *   }
      * }) | Array<{
-     *   cowTag:            string,
+     *   cowTag:             string,
      *   fields: {
-     *     IsPregnant:       boolean,
-     *     PregCheckDate?:   Date|string,
-     *     FetusSex?:        string,
-     *     MonthsPregnant?:  number,
-     *     Notes?:           string,
-     *     TestResults?:     string,
-     *     PlanID?:          number,
-     *     BreedingRecordID?: number
+     *     IsPregnant:        boolean,
+     *     PregCheckDate?:    Date|string,
+     *     FetusSex?:         string,
+     *     MonthsPregnant?:   number,
+     *     Notes?:            string,
+     *     TestResults?:      string,
+     *     PlanID?:           number,
+     *     BreedingRecordID?: number,
+     *     CalvingAlert?:     boolean
      *   }
      * }>} params
      * @returns {Promise
@@ -3564,11 +3702,11 @@ class DatabaseOperations {
                 TestResults      = null,
                 PlanID           = null,
                 BreedingRecordID = null,
+                CalvingAlert     = false,
             } = fields;
 
             if (!cowTag) throw new Error('cowTag is required for every record');
 
-            // If no BreedingRecordID supplied, fall back to most recent for this cow
             let resolvedBreedingRecordID = BreedingRecordID;
             if (!resolvedBreedingRecordID) {
                 const brResult = await this.pool.request()
@@ -3594,13 +3732,14 @@ class DatabaseOperations {
             request.input('monthsPregnant',   sql.Float,             MonthsPregnant != null ? parseFloat(MonthsPregnant) : null);
             request.input('notes',            sql.NVarChar(sql.MAX), Notes);
             request.input('testResults',      sql.NVarChar,          TestResults);
+            request.input('calvingAlert',     sql.Bit,               CalvingAlert ?? false);
 
             const result = await request.query(`
                 INSERT INTO PregancyCheck
-                    (PlanID, BreedingRecordID, CowTag, IsPregnant, PregCheckDate, FetusSex, MonthsPregnant, Notes, TestResults)
+                    (PlanID, BreedingRecordID, CowTag, IsPregnant, PregCheckDate, FetusSex, MonthsPregnant, Notes, TestResults, CalvingAlert)
                 OUTPUT INSERTED.ID
                 VALUES
-                    (@planID, @breedingRecordID, @cowTag, @isPregnant, @pregCheckDate, @fetusSex, @monthsPregnant, @notes, @testResults)
+                    (@planID, @breedingRecordID, @cowTag, @isPregnant, @pregCheckDate, @fetusSex, @monthsPregnant, @notes, @testResults, @calvingAlert)
             `);
 
             results.push({ cowTag, recordId: result.recordset[0].ID });
@@ -3611,24 +3750,24 @@ class DatabaseOperations {
     }
 
 
-
     /**
      * Update a pregnancy check record by ID.
      *
      * @param {{
-     *   recordId:          number,
-     *   cowTag?:           string,
+     *   recordId:           number,
+     *   cowTag?:            string,
      *   fields: {
-     *     PlanID?:          number,
+     *     PlanID?:           number,
      *     BreedingRecordID?: number,
-     *     CowTag?:          string,
-     *     IsPregnant?:      boolean,
-     *     PregCheckDate?:   Date|string,
-     *     FetusSex?:        string,
-     *     MonthsPregnant?:  number,
-     *     Notes?:           string,
-     *     TestResults?:     string,
-     *     Weight?:          number
+     *     CowTag?:           string,
+     *     IsPregnant?:       boolean,
+     *     PregCheckDate?:    Date|string,
+     *     FetusSex?:         string,
+     *     MonthsPregnant?:   number,
+     *     Notes?:            string,
+     *     TestResults?:      string,
+     *     CalvingAlert?:     boolean,
+     *     Weight?:           number
      *   }
      * }} params
      * @returns {Promise<{ success: boolean, updated: number }>}
@@ -3642,13 +3781,11 @@ class DatabaseOperations {
         try {
             let updates = { ...fields };
 
-            // Remap PregNotes -> Notes for backwards compat
             if ('PregNotes' in updates) {
                 updates.Notes = updates.PregNotes;
                 delete updates.PregNotes;
             }
 
-            // Weight routes through WeightRecords, not a direct column
             if ('Weight' in updates) {
                 const weightValue = parseInt(updates.Weight);
 
@@ -3691,6 +3828,7 @@ class DatabaseOperations {
                 MonthsPregnant:   { type: sql.Float             },
                 Notes:            { type: sql.NVarChar(sql.MAX) },
                 TestResults:      { type: sql.NVarChar          },
+                CalvingAlert:     { type: sql.Bit               },
             };
 
             const request = this.pool.request();
@@ -3791,7 +3929,7 @@ class DatabaseOperations {
     /**
      * Get calving status for herd
      * @param {Object} params - { herdName }
-     */
+     
     async getCalvingStatus(params) {
         const { herdName } = params;
         await this.ensureConnection();
@@ -3833,7 +3971,7 @@ class DatabaseOperations {
             console.error('Error fetching calving status:', error);
             throw new Error(`Failed to fetch calving status: ${error.message}`);
         }
-    }
+    }*/
 
 
     /**
@@ -3888,6 +4026,46 @@ class DatabaseOperations {
             console.error('Error fetching calving record:', error);
             throw error;
         }
+    }
+
+
+
+    /**
+     * Get all calving records that match the filters (at least one required)
+     * @param {{ planId?: number, damTag?: string, breedingRecordId?: number }}
+     * @returns {Promise<{ records: Array<...> }>}
+     */
+    async getCalvingRecords({ planId = null, damTag = null, breedingRecordId = null } = {}) {
+        if (!planId && !damTag && !breedingRecordId) throw new Error('At least one filter (planId, damTag, or breedingRecordId) is required');
+        await this.ensureConnection();
+
+        const request = this.pool.request();
+        const conditions = [];
+
+        if (planId) {
+            request.input('planId', sql.Int, planId);
+            conditions.push('PlanID = @planId');
+        }
+        if (damTag) {
+            request.input('damTag', sql.NVarChar, damTag);
+            conditions.push('DamTag = @damTag');
+        }
+        if (breedingRecordId) {
+            request.input('breedingRecordId', sql.Int, breedingRecordId);
+            conditions.push('BreedingRecordID = @breedingRecordId');
+        }
+
+        const result = await request.query(`
+            SELECT
+                ID, PlanID, BreedingRecordID, IsTagged, CalfTag, DamTag,
+                FORMAT(BirthDate, 'yyyy-MM-dd') AS BirthDate,
+                CalfSex, CalfDiedAtBirth, DamDiedAtBirth, CalvingNotes
+            FROM CalvingRecords
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY BirthDate DESC
+        `);
+
+        return { records: result.recordset };
     }
 
 
@@ -8971,12 +9149,13 @@ module.exports = {
     updateBreedingPlan:(params) => dbOps.updateBreedingPlan(params),
     deleteBreedingPlan:(params) => dbOps.deleteBreedingPlan(params),
 
-    getBreedingPlanOverview: (params) => dbOps.getBreedingPlanOverview(params),
+    getBreedingOverview: (params) => dbOps.getBreedingOverview(params),
     getBreedingAnimalStatus: () => dbOps.getBreedingAnimalStatus(),
 
 
     // Breeding Records
     getBreedingRecord:    (params) => dbOps.getBreedingRecord(params),
+    getBreedingRecords:    (params) => dbOps.getBreedingRecords(params),
     getClosestDamBreedingRecord: (dam, dateOfBirth) => dbOps.getClosestDamBreedingRecord(dam, dateOfBirth),
     createBreedingRecord: (params) => dbOps.createBreedingRecord(params),
     updateBreedingRecord: (params) => dbOps.updateBreedingRecord(params),
@@ -8985,14 +9164,16 @@ module.exports = {
 
     // Pregnancy Check
     getPregancyCheck: (params) => dbOps.getPregancyCheck(params),
+    getPregancyChecks: (params) => dbOps.getPregancyChecks(params),
     createPregancyCheck: (params) => dbOps.createPregancyCheck(params),
     updatePregancyCheck: (params) => dbOps.updatePregancyCheck(params),
     deletePregancyCheck: (params) => dbOps.deletePregancyCheck(params),
 
 
     // Calving Tracker
-    getCalvingStatus: (params) => dbOps.getCalvingStatus(params),
+    //getCalvingStatus: (params) => dbOps.getCalvingStatus(params),
     getCalvingRecord: (params) => dbOps.getCalvingRecord(params),
+    getCalvingRecords: (params) => dbOps.getCalvingRecords(params),
     createCalvingRecord: (params) => dbOps.createCalvingRecord(params),
     updateCalvingRecord: (params) => dbOps.updateCalvingRecord(params),
     deleteCalvingRecord: (params) => dbOps.deleteCalvingRecord(params),

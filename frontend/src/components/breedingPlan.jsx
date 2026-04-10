@@ -3,6 +3,7 @@ import Folder from './folder';
 import PregCheck from './pregCheck';
 import CalvingTracker from './calvingTracker';
 import WeanlingTracker from './weanlingTracker';
+import BreedingOverview from './breedingOverview';
 
 function BreedingPlan() {
     const [breedingPlans, setBreedingPlans] = useState([]);
@@ -63,7 +64,7 @@ function BreedingPlan() {
 
         setLoading(true);
         try {
-            const response = await fetch(`/api/breeding-plan/${selectedPlan}/overview`, {
+            const response = await fetch(`/api/breeding-plans/${selectedPlan}/overview`, {
                 credentials: 'include'
             });
 
@@ -92,7 +93,7 @@ function BreedingPlan() {
 
         switch (tabConfig.id) {
             case 'plan':
-                return renderPlanOverview();
+                return <BreedingOverview planId={selectedPlan} />;
             case 'pregnancy':
                 return <PregCheck breedingPlanId={selectedPlan} breedingYear={breedingYear} />;
             case 'calves':
@@ -396,220 +397,6 @@ function BreedingPlan() {
             </div>
         );
     }
-
-    const renderPlanOverview = () => {
-        const selectedPlanData = breedingPlans.find(p => p.ID === parseInt(selectedPlan));
-
-        return (
-            <div className="bubble-container" style={{ padding: '0px', paddingTop: '40px', background: '#f8f9fa' }}>
-                <div style={{ borderTop: '1px solid rgb(221, 221, 221)', padding: '10px', background: 'white' }}>
-                    <h2 style={{ marginBottom: '20px', textAlign: 'center' }}>
-                        {selectedPlanData ? `${selectedPlanData.PlanName} - ${selectedPlanData.PlanYear}` : 'Plan Overview'}
-                    </h2>
-
-                    {loading ? (
-                        <div style={{
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            height: '200px',
-                            fontSize: '18px',
-                            color: '#666'
-                        }}>
-                            Loading plan overview...
-                        </div>
-                    ) : planOverview ? (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                            gap: '20px'
-                        }}>
-
-                            {/* Plan Details Card */}
-                            <div style={{
-                                border: '1px solid #ddd',
-                                borderRadius: '8px',
-                                padding: '20px',
-                                backgroundColor: '#f3e5f5'
-                            }}>
-                                <h3 style={{ margin: '0 0 15px 0', color: '#7b1fa2' }}>
-                                    Plan Details
-                                </h3>
-                                {selectedPlanData && (
-                                    <div>
-                                        <p><strong>Plan Name:</strong> {selectedPlanData.PlanName}</p>
-                                        <p><strong>Year:</strong> {selectedPlanData.PlanYear}</p>
-                                        <p><strong>Status:</strong> {selectedPlanData.IsActive ? 'Active' : 'Inactive'}</p>
-                                        {selectedPlanData.Notes && (
-                                            <p><strong>Notes:</strong> {selectedPlanData.Notes}</p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Pregnant Cows Card */}
-                            <div style={{
-                                border: '1px solid #ddd',
-                                borderRadius: '8px',
-                                padding: '20px',
-                                backgroundColor: '#e8f5e8'
-                            }}>
-                                <h3 style={{
-                                    margin: '0 0 15px 0',
-                                    color: '#2e7d32',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between'
-                                }}>
-                                    Pregnant Cows
-                                    <span style={{
-                                        fontSize: '24px',
-                                        fontWeight: 'bold',
-                                        color: '#1b5e20'
-                                    }}>
-                                        {planOverview.pregnantCount || 0}
-                                    </span>
-                                </h3>
-                                <p style={{ margin: '0', color: '#666' }}>
-                                    Cows confirmed pregnant through pregnancy checks
-                                </p>
-                                {planOverview.pregnancyRate && (
-                                    <div style={{ marginTop: '10px' }}>
-                                        <strong>Pregnancy Rate: {planOverview.pregnancyRate}%</strong>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Calves Born Card */}
-                            <div style={{
-                                border: '1px solid #ddd',
-                                borderRadius: '8px',
-                                padding: '20px',
-                                backgroundColor: '#e3f2fd'
-                            }}>
-                                <h3 style={{
-                                    margin: '0 0 15px 0',
-                                    color: '#1976d2',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between'
-                                }}>
-                                    Calves Born This Year
-                                    <span style={{
-                                        fontSize: '24px',
-                                        fontWeight: 'bold',
-                                        color: '#0d47a1'
-                                    }}>
-                                        {planOverview.calvesCount || 0}
-                                    </span>
-                                </h3>
-                                <p style={{ margin: '0', color: '#666' }}>
-                                    Calves born in {selectedPlanData?.PlanYear || 'current year'}
-                                </p>
-                                {planOverview.calvingSeason && (
-                                    <div style={{ marginTop: '10px' }}>
-                                        <strong>Calving Season: {planOverview.calvingSeason}</strong>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Unassigned Animals Card */}
-                            <div style={{
-                                border: '1px solid #ddd',
-                                borderRadius: '8px',
-                                padding: '20px',
-                                backgroundColor: '#fff8e1'
-                            }}>
-                                <h3 style={{
-                                    margin: '0 0 15px 0',
-                                    color: '#f57c00',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between'
-                                }}>
-                                    Unassigned Animals
-                                    <span style={{
-                                        fontSize: '24px',
-                                        fontWeight: 'bold',
-                                        color: '#e65100'
-                                    }}>
-                                        {planOverview.unassignedCount || 0}
-                                    </span>
-                                </h3>
-                                <p style={{ margin: '0 0 10px 0', color: '#666' }}>
-                                    Active breeding-age animals not assigned to a bull
-                                </p>
-                                {planOverview.unassignedAnimals && planOverview.unassignedAnimals.length > 0 && (
-                                    <details style={{ marginTop: '10px' }}>
-                                        <summary style={{
-                                            cursor: 'pointer',
-                                            fontWeight: 'bold',
-                                            color: '#f57c00'
-                                        }}>
-                                            View Animals ({planOverview.unassignedAnimals.length})
-                                        </summary>
-                                        <div style={{
-                                            marginTop: '10px',
-                                            padding: '10px',
-                                            backgroundColor: '#fff',
-                                            borderRadius: '4px',
-                                            border: '1px solid #e0e0e0'
-                                        }}>
-                                            {planOverview.unassignedAnimals.map((animal, index) => (
-                                                <div key={index} style={{
-                                                    padding: '5px 0',
-                                                    borderBottom: index < planOverview.unassignedAnimals.length - 1 ? '1px solid #eee' : 'none'
-                                                }}>
-                                                    <span style={{ fontWeight: 'bold' }}>{animal.CowTag}</span>
-                                                    {animal.CurrentHerd && (
-                                                        <span style={{ marginLeft: '10px', color: '#666' }}>
-                                                            ({animal.CurrentHerd})
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </details>
-                                )}
-                            </div>
-
-                            {/* Bull Assignment Card - Only show if there are unassigned animals */}
-                            {planOverview?.unassignedCount > 0 && (
-                                <div style={{
-                                    border: '1px solid #ddd',
-                                    borderRadius: '8px',
-                                    padding: '20px',
-                                    backgroundColor: '#ccdee2ff',
-                                    gridColumn: '1 / -1' // Span from first to last column
-                                }}>
-                                    <h3 style={{
-                                        margin: '0 0 15px 0',
-                                        color: '#587880ff'
-                                    }}>
-                                        Assign Cows to Bulls
-                                    </h3>
-                                    <BullAssignmentComponent
-                                        selectedPlan={selectedPlan}
-                                        unassignedAnimals={planOverview.unassignedAnimals}
-                                        onAssignmentComplete={fetchPlanOverview}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div style={{
-                            textAlign: 'center',
-                            padding: '40px',
-                            color: '#666',
-                            fontSize: '16px'
-                        }}>
-                            No plan data available. Please select a breeding plan.
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
 
     const renderTitle = () => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>

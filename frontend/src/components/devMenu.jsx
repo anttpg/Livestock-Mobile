@@ -26,6 +26,13 @@ function DevMenu() {
   const [sqlBacking, setSqlBacking] = useState(false);
   const sqlOutputRef = useRef(null);
 
+  // Network tab state
+  const [networkTesting, setNetworkTesting] = useState(false);
+  const [networkStats, setNetworkStats] = useState(null);
+  const [networkHistory, setNetworkHistory] = useState([]);
+  const [networkPhase, setNetworkPhase] = useState('');
+  const [networkProgress, setNetworkProgress] = useState(0);
+
   useEffect(() => {
     fetchLogs();
 
@@ -97,13 +104,13 @@ function DevMenu() {
           }
         });
       } else if (part) {
-        let styles = [];
-        if (currentColor) styles.push(`color: ${currentColor}`);
-        if (isBold) styles.push('font-weight: bold');
-        if (isDim) styles.push('opacity: 0.6');
+        let styleArr = [];
+        if (currentColor) styleArr.push(`color: ${currentColor}`);
+        if (isBold) styleArr.push('font-weight: bold');
+        if (isDim) styleArr.push('opacity: 0.6');
         
-        if (styles.length > 0) {
-          html += `<span style="${styles.join('; ')}">${part}</span>`;
+        if (styleArr.length > 0) {
+          html += `<span style="${styleArr.join('; ')}">${part}</span>`;
         } else {
           html += part;
         }
@@ -298,7 +305,6 @@ function DevMenu() {
       } else {
         setSqlOutput(prev => prev + queryLog + `ERROR: ${data.message}\n\n---\n\n`);
         
-        // If connection lost, reset to login screen
         if (data.code === 'NO_CONNECTION') {
           setSqlConnected(false);
           setSqlTestResult({
@@ -353,7 +359,6 @@ function DevMenu() {
       });
 
       if (response.ok) {
-        // Get filename from Content-Disposition header
         const contentDisposition = response.headers.get('Content-Disposition');
         const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
         const filename = filenameMatch ? filenameMatch[1] : `sql_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.bak`;
@@ -379,6 +384,121 @@ function DevMenu() {
       setSqlBacking(false);
     }
   };
+
+  // ─── Network Test ───────────────────────────────────────────────────────────
+
+  const runNetworkTest = async () => {
+    setNetworkTesting(true);
+    setNetworkStats(null);
+    setNetworkProgress(0);
+
+    const results = {
+      timestamp: new Date().toLocaleTimeString(),
+      latency: null,
+      jitter: null,
+      download: null,
+      upload: null,
+      ttfb: null,
+      connectionType: navigator.connection?.effectiveType || null,
+      downlink: navigator.connection?.downlink || null,
+      rtt: navigator.connection?.rtt || null,
+    };
+
+    // 1. Latency + jitter: 5 pings
+    try {
+      setNetworkPhase('Measuring latency...');
+      setNetworkProgress(10);
+      const pings = [];
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now();
+        await fetch('/api/dev/network/ping', { credentials: 'include', cache: 'no-store' });
+        pings.push(performance.now() - t0);
+      }
+      results.latency = Math.round(pings.reduce((a, b) => a + b) / pings.length);
+      const mean = results.latency;
+      results.jitter = Math.round(
+        Math.sqrt(pings.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / pings.length)
+      );
+    } catch {
+      results.latency = null;
+    }
+
+    // 2. TTFB
+    try {
+      setNetworkPhase('Measuring time to first byte...');
+      setNetworkProgress(30);
+      const t0 = performance.now();
+      const res = await fetch('/api/dev/network/ping', { credentials: 'include', cache: 'no-store' });
+      results.ttfb = Math.round(performance.now() - t0);
+      await res.json();
+    } catch {
+      results.ttfb = null;
+    }
+
+    // 3. Download speed — fetch 5MB chunk
+    try {
+      setNetworkPhase('Testing download speed (5 MB)...');
+      setNetworkProgress(50);
+      const DOWNLOAD_BYTES = 5 * 1024 * 1024;
+      const t0 = performance.now();
+      const res = await fetch(`/api/dev/network/download-test?size=${DOWNLOAD_BYTES}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      await res.arrayBuffer();
+      const elapsed = (performance.now() - t0) / 1000;
+      results.download = parseFloat((DOWNLOAD_BYTES / elapsed / (1024 * 1024)).toFixed(2));
+    } catch {
+      results.download = null;
+    }
+
+    // 4. Upload speed — send 2MB
+    try {
+      setNetworkPhase('Testing upload speed (2 MB)...');
+      setNetworkProgress(80);
+      const UPLOAD_BYTES = 2 * 1024 * 1024;
+      const payload = new Uint8Array(UPLOAD_BYTES);
+      const t0 = performance.now();
+      await fetch('/api/dev/network/upload-test', {
+        method: 'POST',
+        credentials: 'include',
+        body: payload,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+      const elapsed = (performance.now() - t0) / 1000;
+      results.upload = parseFloat((UPLOAD_BYTES / elapsed / (1024 * 1024)).toFixed(2));
+    } catch {
+      results.upload = null;
+    }
+
+    setNetworkProgress(100);
+    setNetworkPhase('');
+    setNetworkStats(results);
+    setNetworkHistory(prev => [results, ...prev].slice(0, 8));
+    setNetworkTesting(false);
+  };
+
+  const getLatencyColor = (ms) => {
+    if (ms === null) return '#666';
+    if (ms < 20) return '#0dbc79';
+    if (ms < 80) return '#e5e510';
+    return '#f14c4c';
+  };
+
+  const getSpeedColor = (mbps) => {
+    if (mbps === null) return '#666';
+    if (mbps >= 10) return '#0dbc79';
+    if (mbps >= 2) return '#e5e510';
+    return '#f14c4c';
+  };
+
+  const formatSpeed = (mbps) => {
+    if (mbps === null) return '—';
+    if (mbps >= 100) return `${Math.round(mbps)} MB/s`;
+    return `${mbps} MB/s`;
+  };
+
+  // ─── Styles ─────────────────────────────────────────────────────────────────
 
   const styles = {
     container: {
@@ -549,6 +669,138 @@ function DevMenu() {
     sqlActions: {
       display: 'flex',
       gap: '10px'
+    },
+    // Network tab styles
+    networkContainer: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '20px'
+    },
+    networkToolbar: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '16px',
+      padding: '14px 16px',
+      backgroundColor: '#f8f9fa',
+      borderRadius: '8px',
+      border: '1px solid #dee2e6'
+    },
+    networkPhaseText: {
+      fontSize: '13px',
+      color: '#666',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      flex: 1
+    },
+    progressBar: {
+      height: '4px',
+      backgroundColor: '#dee2e6',
+      borderRadius: '2px',
+      overflow: 'hidden',
+      width: '160px'
+    },
+    progressFill: {
+      height: '100%',
+      backgroundColor: '#007bff',
+      borderRadius: '2px',
+      transition: 'width 0.3s ease'
+    },
+    statGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: '16px'
+    },
+    statCard: {
+      backgroundColor: '#1e1e1e',
+      borderRadius: '8px',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.15)'
+    },
+    statLabel: {
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      color: '#888',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace'
+    },
+    statValue: {
+      fontSize: '28px',
+      fontWeight: '700',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      lineHeight: 1
+    },
+    statUnit: {
+      fontSize: '12px',
+      color: '#888',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace'
+    },
+    infoGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '16px'
+    },
+    infoCard: {
+      backgroundColor: '#f8f9fa',
+      borderRadius: '8px',
+      padding: '16px',
+      border: '1px solid #dee2e6'
+    },
+    infoLabel: {
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+      color: '#999',
+      marginBottom: '6px'
+    },
+    infoValue: {
+      fontSize: '15px',
+      fontWeight: '600',
+      color: '#333',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace'
+    },
+    historyTable: {
+      width: '100%',
+      borderCollapse: 'collapse',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      fontSize: '13px'
+    },
+    historyTh: {
+      textAlign: 'left',
+      padding: '8px 12px',
+      backgroundColor: '#1e1e1e',
+      color: '#888',
+      fontWeight: '600',
+      fontSize: '11px',
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+      borderBottom: '1px solid #333'
+    },
+    historyTd: {
+      padding: '8px 12px',
+      borderBottom: '1px solid #f0f0f0',
+      color: '#333'
+    },
+    historyTr: {
+      transition: 'background 0.1s'
+    },
+    sectionTitle: {
+      fontSize: '13px',
+      fontWeight: '600',
+      color: '#555',
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      marginBottom: '10px'
+    },
+    emptyState: {
+      textAlign: 'center',
+      padding: '60px 20px',
+      color: '#aaa',
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      fontSize: '14px'
     }
   };
 
@@ -607,44 +859,22 @@ function DevMenu() {
       </div>
 
       <div style={styles.tabs}>
-        <button
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'backend' ? styles.activeTab : {})
-          }}
-          onClick={() => setActiveTab('backend')}
-        >
-          Backend Logs
-        </button>
-        <button
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'frontend' ? styles.activeTab : {})
-          }}
-          onClick={() => setActiveTab('frontend')}
-        >
-          Frontend Logs
-        </button>
-        <button
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'console' ? styles.activeTab : {})
-          }}
-          onClick={() => setActiveTab('console')}
-        >
-          Console
-        </button>
-        <button
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'sql' ? styles.activeTab : {})
-          }}
-          onClick={() => setActiveTab('sql')}
-        >
-          SQL Console
-        </button>
+        {['backend', 'frontend', 'console', 'sql', 'network'].map(tab => (
+          <button
+            key={tab}
+            style={{ ...styles.tab, ...(activeTab === tab ? styles.activeTab : {}) }}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'backend' ? 'Backend Logs'
+              : tab === 'frontend' ? 'Frontend Logs'
+              : tab === 'console' ? 'Console'
+              : tab === 'sql' ? 'SQL Console'
+              : 'Network'}
+          </button>
+        ))}
       </div>
 
+      {/* ── Log tabs ── */}
       {(activeTab === 'backend' || activeTab === 'frontend') && (
         <div
           ref={activeTab === 'backend' ? backendLogRef : frontendLogRef}
@@ -655,12 +885,10 @@ function DevMenu() {
         />
       )}
 
+      {/* ── Console tab ── */}
       {activeTab === 'console' && (
         <>
-          <div
-            ref={consoleLogRef}
-            style={styles.logContainer}
-          >
+          <div ref={consoleLogRef} style={styles.logContainer}>
             <pre style={{ margin: 0 }}>{consoleOutput || 'No output yet. Enter a command below...'}</pre>
           </div>
           <form onSubmit={executeConsoleCommand} style={styles.consoleForm}>
@@ -683,6 +911,7 @@ function DevMenu() {
         </>
       )}
 
+      {/* ── SQL tab ── */}
       {activeTab === 'sql' && (
         <>
           {!sqlConnected ? (
@@ -715,10 +944,7 @@ function DevMenu() {
               </form>
               
               {sqlTestResult && !sqlTestResult.success && (
-                <div style={{
-                  ...styles.resultBox,
-                  ...styles.errorResult
-                }}>
+                <div style={{ ...styles.resultBox, ...styles.errorResult }}>
                   <strong>Connection Failed</strong>
                   <br />
                   {sqlTestResult.message}
@@ -761,10 +987,7 @@ function DevMenu() {
                 </div>
               </div>
               
-              <div
-                ref={sqlOutputRef}
-                style={styles.logContainer}
-              >
+              <div ref={sqlOutputRef} style={styles.logContainer}>
                 <pre style={{ margin: 0 }}>{sqlOutput}</pre>
               </div>
               <form onSubmit={executeSqlQuery} style={styles.consoleForm}>
@@ -787,6 +1010,177 @@ function DevMenu() {
             </>
           )}
         </>
+      )}
+
+      {/* ── Network tab ── */}
+      {activeTab === 'network' && (
+        <div style={styles.networkContainer}>
+
+          {/* Toolbar */}
+          <div style={styles.networkToolbar}>
+            <button
+              style={{
+                ...styles.button,
+                ...styles.sqlButton,
+                opacity: networkTesting ? 0.6 : 1,
+                cursor: networkTesting ? 'not-allowed' : 'pointer',
+                minWidth: '120px'
+              }}
+              onClick={runNetworkTest}
+              disabled={networkTesting}
+            >
+              {networkTesting ? 'Testing...' : 'Run Test'}
+            </button>
+            {networkTesting && (
+              <>
+                <span style={styles.networkPhaseText}>{networkPhase}</span>
+                <div style={styles.progressBar}>
+                  <div style={{ ...styles.progressFill, width: `${networkProgress}%` }} />
+                </div>
+              </>
+            )}
+            {!networkTesting && networkStats && (
+              <span style={{ ...styles.networkPhaseText, color: '#0dbc79' }}>
+                Last test: {networkStats.timestamp}
+              </span>
+            )}
+          </div>
+
+          {/* Main stat cards */}
+          {networkStats ? (
+            <>
+              <div style={styles.statGrid}>
+                <div style={styles.statCard}>
+                  <span style={styles.statLabel}>Latency</span>
+                  <span style={{ ...styles.statValue, color: getLatencyColor(networkStats.latency) }}>
+                    {networkStats.latency !== null ? networkStats.latency : '—'}
+                  </span>
+                  <span style={styles.statUnit}>ms (avg of 5 pings)</span>
+                </div>
+                <div style={styles.statCard}>
+                  <span style={styles.statLabel}>Jitter</span>
+                  <span style={{ ...styles.statValue, color: getLatencyColor(networkStats.jitter) }}>
+                    {networkStats.jitter !== null ? networkStats.jitter : '—'}
+                  </span>
+                  <span style={styles.statUnit}>ms std deviation</span>
+                </div>
+                <div style={styles.statCard}>
+                  <span style={styles.statLabel}>Download</span>
+                  <span style={{ ...styles.statValue, color: getSpeedColor(networkStats.download) }}>
+                    {networkStats.download !== null ? networkStats.download : '—'}
+                  </span>
+                  <span style={styles.statUnit}>MB/s (5 MB sample)</span>
+                </div>
+                <div style={styles.statCard}>
+                  <span style={styles.statLabel}>Upload</span>
+                  <span style={{ ...styles.statValue, color: getSpeedColor(networkStats.upload) }}>
+                    {networkStats.upload !== null ? networkStats.upload : '—'}
+                  </span>
+                  <span style={styles.statUnit}>MB/s (2 MB sample)</span>
+                </div>
+              </div>
+
+              {/* Secondary info */}
+              <div>
+                <div style={styles.sectionTitle}>Connection Details</div>
+                <div style={styles.infoGrid}>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>Time to First Byte</div>
+                    <div style={{ ...styles.infoValue, color: getLatencyColor(networkStats.ttfb) }}>
+                      {networkStats.ttfb !== null ? `${networkStats.ttfb} ms` : '—'}
+                    </div>
+                  </div>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>Connection Type</div>
+                    <div style={styles.infoValue}>
+                      {networkStats.connectionType || 'Not reported'}
+                    </div>
+                  </div>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>Browser-reported RTT</div>
+                    <div style={styles.infoValue}>
+                      {networkStats.rtt !== null ? `${networkStats.rtt} ms` : 'Not reported'}
+                    </div>
+                  </div>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>Browser-reported Downlink</div>
+                    <div style={styles.infoValue}>
+                      {networkStats.downlink !== null ? `${networkStats.downlink} Mbps` : 'Not reported'}
+                    </div>
+                  </div>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>User Agent</div>
+                    <div style={{ ...styles.infoValue, fontSize: '11px', wordBreak: 'break-all' }}>
+                      {navigator.userAgent}
+                    </div>
+                  </div>
+                  <div style={styles.infoCard}>
+                    <div style={styles.infoLabel}>Online Status</div>
+                    <div style={{
+                      ...styles.infoValue,
+                      color: navigator.onLine ? '#0dbc79' : '#f14c4c'
+                    }}>
+                      {navigator.onLine ? 'Online' : 'Offline'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            !networkTesting && (
+              <div style={styles.emptyState}>
+                Press "Run Test" to measure latency, download speed, and upload speed.
+              </div>
+            )
+          )}
+
+          {/* History table */}
+          {networkHistory.length > 0 && (
+            <div>
+              <div style={styles.sectionTitle}>Test History</div>
+              <div style={{
+                borderRadius: '8px',
+                overflow: 'hidden',
+                border: '1px solid #dee2e6'
+              }}>
+                <table style={styles.historyTable}>
+                  <thead>
+                    <tr>
+                      {['Time', 'Latency', 'Jitter', 'TTFB', 'Download', 'Upload'].map(h => (
+                        <th key={h} style={styles.historyTh}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {networkHistory.map((row, i) => (
+                      <tr key={i} style={{
+                        backgroundColor: i === 0 ? '#f0f7ff' : (i % 2 === 0 ? '#fafafa' : 'white')
+                      }}>
+                        <td style={styles.historyTd}>{row.timestamp}</td>
+                        <td style={{ ...styles.historyTd, color: getLatencyColor(row.latency), fontWeight: 600 }}>
+                          {row.latency !== null ? `${row.latency} ms` : '—'}
+                        </td>
+                        <td style={{ ...styles.historyTd, color: getLatencyColor(row.jitter) }}>
+                          {row.jitter !== null ? `${row.jitter} ms` : '—'}
+                        </td>
+                        <td style={{ ...styles.historyTd, color: getLatencyColor(row.ttfb) }}>
+                          {row.ttfb !== null ? `${row.ttfb} ms` : '—'}
+                        </td>
+                        <td style={{ ...styles.historyTd, color: getSpeedColor(row.download), fontWeight: 600 }}>
+                          {formatSpeed(row.download)}
+                        </td>
+                        <td style={{ ...styles.historyTd, color: getSpeedColor(row.upload), fontWeight: 600 }}>
+                          {formatSpeed(row.upload)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
     </div>
   );

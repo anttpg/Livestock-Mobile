@@ -381,8 +381,33 @@ app.post('/api/dev/sql/disconnect',
     }
 );
 
+// Latency ping
+app.get('/api/dev/network/ping',
+    requireAuth(), requireDev(),
+    (req, res) => res.json({ pong: true, ts: Date.now() })
+);
 
+// Download speed test, serves N bytes of dummy data
+app.get('/api/dev/network/download-test',
+    requireAuth(), requireDev(),
+    (req, res) => {
+        const size = Math.min(parseInt(req.query.size) || 5242880, 20971520); // cap at 20MB
+        const buf = Buffer.alloc(size, 0x41);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', size);
+        res.setHeader('Cache-Control', 'no-store');
+        res.send(buf);
+    }
+);
 
+// Upload speed test — just accepts the body and acks
+app.post('/api/dev/network/upload-test',
+    requireAuth(), requireDev(),
+    (req, res) => {
+        req.resume(); // drain the body without storing it
+        req.on('end', () => res.json({ received: req.headers['content-length'], ts: Date.now() }));
+    }
+);
 
 
 
@@ -705,88 +730,134 @@ app.put('/api/cow/weight',
 
 // BREEDING ROUTES
 
-// Get all breeding plans
-app.get('/api/breeding-plans', async (req, res) => {
-  return apiWrapper.getBreedingPlans(req, res);
-});
+// Breeding Plans
+app.get('/api/breeding-animal-status',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingAnimalStatus(req, res)
+);
 
-// Get breeding plan overview
-app.get('/api/breeding-plan/:planId/overview',
-  createValidationMiddleware('getBreedingPlanOverview'),
-  async (req, res) => {
-    return apiWrapper.getBreedingPlanOverview(req, res);
-  }
+app.get('/api/breeding-plans',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingPlans(req, res)
+);
+
+app.post('/api/breeding-plans',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createBreedingPlan(req, res)
+);
+
+app.get('/api/breeding-plans/:planId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingPlan(req, res)
+);
+
+app.put('/api/breeding-plans/:planId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateBreedingPlan(req, res)
+);
+
+app.delete('/api/breeding-plans/:planId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteBreedingPlan(req, res)
+);
+
+app.get('/api/breeding-plans/:planId/overview',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingOverview(req, res)
+);
+
+
+// Breeding Records
+
+app.get('/api/breeding-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingRecords(req, res)
+);
+
+app.post('/api/breeding-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createBreedingRecord(req, res)
+);
+
+app.get('/api/breeding-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getBreedingRecord(req, res)
+);
+
+app.put('/api/breeding-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateBreedingRecord(req, res)
+);
+
+app.delete('/api/breeding-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteBreedingRecord(req, res)
+);
+
+
+// Pregnancy Checks
+
+app.get('/api/pregnancy-checks',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPregancyChecks(req, res)
+);
+
+app.post('/api/pregnancy-checks',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createPregancyCheck(req, res)
+);
+
+app.get('/api/pregnancy-checks/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPregancyCheck(req, res)
+);
+
+app.put('/api/pregnancy-checks/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updatePregancyCheck(req, res)
+);
+
+app.delete('/api/pregnancy-checks/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deletePregancyCheck(req, res)
+);
+
+
+// Calving Records
+
+app.get('/api/calving-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getCalvingRecords(req, res)
+);
+
+app.post('/api/calving-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createCalvingRecord(req, res)
+);
+
+app.get('/api/calving-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getCalvingRecord(req, res)
+);
+
+app.put('/api/calving-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateCalvingRecord(req, res)
+);
+
+app.delete('/api/calving-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteCalvingRecord(req, res)
 );
 
 
 
-// Get available bulls for breeding assignment
-app.get('/api/breeding-animal-status', async (req, res) => {
-    return apiWrapper.getBreedingAnimalStatus(req, res);
-});
 
 
 
 
 
 
-// Submit pregnancy check results
-app.post('/api/pregnancy-check',
-  createValidationMiddleware('createPregancyCheck'),
-  async (req, res) => {
-    return apiWrapper.createPregancyCheck(req, res);
-  }
-);
-
-
-
-
-
-
-
-
-
-
-
-// Get calving status for herd
-app.get('/api/calving/status/:herdName',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.getCalvingStatus(req, res);
-  }
-);
-
-// Add calving record
-app.post('/api/calving',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.createCalvingRecord(req, res);
-  }
-);
-
-// Get calving record by ID
-app.get('/api/calving/:id',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.getCalvingRecord(req, res);
-  }
-);
-
-// Update calving record by ID
-app.put('/api/calving/:id',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.updateCalvingRecord(req, res);
-  }
-);
-
-// Delete calving record by ID
-app.delete('/api/calving/:id',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.deleteCalvingRecord(req, res);
-  }
-);
 
 
 

@@ -563,6 +563,13 @@ class APIWrapper {
 
 
 
+
+
+
+
+
+
+
     /**
      * Get breeding plans
      */
@@ -573,16 +580,68 @@ class APIWrapper {
     /**
      * Get breeding plan overview
      */
-    async getBreedingPlanOverview(req, res) {
-        return this.executeDBOperation(req, res, 'getBreedingPlanOverview', (req) => {
+    async getBreedingOverview(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingOverview', (req) => {
             const planId = parseInt(req.params.planId, 10);
             if (isNaN(planId)) {
                 throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
             }
-            
             return { planId };
         });
     }
+
+    /**
+     * Get animals for breeding assignment
+     */
+    async getBreedingAnimalStatus(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingAnimalStatus', (req) => ({}));
+    }
+
+
+    async getBreedingPlan(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingPlan', (req) => {
+            const planId = parseInt(req.params.planId, 10);
+            if (isNaN(planId)) {
+                throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
+            }
+            return { planId };
+        });
+    }
+
+    async createBreedingPlan(req, res) {
+        return this.executeDBOperation(req, res, 'createBreedingPlan', (req) => ({
+            planName:  req.body.planName         ?? null,
+            planYear:  req.body.planYear         ?? null,
+            notes:     req.body.notes            ?? null,
+            isActive:  req.body.isActive         ?? true,
+        }));
+    }
+
+    async updateBreedingPlan(req, res) {
+        return this.executeDBOperation(req, res, 'updateBreedingPlan', (req) => {
+            const planId = parseInt(req.params.planId, 10);
+            if (isNaN(planId)) {
+                throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
+            }
+            return {
+                planId,
+                fields: req.body
+            };
+        });
+    }
+
+    async deleteBreedingPlan(req, res) {
+        return this.executeDBOperation(req, res, 'deleteBreedingPlan', (req) => {
+            const planId = parseInt(req.params.planId, 10);
+            if (isNaN(planId)) {
+                throw new Error(`Invalid planId: '${req.params.planId}' could not be converted to integer`);
+            }
+            return { planId };
+        });
+    }
+
+
+
 
 
 
@@ -596,6 +655,18 @@ class APIWrapper {
         }));
     }
 
+    async getBreedingRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getBreedingRecords', (req) => {
+            const planId = req.query.planId ? parseInt(req.query.planId) : null;
+            const cowTag = req.query.cowTag || null;
+
+            if (!planId && !cowTag) {
+                throw new Error('At least one filter (planId or cowTag) is required');
+            }
+
+            return { planId, cowTag };
+        });
+    }
 
     /**
      * Create one or more breeding records
@@ -657,6 +728,21 @@ class APIWrapper {
         });
     }
 
+    async getPregancyChecks(req, res) {
+        return this.executeDBOperation(req, res, 'getPregancyChecks', (req) => {
+            const planId           = req.query.planId           ? parseInt(req.query.planId)           : null;
+            const cowTag           = req.query.cowTag           || null;
+            const breedingRecordId = req.query.breedingRecordId ? parseInt(req.query.breedingRecordId) : null;
+
+            if (!planId && !cowTag && !breedingRecordId) {
+                throw new Error('At least one filter (planId, cowTag, or breedingRecordId) is required');
+            }
+
+            return { planId, cowTag, breedingRecordId };
+        });
+    }
+
+
     async getPregancyCheck(req, res) {
         return this.executeDBOperation(req, res, 'getPregancyCheck', (req) => ({
             recordId: parseInt(req.params.recordId)
@@ -685,10 +771,24 @@ class APIWrapper {
     /**
      * Get calving status for herd
      */
-    async getCalvingStatus(req, res) {
-        return this.executeDBOperation(req, res, 'getCalvingStatus', (req) => ({
-            herdName: req.params.herdName
-        }));
+    // async getCalvingStatus(req, res) {
+    //     return this.executeDBOperation(req, res, 'getCalvingStatus', (req) => ({
+    //         herdName: req.params.herdName
+    //     }));
+    // }
+
+    async getCalvingRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getCalvingRecords', (req) => {
+            const planId           = req.query.planId           ? parseInt(req.query.planId)           : null;
+            const damTag           = req.query.damTag           || null;
+            const breedingRecordId = req.query.breedingRecordId ? parseInt(req.query.breedingRecordId) : null;
+
+            if (!planId && !damTag && !breedingRecordId) {
+                throw new Error('At least one filter (planId, damTag, or breedingRecordId) is required');
+            }
+
+            return { planId, damTag, breedingRecordId };
+        });
     }
 
     /**
@@ -1141,14 +1241,6 @@ class APIWrapper {
     }
 
 
-    /**
-     * Get animals for breeding assignment
-     */
-    async getBreedingAnimalStatus(req, res) {
-        return this.executeDBOperation(req, res, 'getBreedingAnimalStatus', (req) => ({}));
-    }
-
-
 
 
 
@@ -1299,6 +1391,125 @@ class APIWrapper {
             createdBy:  req.session?.user?.username || 'Unknown'
         }));
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    async getUserEmail(req, res) {
+        try {
+            const email = getUserEmail(req);
+
+            if (!email) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'No authenticated email found'
+                });
+            }
+
+            return res.json({ success: true, email });
+        } catch (error) {
+            console.error('Error getting user email:', error);
+            return res.status(500).json({ success: false, error: 'Failed to get user email' });
+        }
+    }
+    
+    async getAllUsers(req, res) {
+        return this.executeDBOperation(req, res, 'getAllUsers', () => ({}));
+    }
+
+    async resetUserPassword(req, res) {
+        return this.executeDBOperation(req, res, 'resetUserPassword', (req) => ({
+            email: req.body.email
+        }));
+    }
+
+    async updateUserPermissions(req, res) {
+        const { permissions } = req.body;
+        const validPermissions = ['view', 'add', 'admin', 'dev'];
+        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
+
+        if (invalidPerms.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid permissions: ${invalidPerms.join(', ')}`
+            });
+        }
+
+        return this.executeDBOperation(req, res, 'updateUserPermissions', (req) => ({
+            email: req.body.email,
+            permissions: req.body.permissions
+        }));
+    }
+
+    async preRegisterUser(req, res) {
+        const { permissions } = req.body;
+        const validPermissions = ['view', 'add', 'admin', 'dev'];
+        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
+
+        if (invalidPerms.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid permissions: ${invalidPerms.join(', ')}`
+            });
+        }
+
+        return this.executeDBOperation(req, res, 'preRegisterUser', (req) => ({
+            email: req.body.email,
+            permissions: req.body.permissions
+        }));
+    }
+
+    async blockUser(req, res) {
+        return this.executeDBOperation(req, res, 'blockUser', (req) => ({
+            email: req.body.email
+        }));
+    }
+
+    async unblockUser(req, res) {
+        return this.executeDBOperation(req, res, 'unblockUser', (req) => ({
+            email: req.body.email
+        }));
+    }
+
+    async deleteUser(req, res) {
+        return this.executeDBOperation(req, res, 'deleteUser', (req) => ({
+            email: req.body.email
+        }));
+    }
+
+
+
+
+
 
 
 
@@ -1623,90 +1834,6 @@ class APIWrapper {
 
 
 
-    async getUserEmail(req, res) {
-        try {
-            const email = getUserEmail(req);
-
-            if (!email) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'No authenticated email found'
-                });
-            }
-
-            return res.json({ success: true, email });
-        } catch (error) {
-            console.error('Error getting user email:', error);
-            return res.status(500).json({ success: false, error: 'Failed to get user email' });
-        }
-    }
-    
-    async getAllUsers(req, res) {
-        return this.executeDBOperation(req, res, 'getAllUsers', () => ({}));
-    }
-
-    async resetUserPassword(req, res) {
-        return this.executeDBOperation(req, res, 'resetUserPassword', (req) => ({
-            email: req.body.email
-        }));
-    }
-
-    async updateUserPermissions(req, res) {
-        const { permissions } = req.body;
-        const validPermissions = ['view', 'add', 'admin', 'dev'];
-        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
-
-        if (invalidPerms.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: `Invalid permissions: ${invalidPerms.join(', ')}`
-            });
-        }
-
-        return this.executeDBOperation(req, res, 'updateUserPermissions', (req) => ({
-            email: req.body.email,
-            permissions: req.body.permissions
-        }));
-    }
-
-    async preRegisterUser(req, res) {
-        const { permissions } = req.body;
-        const validPermissions = ['view', 'add', 'admin', 'dev'];
-        const invalidPerms = permissions.filter(p => !validPermissions.includes(p));
-
-        if (invalidPerms.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: `Invalid permissions: ${invalidPerms.join(', ')}`
-            });
-        }
-
-        return this.executeDBOperation(req, res, 'preRegisterUser', (req) => ({
-            email: req.body.email,
-            permissions: req.body.permissions
-        }));
-    }
-
-    async blockUser(req, res) {
-        return this.executeDBOperation(req, res, 'blockUser', (req) => ({
-            email: req.body.email
-        }));
-    }
-
-    async unblockUser(req, res) {
-        return this.executeDBOperation(req, res, 'unblockUser', (req) => ({
-            email: req.body.email
-        }));
-    }
-
-    async deleteUser(req, res) {
-        return this.executeDBOperation(req, res, 'deleteUser', (req) => ({
-            email: req.body.email
-        }));
-    }
-
-
-
 
 
 
@@ -1955,26 +2082,19 @@ class APIWrapper {
     async getSqlDatabase(req, res) {
         try {
             const userPermissions = req.session.user?.permissions || [];
-            
-            const result = await localFileOps.getSqlDatabase({
-                userPermissions
-            });
-            
+            const result = await localFileOps.getSqlDatabase({ userPermissions });
+
             if (result.success) {
-                // Send the file as a download
-                const fileBuffer = Buffer.from(result.fileData, 'base64');
-                res.setHeader('Content-Type', 'application/octet-stream');
-                res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
-                res.setHeader('Content-Length', result.fileSize);
-                return res.send(fileBuffer);
+                // Streams the file directly w no buffering
+                return res.download(result.filePath, result.fileName);
             }
-            
+
             const statusCode = result.code === 'FORBIDDEN' ? 403 :
                             result.code === 'NO_CONNECTION' ? 503 :
                             result.code === 'BAD_REQUEST' ? 400 : 500;
-            
+
             return res.status(statusCode).json(result);
-            
+
         } catch (error) {
             console.error('Error getting database backup:', error);
             return res.status(500).json({
@@ -1983,6 +2103,7 @@ class APIWrapper {
             });
         }
     }
+
 
     /**
      * Close dev SQL connection - Dev only, validation in local.js
