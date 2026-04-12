@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import Form from './forms';
+import { toLocalInput } from '../utils/dateUtils';
 
 function WeighIn({ onClose }) {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(toLocalInput(new Date().toISOString()));
 
   const headerContent = (
     <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>

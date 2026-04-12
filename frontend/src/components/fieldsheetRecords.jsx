@@ -4,6 +4,7 @@ import Popup from './popup';
 import ConfirmPopup from './popupConfirm';
 import SheetImporter from './sheetImporter';
 import SheetInstanceCreator from './sheetInstanceCreator';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 function FieldsheetRecords() {
   const [instances, setInstances] = useState([]);
@@ -126,11 +127,6 @@ function FieldsheetRecords() {
     setShowDeleteConfirm(false);
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
-
   const filteredInstances = filterSheet === 'all'
     ? instances
     : instances.filter(i => i.templateId === parseInt(filterSheet));
@@ -199,10 +195,10 @@ function FieldsheetRecords() {
                 >
                   <div style={{ fontWeight: 'bold' }}>{instance.instanceName}</div>
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    {instance.primaryRecordDate ? new Date(instance.primaryRecordDate).toLocaleDateString() : ''}
+                    {toLocalDisplay(instance.primaryRecordDate)}
                   </div>
                   <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
-                    Created: {formatDate(instance.dateCreated)} by {instance.createdBy}
+                    Created: {toLocalDisplay(instance.dateCreated)} by {instance.createdBy}
                   </div>
                 </div>
               ))
@@ -270,8 +266,8 @@ function FieldsheetRecords() {
               <div style={{ fontSize: '14px' }}>
                 <div><strong>Sheet:</strong> {selectedInstance.templateName}</div>
                 <div><strong>Herd:</strong> {selectedInstance.herdName}</div>
-                <div><strong>Record Date:</strong> {selectedInstance.primaryRecordDate ? new Date(selectedInstance.primaryRecordDate).toLocaleDateString() : '—'}</div>
-                <div><strong>Created:</strong> {formatDate(selectedInstance.dateCreated)}</div>
+                <div><strong>Record Date:</strong> {toLocalDisplay(selectedInstance.primaryRecordDate) || '—'}</div>
+                <div><strong>Created:</strong> {toLocalDisplay(selectedInstance.dateCreated)}</div>
                 <div><strong>By:</strong> {selectedInstance.createdBy}</div>
               </div>
             </div>

@@ -3,6 +3,7 @@ import AnimalPhotoViewer from './AnimalPhotoViewer';
 import { useUser } from '../UserContext';
 import SelectMedicine from './selectMedicine';
 import PopupConfirm from './popupConfirm';
+import { toUTC, toLocalDisplay } from '../utils/dateUtils';
 
 function IssueSubform({
   issue,
@@ -13,18 +14,17 @@ function IssueSubform({
   onUpdate,
   onResolve
 }) {
-  const toLocalInput = (utcStr) => {
+  // toLocalDateTimeInput: converts a UTC datetime string for use in <input type="datetime-local">.
+  // The shared toLocalInput utility returns only YYYY-MM-DD (for <input type="date">),
+  // which is insufficient here — datetime-local requires YYYY-MM-DDTHH:MM.
+  // NOTE: a toLocalDateTimeInput function should be added to dateUtils to replace this helper.
+  const toLocalDateTimeInput = (utcStr) => {
     if (!utcStr) return '';
     const d = new Date(utcStr);
     return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
 
-  const toUTC = (localDatetimeStr) => {
-    if (!localDatetimeStr) return null;
-    return new Date(localDatetimeStr).toISOString();
-  };
-
-  const nowLocal = () => toLocalInput(new Date().toISOString());
+  const nowLocal = () => toLocalDateTimeInput(new Date().toISOString());
 
   const [formData, setFormData] = useState({
     IssueDescription: '',
@@ -78,10 +78,10 @@ function IssueSubform({
     if (issue && !isCreatingNew) {
       setFormData({
         IssueDescription: issue.IssueDescription || issue.Description || '',
-        IssueObservationDate: toLocalInput(issue.IssueObservationDate || issue.DateObserved) || nowLocal(),
+        IssueObservationDate: toLocalDateTimeInput(issue.IssueObservationDate || issue.DateObserved) || nowLocal(),
         IssueObservedBy: issue.IssueObservedBy || issue.User || '',
         TreatmentMedicineID: issue.TreatmentMedicine || '',
-        TreatmentDate: toLocalInput(issue.TreatmentDate) || nowLocal(),
+        TreatmentDate: toLocalDateTimeInput(issue.TreatmentDate) || nowLocal(),
         TreatmentResponse: issue.TreatmentResponse || '',
         TreatmentIsActive: issue.TreatmentIsActive || false,
         VetName: issue.VetName || '',
@@ -198,7 +198,7 @@ function IssueSubform({
       if (isCreatingNew) {
       await onSave({
           recordType:           'issue',
-          Note:                 `Issue reported by ${formData.IssueObservedBy} on ${formData.IssueObservationDate}`,
+          Note:                 `Issue reported by ${formData.IssueObservedBy} on ${toLocalDisplay(formData.IssueObservationDate)}`,
           IssueDescription:     formData.IssueDescription,
           IssueObservationDate: toUTC(formData.IssueObservationDate),
           IssueObservedBy:      formData.IssueObservedBy,

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { VerticalTimeline, VerticalTimelineElement } from 'react-vertical-timeline-component';
 import 'react-vertical-timeline-component/style.min.css';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 function Timeline({ 
   data = [], 
@@ -21,15 +22,6 @@ function Timeline({
   const [editingNoteID, setEditingNoteID] = useState(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [savingNoteID, setSavingNoteID] = useState(null);
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${month}/${day}/${year}`;
-  };
 
   const iconStyle = {
     display: 'flex',
@@ -279,7 +271,7 @@ function Timeline({
           eventsToShow.map((item, index) => {
             const eventType = item.eventType || 'regular';
             const config = getEventTypeConfig(eventType);
-            const eventDate = formatDate(item.date || item.dateCompleted || item.dateRecorded || item.DateOfEntry);
+            const eventDate = toLocalDisplay(item.date || item.dateCompleted || item.dateRecorded || item.DateOfEntry);
             const isNote = eventType === 'note';
             const noteID = item.ID;
             const isEditing = isNote && editingNoteID === noteID;

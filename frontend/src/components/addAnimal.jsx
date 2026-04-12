@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import Form from './forms';
 import TagGenerator from './tagGenerator';
 import AnimalCombobox from './animalCombobox';
+import { toUTC, toLocalInput } from '../utils/dateUtils';
 
-const today = new Date().toISOString().split('T')[0];
+const today = toLocalInput(new Date().toISOString());
 
 function AddAnimal({
     motherTag = null,
@@ -212,6 +213,7 @@ function AddAnimal({
         try {
             const payload = {
                 ...formData,
+                dateOfBirth: toUTC(formData.dateOfBirth),
                 castrated: formData.sex === 'Male' ? formData.castrated : null,
                 twins: false,
                 calvingRecordID,

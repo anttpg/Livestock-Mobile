@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import '../screenSizing.css';
+import { addDays } from '../utils/dateUtils';
+export { addDays };
 
 export const TH_STYLE = {
     padding: '8px 10px',
@@ -33,12 +35,6 @@ export const INPUT_STYLE = {
 export function fmtDate(d) {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-}
-
-export function addDays(dateStr, days) {
-    const d = new Date(dateStr);
-    d.setDate(d.getDate() + days);
-    return d.toISOString().split('T')[0];
 }
 
 const INPUT_TYPES = new Set(['date', 'select', 'number', 'checkbox', 'text']);

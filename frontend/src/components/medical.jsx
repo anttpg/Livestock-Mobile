@@ -5,6 +5,7 @@ import Popup from './popup';
 import IssueSubform from './issueSubform';
 import MedicationViewer from './MedicationViewer';
 import SelectMedicine from './selectMedicine';
+import { toUTC } from '../utils/dateUtils';
 
 // Responsive breakpoint constants
 const BREAKPOINT_HIDE_USER = 800;
@@ -22,7 +23,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
   const [showNewTreatmentPopup, setShowNewTreatmentPopup] = useState(false);
   const [quickTreatment, setQuickTreatment] = useState({
     medicineID: '',
-    date: new Date().toISOString().split('T')[0],
+    date: '',
     notes: ''
   });
   const [quickTreatmentSaving, setQuickTreatmentSaving] = useState(false);
@@ -264,7 +265,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
         },
         body: JSON.stringify({
           resolutionNote,
-          resolutionDate: new Date().toISOString()
+          resolutionDate: toUTC(new Date().toISOString())
         })
       });
       
@@ -327,18 +328,16 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
     setShowMedicationViewer(false);
   };
 
-  const toLocalInput = (utcStr) => {
+  // NOTE: toLocalDateTimeInput is intentionally kept here because the shared toLocalInput
+  // returns only YYYY-MM-DD (date inputs). datetime-local inputs require YYYY-MM-DDTHH:MM.
+  // A toLocalDateTimeInput function should be added to dateUtils.js to close this gap.
+  const toLocalDateTimeInput = (utcStr) => {
     if (!utcStr) return '';
     const d = new Date(utcStr);
     return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
 
-  const toUTC = (localDatetimeStr) => {
-    if (!localDatetimeStr) return null;
-    return new Date(localDatetimeStr).toISOString();
-  };
-
-  const nowLocal = () => toLocalInput(new Date().toISOString());
+  const nowLocal = () => toLocalDateTimeInput(new Date().toISOString());
 
   const handleCreateNewTreatment = () => {
     setQuickTreatment({

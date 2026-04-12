@@ -1,5 +1,6 @@
 // Import actions for each sheet type
 import * as XLSX from 'exceljs';
+import { toUTC } from '../utils/dateUtils';
 
 // PregCheck Import Action
 export const pregCheckImportAction = async (file) => {
@@ -75,7 +76,7 @@ export const pregCheckImportAction = async (file) => {
     credentials: 'include',
     body: JSON.stringify({
       herdName: 'ALL ACTIVE', // Default herd
-      date: new Date().toISOString().split('T')[0],
+      date: toUTC(new Date().toISOString()),
       records: records.filter(r => r.result) // Only submit records with results
     })
   });
@@ -188,7 +189,7 @@ export const weaningsImportAction = async (file) => {
     },
     credentials: 'include',
     body: JSON.stringify({
-      date: new Date().toISOString().split('T')[0],
+      date: toUTC(new Date().toISOString()),
       records: records
     })
   });
@@ -256,7 +257,7 @@ export const weighInsImportAction = async (file) => {
     },
     credentials: 'include',
     body: JSON.stringify({
-      date: new Date().toISOString().split('T')[0],
+      date: toUTC(new Date().toISOString()),
       records: records
     })
   });

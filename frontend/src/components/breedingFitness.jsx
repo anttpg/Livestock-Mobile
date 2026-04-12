@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { toLocalDisplay, toAge, toLocalMonthYear } from '../utils/dateUtils';
 
 import ColorTable from './colorTable';
 import AnimalPhotoViewer from './animalPhotoViewer';
@@ -382,29 +383,9 @@ function BreedingFitness({
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-  const calculateAge = (dateOfBirth) => {
-    if (!dateOfBirth) return 'Unknown';
-    const birthDate = new Date(dateOfBirth);
-    const now = new Date();
-    const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
-                       (now.getMonth() - birthDate.getMonth());
-    if (ageInMonths < 12) return `${ageInMonths} months`;
-    const years = Math.floor(ageInMonths / 12);
-    const months = ageInMonths % 12;
-    return months > 0 ? `${years}y ${months}m` : `${years} years`;
-  };
-
   const handleAnimalNavigation = (targetCowTag) => {
     if (!targetCowTag) return;
     setSearchParams({ tab: 'general', search: targetCowTag });
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${month}/${year}`;
   };
 
   const parseDelimitedData = (dataString) => {
@@ -490,7 +471,7 @@ function BreedingFitness({
         </button>
       )
     },
-    { key: 'DOB',           header: 'DOB',   width: '16%', customRender: (v) => formatDate(v) },
+    { key: 'DOB',           header: 'DOB',   width: '16%', customRender: (v) => toLocalMonthYear(v) || 'N/A' },
     { key: 'Sex',           header: 'Sex',   width: '8%',  customRender: (v) => v === 'Male' ? 'M' : v === 'Female' ? 'F' : v },
     {
       key: 'SireTag', header: 'Sire', width: '15%',
@@ -654,8 +635,8 @@ function BreedingFitness({
           <div style={{ flex: '1', minWidth: '200px' }}>
             <h3 style={{ margin: '0 0 15px 0' }}>Basic Information</h3>
             <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-              <div><strong>DOB:</strong> {cow?.DateOfBirth ? new Date(cow.DateOfBirth).toLocaleDateString() : 'N/A'}</div>
-              <div><strong>Age:</strong> {calculateAge(cow?.DateOfBirth)}</div>
+              <div><strong>DOB:</strong> {cow?.DateOfBirth ? toLocalDisplay(cow.DateOfBirth) : 'N/A'}</div>
+              <div><strong>Age:</strong> {toAge(cow?.DateOfBirth) || 'Unknown'}</div>
               <div><strong>Status:</strong> {cow?.Status || 'N/A'}</div>
             </div>
           </div>

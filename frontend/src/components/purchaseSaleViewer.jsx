@@ -3,6 +3,7 @@ import ColorTable from './colorTable';
 import PopupConfirm from './popupConfirm';
 import Popup from './popup';
 import CustomerViewer from './customerViewer';
+import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 
 function PurchaseSaleViewer({ 
   mode, // 'sale' or 'purchase'
@@ -208,12 +209,6 @@ function PurchaseSaleViewer({
     return formatted ? `$${formatted}` : '';
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toISOString().split('T')[0]; // YYYY-MM-DD
-  };
-
   const validateField = (field, value) => {
     switch (field) {
       case 'date':
@@ -238,7 +233,7 @@ function PurchaseSaleViewer({
     setFormData({
         id: record.ID || '',
         description: record.Description || '',
-        date: formatDate(record[dateField]),
+        date: toLocalInput(record[dateField]),
         price: Math.abs(parseFloat(record[priceField]) || 0).toString(),
         paymentMethod: record.PaymentMethod || '',
         customerOrOrigin: record[customerOriginField] || '',
@@ -269,7 +264,7 @@ function PurchaseSaleViewer({
     setFormData({
       id: '',
       description: '',
-      date: new Date().toISOString().split('T')[0],
+      date: toLocalInput(new Date().toISOString()),
       price: '',
       paymentMethod: '',
       customerOrOrigin: '',
@@ -323,7 +318,7 @@ function PurchaseSaleViewer({
 
       const submitData = {
         Description: formData.description,
-        [dateField]: formData.date,
+        [dateField]: toUTC(formData.date),
         [priceField]: priceValue,
         PaymentMethod: formData.paymentMethod,
         [customerOriginField]: formData.customerOrOrigin,
@@ -430,7 +425,7 @@ function PurchaseSaleViewer({
       key: dateField,
       header: 'Date',
       width: '80px',
-      render: (value) => formatDate(value)
+      render: (value) => toLocalDisplay(value)
     },
     {
       key: 'Description',

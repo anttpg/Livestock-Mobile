@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
-import { toUTC, toLocalDisplay } from '../utils/dateUtils';
+import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 import '../screenSizing.css';
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
@@ -202,7 +202,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
     ];
 
     const handleSubmit = async (rows, rowData) => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalInput(new Date().toISOString());
 
         const toSubmit = rows
             .map(r => ({ record: r, value: rowData[r.ID != null ? String(r.ID) : String(r.CowTag)] || {} }))

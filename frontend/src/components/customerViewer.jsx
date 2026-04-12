@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ColorTable from './colorTable';
+import { toUTC } from '../utils/dateUtils';
 
 function CustomerViewer({ customers, onClose, onAddCustomer, onUpdateCustomer, customersLoading }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -111,7 +112,7 @@ function CustomerViewer({ customers, onClose, onAddCustomer, onUpdateCustomer, c
         Zip: formData.zip,
         Phone: formData.phone,
         Email: formData.email,
-        DateAdded: formData.dateAdded
+        DateAdded: toUTC(formData.dateAdded)
         // HasSoldTo and HasPurchasedFrom are dynamically set, not user-editable
       };
 

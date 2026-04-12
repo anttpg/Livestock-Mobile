@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Form, { fmtDate, addDays } from './forms';
-import { toLocalDisplay } from '../utils/dateUtils';
+import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 import AddAnimal from './addAnimal';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
@@ -173,7 +173,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                     damTag:           noCalfRow.CowTag,
                     isTagged:         false,
                     calfTag:          null,
-                    birthDate:        new Date().toISOString().split('T')[0],
+                    birthDate:        toUTC(toLocalInput(new Date().toISOString())),
                     calfDiedAtBirth:  false,
                     damDiedAtBirth:   false,
                     embryoAborted:    false,

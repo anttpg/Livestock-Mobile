@@ -11,6 +11,7 @@ import PopupConfirm from './popupConfirm';
 import PopupNotify from './popupNotify';
 import AddWeightRecord from './addWeightRecord';
 import { useUser } from '../UserContext';
+import { toUTC, toLocalDisplayLong } from '../utils/dateUtils';
 
 function General({ cowTag, cowData, onRefresh }) {
     const { user } = useUser();
@@ -35,12 +36,6 @@ function General({ cowTag, cowData, onRefresh }) {
 
     const [editableDescription, setEditableDescription] = useState('');
     const [editableRegCertNumber, setEditableRegCertNumber] = useState('');
-
-    const formatDate = (dateString) => {
-        if (!dateString) return 'Not recorded';
-        const options = { year: 'numeric', month: 'long', day: 'numeric' };
-        return new Date(dateString).toLocaleDateString(undefined, options);
-    };
 
     useEffect(() => {
         const fetchDropdownData = async () => {
@@ -108,7 +103,7 @@ function General({ cowTag, cowData, onRefresh }) {
         }
         await updateCowData({
             Status: 'Dead',
-            DateOfDeath: deathData.dateOfDeath,
+            DateOfDeath: toUTC(deathData.dateOfDeath),
             CauseOfDeath: deathData.causeOfDeath
         });
         setShowDeathPopup(false);
@@ -356,7 +351,7 @@ function General({ cowTag, cowData, onRefresh }) {
                                 <b>Date of Birth:</b>
                                 <br />
                                 <span style={{ marginLeft: '10px', fontStyle: cow ? 'normal' : 'italic' }}>
-                                    {cow?.DateOfBirth ? formatDate(cow.DateOfBirth) : 'Not recorded'}
+                                    {cow?.DateOfBirth ? toLocalDisplayLong(cow.DateOfBirth) : 'Not recorded'}
                                 </span>
                                 <br /><br />
 
@@ -367,7 +362,7 @@ function General({ cowTag, cowData, onRefresh }) {
                                         <>
                                             {currentWeight.weight} lbs
                                             <br />
-                                            ({formatDate(currentWeight.date)})
+                                            ({toLocalDisplayLong(currentWeight.date)})
                                         </>
                                     ) : (
                                         'No weight recorded'

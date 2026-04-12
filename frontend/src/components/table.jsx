@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Popup from './popup'; // Assuming Popup component is in the same directory
+import { toLocalDisplayLong } from '../utils/dateUtils';
 
 function Table({ 
   data = [], 
@@ -22,21 +23,12 @@ function Table({
   const [hoveredRow, setHoveredRow] = useState(null);
   const tableRef = useRef(null);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const normalized = String(dateString).includes('T') 
-        ? dateString 
-        : `${dateString.slice(0, 10)}T12:00:00`;
-    const options = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(normalized).toLocaleDateString(undefined, options);
-};
-
   const formatValue = (value, type = 'text') => {
     if (value === null || value === undefined) return 'N/A';
     
     switch (type) {
       case 'date':
-        return formatDate(value);
+        return toLocalDisplayLong(value) || 'N/A';
       case 'number':
         return value.toString();
       case 'text':
@@ -331,4 +323,3 @@ function Table({
 }
 
 export default Table;
-

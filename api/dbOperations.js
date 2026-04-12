@@ -3672,8 +3672,11 @@ class DatabaseOperations {
     }
 
 
+
     /**
-     * Get all pregnancy checks matching the filters (at least one required)
+     * Get all pregnancy checks matching the filters (at least one required).
+     * PlanID is resolved from the linked BreedingRecord when present, falling back to the
+     * PlanID stored directly on the PregancyCheck row.
      * @param {{ planId?: number, cowTag?: string, breedingRecordId?: number }}
      * @returns {Promise<{ records: Array<{
      *   ID:               number,
@@ -3700,7 +3703,7 @@ class DatabaseOperations {
 
         if (planId) {
             request.input('planId', sql.Int, planId);
-            conditions.push('pc.PlanID = @planId');
+            conditions.push('COALESCE(br.PlanID, pc.PlanID) = @planId');
         }
         if (cowTag) {
             request.input('cowTag', sql.NVarChar, cowTag);
@@ -3713,12 +3716,15 @@ class DatabaseOperations {
 
         const result = await request.query(`
             SELECT
-                pc.ID, pc.PlanID, pc.BreedingRecordID, pc.WeightRecordID, pc.CowTag,
+                pc.ID,
+                COALESCE(br.PlanID, pc.PlanID) AS PlanID,
+                pc.BreedingRecordID, pc.WeightRecordID, pc.CowTag,
                 pc.TestType, pc.TestResults,
                 FORMAT(pc.PregCheckDate, 'yyyy-MM-dd') AS PregCheckDate,
                 pc.FetusSex, pc.MonthsPregnant, pc.Notes,
                 pc.CalvingAlert, wr.Weight
             FROM PregancyCheck pc
+            LEFT JOIN BreedingRecords br ON pc.BreedingRecordID = br.ID
             LEFT JOIN WeightRecords wr ON pc.WeightRecordID = wr.ID
             WHERE ${conditions.join(' AND ')}
             ORDER BY pc.PregCheckDate DESC

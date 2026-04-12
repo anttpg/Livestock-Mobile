@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TreeView } from '@patternfly/react-core';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 // Option 1: Custom Implementation
 function MultiCowSelectorCustom({ 
@@ -92,12 +93,6 @@ function MultiCowSelectorCustom({
   const handleCancel = () => {
     setSelectedCows(new Set());
     if (onClose) onClose();
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
   };
 
   // Initialize expanded herds (Unassigned expanded by default)
@@ -207,7 +202,7 @@ function MultiCowSelectorCustom({
                     <span style={{ fontWeight: 'bold' }}>{cow.CowTag}</span>
                     {showDOB && cow.DateOfBirth && (
                       <span style={{ marginLeft: '15px', color: '#666' }}>
-                        DOB: {formatDate(cow.DateOfBirth)}
+                        DOB: {toLocalDisplay(cow.DateOfBirth)}
                       </span>
                     )}
                   </div>
@@ -276,7 +271,7 @@ function MultiCowSelectorPatternFly({
       // Simple flat list
       return cowList.map(cow => ({
         name: showDOB && cow.DateOfBirth ? 
-          `${cow.CowTag} - DOB: ${formatDate(cow.DateOfBirth)}` : 
+          `${cow.CowTag} - DOB: ${toLocalDisplay(cow.DateOfBirth)}` : 
           cow.CowTag,
         id: cow.CowTag,
         checkProps: { checked: false, 'aria-label': `Select ${cow.CowTag}` },
@@ -306,7 +301,7 @@ function MultiCowSelectorPatternFly({
           defaultExpanded: herdName === 'Unassigned',
           children: herdCows.map(cow => ({
             name: showDOB && cow.DateOfBirth ? 
-              `${cow.CowTag} - DOB: ${formatDate(cow.DateOfBirth)}` : 
+              `${cow.CowTag} - DOB: ${toLocalDisplay(cow.DateOfBirth)}` : 
               cow.CowTag,
             id: cow.CowTag,
             checkProps: { checked: false, 'aria-label': `Select ${cow.CowTag}` },
@@ -314,12 +309,6 @@ function MultiCowSelectorPatternFly({
           }))
         }));
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
   };
 
   const onCheck = (event, treeViewItem) => {

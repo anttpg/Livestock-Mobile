@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 import CustomerViewer from './customerViewer';
 import PurchaseSaleViewer from './purchaseSaleViewer';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 function Sales({ cowTag }) {
   const [accountingData, setAccountingData] = useState(null);
@@ -390,12 +391,6 @@ function Sales({ cowTag }) {
     return `$${formatted}`;
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toISOString().split('T')[0];
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '20px' }}>
@@ -436,7 +431,7 @@ function Sales({ cowTag }) {
                   <strong>Record ID:</strong> {accountingData.purchaseRecordID}
                 </div>
                 <div>
-                  <strong>Purchase Date:</strong> {formatDate(accountingData.purchaseRecord.PurchaseDate)}
+                  <strong>Purchase Date:</strong> {toLocalDisplay(accountingData.purchaseRecord.PurchaseDate) || 'N/A'}
                 </div>
                 <div>
                   <strong>Record Price:</strong> <span style={{ color: 'red' }}>{formatPrice(accountingData.purchaseRecord.PurchasePrice)}</span>
@@ -544,7 +539,7 @@ function Sales({ cowTag }) {
                   <strong>Record ID:</strong> {accountingData.saleRecordID}
                 </div>
                 <div>
-                  <strong>Sale Date:</strong> {formatDate(accountingData.saleRecord.SaleDate)}
+                  <strong>Sale Date:</strong> {toLocalDisplay(accountingData.saleRecord.SaleDate) || 'N/A'}
                 </div>
                 <div>
                   <strong>Record Price:</strong> {formatPrice(accountingData.saleRecord.SalePrice)}

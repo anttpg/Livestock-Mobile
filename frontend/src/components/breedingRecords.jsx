@@ -160,8 +160,8 @@ function BullDisplay({ label, bulls }) {
 // ─── AddExposureBubble ────────────────────────────────────────────────────────
 
 function AddExposureBubble({ planId, allAnimals, activeAnimals, bullOptions, assignedCowTags, onRefresh }) {
-    const today      = new Date().toISOString().split('T')[0];
-    const defaultEnd = new Date(Date.now() + 45 * 86400000).toISOString().split('T')[0];
+    const today      = toLocalInput(new Date().toISOString());
+    const defaultEnd = toLocalInput(new Date(Date.now() + 45 * 86400000).toISOString());
 
     const [isAI,              setIsAI]              = useState(false);
     const [exposureDate,      setExposureDate]      = useState(today);

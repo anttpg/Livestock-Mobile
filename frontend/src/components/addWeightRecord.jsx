@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
+import { toUTC } from '../utils/dateUtils';
+
+// NOTE: The default value for a datetime-local input requires a toLocalInputDateTime()
+// utility (returning YYYY-MM-DDTHH:mm in local time) which does not yet exist in dateUtils.
+// The inline construction below should be replaced once that utility is added.
+function localDateTimeNow() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function AddWeightRecord({ cowTag: propCowTag, eventId: propEventId = null, onSuccess, onCancel }) {
     const [cowTag, setCowTag] = useState(propCowTag || '');
     const [weight, setWeight] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(localDateTimeNow());
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -31,7 +41,7 @@ function AddWeightRecord({ cowTag: propCowTag, eventId: propEventId = null, onSu
                 body: JSON.stringify({
                     cowTag,
                     Weight:       parseInt(weight),
-                    TimeRecorded: date,
+                    TimeRecorded: toUTC(date),
                     EventID:      propEventId ?? null,
                     Notes:        notes.trim() || null
                 })
@@ -119,11 +129,7 @@ function AddWeightRecord({ cowTag: propCowTag, eventId: propEventId = null, onSu
                 <input
                     type="datetime-local"
                     value={date}
-                    onChange={(e) => {
-                        const localDate = new Date(e.target.value);
-                        const utcValue = localDate.toISOString().slice(0, 16);
-                        setDate(utcValue);
-                    }}
+                    onChange={(e) => setDate(e.target.value)}
                     style={inputStyle}
                 />
             </div>

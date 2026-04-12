@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import Popup from './popup';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-function formatDate(d) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString();
-}
-
 // ---------------------------------------------------------------------------
 // Candidate card — a single breeding record the user can pick
 // Shared between all linker usages
@@ -33,7 +28,7 @@ function BreedingRecordCandidate({ record, isSelected, onClick }) {
         >
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 'bold', fontSize: '13px' }}>
-                    {formatDate(record.ExposureStartDate)} – {formatDate(record.ExposureEndDate)}
+                    {toLocalDisplay(record.ExposureStartDate) || '—'} – {toLocalDisplay(record.ExposureEndDate) || '—'}
                 </span>
                 <span style={{
                     fontSize: '11px', padding: '1px 7px', borderRadius: '8px',

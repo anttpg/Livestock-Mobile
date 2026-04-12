@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Popup from './popup';
 import SelectMedicine from './selectMedicine';
 import SubmitHerdAnimals from './submitHerdAnimals';
+import { toUTC } from '../utils/dateUtils';
 
 //  Visual constants (mirrors SheetTemplateEditor) 
 
@@ -100,13 +101,15 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
     // Primary record date — user-editable, stored as UTC ISO string
     const [primaryRecordDate, setPrimaryRecordDate] = useState(new Date().toISOString());
 
-    // Helpers for datetime-local <-> UTC conversion
-    const toLocalInput = (utcStr) => {
+    // Helpers for datetime-local <-> UTC conversion.
+    // NOTE: toDateTimeLocalInput returns YYYY-MM-DDTHH:mm for <input type="datetime-local">.
+    // The shared toLocalInput (dateUtils) returns YYYY-MM-DD for <input type="date"> only —
+    // these are intentionally different functions serving different input types.
+    const toDateTimeLocalInput = (utcStr) => {
         if (!utcStr) return '';
         const d = new Date(utcStr);
         return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
-    const toUTC = (localStr) => localStr ? new Date(localStr).toISOString() : null;
 
     //  Reset & seed on open 
     useEffect(() => {
@@ -252,18 +255,14 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
              * toISOString() converts to UTC — preserving the true moment in time.
              * The initial default is new Date().toISOString() (set in buildDefaults).
              */
-            const localVal = value ? (() => {
-                const d = new Date(value);
-                const offset = d.getTimezoneOffset() * 60000;
-                return new Date(d - offset).toISOString().slice(0, 16);
-            })() : '';
+            const localVal = toDateTimeLocalInput(value);
             input = (
                 <input
                     type='datetime-local'
                     value={localVal}
                     onChange={e => {
                         if (!e.target.value) { setFieldDefault(slot, field.key, null); return; }
-                        setFieldDefault(slot, field.key, new Date(e.target.value).toISOString());
+                        setFieldDefault(slot, field.key, toUTC(e.target.value));
                     }}
                     style={inputStyle}
                 />
@@ -428,7 +427,7 @@ function SheetInstanceCreator({ isOpen, onClose, onCreated }) {
                         <label style={labelStyle}>Record Date</label>
                         <input
                             type="datetime-local"
-                            value={toLocalInput(primaryRecordDate)}
+                            value={toDateTimeLocalInput(primaryRecordDate)}
                             onChange={e => setPrimaryRecordDate(toUTC(e.target.value))}
                             style={{ width: '100%', padding: '7px 8px', border: '1px solid #ddd', borderRadius: '3px', fontSize: '14px', boxSizing: 'border-box' }}
                         />

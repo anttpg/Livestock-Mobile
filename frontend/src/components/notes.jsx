@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Table from './table';
+import { toLocalDisplay } from '../utils/dateUtils';
 
 function Notes({ cowTag, currentUser }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -74,12 +75,6 @@ function Notes({ cowTag, currentUser }) {
 
         fetchNotes();
     }, [cowTag]);
-
-    const formatDate = (dateString) => {
-        if (!dateString) return '';
-        const options = { year: 'numeric', month: 'short', day: 'numeric' };
-        return new Date(dateString).toLocaleDateString(undefined, options);
-    };
 
     const handleAddObservation = async () => {
         if (!newObservation.trim() || !cowTag) return;
@@ -384,9 +379,9 @@ function Notes({ cowTag, currentUser }) {
                     return (
                         <div style={{ fontSize: '13px' }}>
                             <div><b>Created</b></div>
-                            <div>{formatDate(row.DateOfEntry)}</div>
+                            <div>{toLocalDisplay(row.DateOfEntry)}</div>
                             <div><b>Modified</b></div>
-                            <div>{formatDate(row.DateOfLastUpdate)}</div>
+                            <div>{toLocalDisplay(row.DateOfLastUpdate)}</div>
                             <br />
                             <div><b>User</b></div>
                             <div>{row.Username}</div>
@@ -407,9 +402,9 @@ function Notes({ cowTag, currentUser }) {
                         return (
                             <div style={{ fontSize: '13px' }}>
                                 <div><b>Created</b></div>
-                                <div>{formatDate(row.DateOfEntry)}</div>
+                                <div>{toLocalDisplay(row.DateOfEntry)}</div>
                                 <div><b>Modified</b></div>
-                                <div>{formatDate(row.DateOfLastUpdate)}</div>
+                                <div>{toLocalDisplay(row.DateOfLastUpdate)}</div>
                             </div>
                         );
                     }
@@ -434,7 +429,7 @@ function Notes({ cowTag, currentUser }) {
                     customRender: (value, row) => {
                         return (
                             <div style={{ fontSize: '13px' }}>
-                                {formatDate(row.DateOfEntry)}
+                                {toLocalDisplay(row.DateOfEntry)}
                             </div>
                         );
                     }
@@ -448,7 +443,7 @@ function Notes({ cowTag, currentUser }) {
                     customRender: (value, row) => {
                         return (
                             <div style={{ fontSize: '13px' }}>
-                                {formatDate(row.DateOfLastUpdate)}
+                                {toLocalDisplay(row.DateOfLastUpdate)}
                             </div>
                         );
                     }
@@ -473,9 +468,9 @@ function Notes({ cowTag, currentUser }) {
                     return (
                         <div style={{ fontSize: '13px' }}>
                             <div><b>Created</b></div>
-                            <div>{formatDate(row.DateOfEntry)}</div>
+                            <div>{toLocalDisplay(row.DateOfEntry)}</div>
                             <div><b>Modified</b></div>
-                            <div>{formatDate(row.DateOfLastUpdate)}</div>
+                            <div>{toLocalDisplay(row.DateOfLastUpdate)}</div>
                             <br />
                             <div><b>User</b></div>
                             <div>{row.Username}</div>

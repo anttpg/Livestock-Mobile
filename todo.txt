@@ -49,19 +49,7 @@ Updated all
 Added FK constraint against CowTable Sex
 
 
-
-SELECT 
-    TABLE_NAME,
-    COLUMN_NAME,
-    DATA_TYPE,
-    IS_NULLABLE
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_NAME IN ('BreedingRecords', 'BreedingPlan', 'CalvingRecords','PregancyCheck','WeaningRecords')
-    AND TABLE_SCHEMA = 'dbo'
-ORDER BY TABLE_NAME, ORDINAL_POSITION
-
-C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER01\MSSQL\Backup
-
+STOPPED AUDIT AT sheet.jsx (NEED TO DO HERE AND ONWARD)
 
 
 

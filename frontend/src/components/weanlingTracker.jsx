@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Form, { fmtDate } from './forms';
+import Form from './forms';
 import { toUTC, toLocalDisplay } from '../utils/dateUtils';
 import '../screenSizing.css';
 
@@ -154,7 +154,7 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
             label:  'Birth & Age',
             render: row => (
                 <span style={{ fontSize: '12px', color: '#555', whiteSpace: 'nowrap' }}>
-                    {fmtDate(row.BirthDate)}
+                    {toLocalDisplay(row.BirthDate)}
                     <span style={{ color: '#aaa', marginLeft: '6px' }}>{calcAge(row.BirthDate)}</span>
                 </span>
             ),

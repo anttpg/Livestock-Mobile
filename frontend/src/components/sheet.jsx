@@ -3,28 +3,7 @@ import SheetImporter from './sheetImporter';
 import Popup from './popup';
 import ExcelJS from 'exceljs';
 import '../screenSizing.css';
-
-//  Date helpers 
-
-/** Display only MM/DD/YYYY — never show time to the user. */
-const formatDateDisplay = (isoString) => {
-    if (!isoString) return '';
-    return new Date(isoString).toLocaleDateString('en-US', {
-        month: '2-digit', day: '2-digit', year: 'numeric',
-    });
-};
-
-/** Convert a date-input value (YYYY-MM-DD) back to a full ISO string. */
-const dateInputToIso = (dateInputVal) => {
-    if (!dateInputVal) return null;
-    return new Date(dateInputVal).toISOString();
-};
-
-/** Convert an ISO string to a date-input value (YYYY-MM-DD). */
-const isoToDateInput = (isoString) => {
-    if (!isoString) return '';
-    return isoString.split('T')[0];
-};
+import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 
 //  Cell renderers 
 
@@ -40,7 +19,7 @@ function ReadOnlyCell({ value, type, isDefault }) {
         color: isDefault ? '#aaa' : 'inherit',
         fontStyle: isDefault ? 'italic' : 'normal',
     };
-    if (type === 'date') return <span style={style}>{formatDateDisplay(value)}</span>;
+    if (type === 'date') return <span style={style}>{toLocalDisplay(value)}</span>;
     if (type === 'boolean') return (
         <span style={{ ...style, display: 'block', textAlign: 'center' }}>
             {value == null ? '' : value ? 'Yes' : 'No'}
@@ -83,8 +62,8 @@ function EditableCell({ value, type, options = [], onChange }) {
         return (
             <input
                 type="date"
-                value={isoToDateInput(value)}
-                onChange={e => onChange(dateInputToIso(e.target.value))}
+                value={toLocalInput(value)}
+                onChange={e => onChange(toUTC(e.target.value))}
                 style={cellBase}
             />
         );
@@ -481,7 +460,7 @@ function Sheet({ instanceId, showImportButton = false }) {
             const url    = window.URL.createObjectURL(blob);
             const a      = document.createElement('a');
             a.href       = url;
-            a.download   = `${sheetData.instanceName || 'sheet'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+            a.download   = `${sheetData.instanceName || 'sheet'}_${toLocalInput(new Date().toISOString())}.xlsx`;
             a.click();
             window.URL.revokeObjectURL(url);
  
@@ -535,7 +514,7 @@ function Sheet({ instanceId, showImportButton = false }) {
                             : (record[field.key] ?? '');
                         let display = '';
                         if (field.type === 'date' && value) {
-                            display = new Date(value).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+                            display = toLocalDisplay(value);
                         } else if (field.type === 'boolean') {
                             display = '';  // empty for print — checkbox not renderable in print
                         } else {
@@ -567,7 +546,7 @@ function Sheet({ instanceId, showImportButton = false }) {
             </style>
         </head><body>
             <h2>${sheetData.instanceName || 'Sheet'}</h2>
-            <p>${sheetData.breedingYear ? `Breeding Year: ${sheetData.breedingYear} · ` : ''}${sheetData.animalTags?.length ?? 0} animals · Printed ${new Date().toLocaleDateString()}</p>
+            <p>${sheetData.breedingYear ? `Breeding Year: ${sheetData.breedingYear} · ` : ''}${sheetData.animalTags?.length ?? 0} animals · Printed ${toLocalDisplay(new Date().toISOString())}</p>
             <table>
                 <thead>
                     <tr>${row1Cells.join('')}</tr>

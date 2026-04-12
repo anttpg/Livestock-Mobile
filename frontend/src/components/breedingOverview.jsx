@@ -4,6 +4,7 @@ import AnimalCombobox, { StatusBadge } from './animalCombobox';
 import AnimalTableSelector from './animalTableSelector';
 import { UnlinkedRecordsBubble } from './recordLinker';
 import Popup from './popup';
+import { toUTC, toLocalDisplay } from '../utils/dateUtils';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,10 +36,6 @@ function groupIntoExposures(breedingRecords) {
     return Object.values(groups);
 }
 
-function formatDate(d) {
-    if (!d) return '?';
-    return new Date(d).toLocaleDateString();
-}
 
 // ---------------------------------------------------------------------------
 // BullTag chip
@@ -223,7 +220,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                 <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{item.cowTag}</span>
                 <div style={{ fontSize: '12px', color: '#555' }}>
                     {item.earliestBirth && (
-                        <span>{formatDate(item.earliestBirth)} – {formatDate(item.latestBirth)}</span>
+                        <span>{toLocalDisplay(item.earliestBirth)} – {toLocalDisplay(item.latestBirth)}</span>
                     )}
                     {bulls && <span style={{ marginLeft: '8px', color: '#999' }}>{bulls}</span>}
                 </div>
@@ -378,7 +375,7 @@ function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, o
 
     const exposureLabel = (g) => {
         const bulls = g.primaryBulls.map(b => b.tag).join(', ') || 'No bulls';
-        return `${bulls}  (${formatDate(g.exposureStartDate)} – ${formatDate(g.exposureEndDate)})${g.pasture ? '  •  ' + g.pasture : ''}`;
+        return `${bulls}  (${toLocalDisplay(g.exposureStartDate)} – ${toLocalDisplay(g.exposureEndDate)})${g.pasture ? '  •  ' + g.pasture : ''}`;
     };
 
     const handleLink = async (cowTag) => {
@@ -396,8 +393,8 @@ function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, o
                     primaryBulls:      group.primaryBulls,
                     cleanupBulls:      group.cleanupBulls,
                     isAI:              false,
-                    exposureStartDate: group.exposureStartDate,
-                    exposureEndDate:   group.exposureEndDate,
+                    exposureStartDate: toUTC(group.exposureStartDate),
+                    exposureEndDate:   toUTC(group.exposureEndDate),
                     pasture:           group.pasture || null
                 })
             });
@@ -611,7 +608,7 @@ function ChronicallyOpenCowsBubble({ pregChecks, planNames }) {
                                         borderRadius: '4px', color: '#555'
                                     }}
                                 >
-                                    {formatDate(c.date)}
+                                    {toLocalDisplay(c.date)}
                                     <span style={{ color: '#aaa', marginLeft: '4px' }}>{c.planLabel}</span>
                                 </span>
                             ))}
@@ -622,8 +619,6 @@ function ChronicallyOpenCowsBubble({ pregChecks, planNames }) {
         </div>
     );
 }
-
-// remove the duplicate formatDate — the one already in the file is used by both
 
 const fetchUnlinkedPregChecks = () =>
     fetch('/api/pregnancy-checks/unlinked', { credentials: 'include' })
@@ -644,7 +639,7 @@ const savePregCheckLink = (rec, candidate) =>
 const renderPregCheckRecord = (rec) => ({
     primary:   rec.CowTag,
     secondary: [
-        formatDate(rec.PregCheckDate),
+        toLocalDisplay(rec.PregCheckDate),
         rec.MonthsPregnant != null ? `${rec.MonthsPregnant}mo` : null,
         rec.TestType || null,
     ].filter(Boolean).join('  ·  '),
@@ -685,7 +680,7 @@ const renderCalvingRecord = (rec) => ({
     primary:   rec.DamTag || 'No dam tag',
     secondary: [
         rec.CalfTag ? `Calf: ${rec.CalfTag}` : null,
-        formatDate(rec.BirthDate),
+        toLocalDisplay(rec.BirthDate),
         rec.CalfSex || null,
         rec.CalfDiedAtBirth ? 'Died at birth' : null,
     ].filter(Boolean).join('  ·  '),
