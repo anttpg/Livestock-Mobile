@@ -16,11 +16,17 @@
     --customer-table-columns: 6;
 
     --herd-minimap: 200px;
+
+    --popup-width-limit: 0.95;
+    --popup-inner-padding: 15px;
+    --popup-outer-padding: 20px;
 }
 
 @media (max-width: 1000px) {
     :root {
         --customer-table-columns: 5;
+        --popup-outer-padding: 18px;
+
     }
 }
 
@@ -42,6 +48,12 @@
 
         --herd-minimap: 180px;
         --minimap: 200px;
+
+
+        --popup-width-limit: 0.96;
+        --popup-inner-padding: 14px;
+        --popup-outer-padding: 16px;
+
     }
 }
 
@@ -52,6 +64,10 @@
         --customer-table-columns: 3;
         --button-scale: 0.96;
         --minimap: 190px;
+
+        --popup-width-limit: 0.97;
+        --popup-inner-padding: 13px;
+        --popup-outer-padding: 13px;
     }
 }
 
@@ -63,6 +79,10 @@
         --customer-table-columns: 2;
         --button-scale: 0.94;
         --minimap: 170px;
+
+        --popup-width-limit: 0.975;
+        --popup-inner-padding: 12px;
+        --popup-outer-padding: 10px;
     }
 }
 
@@ -82,6 +102,10 @@
 
         --minimap: 150px;
         --herd-minimap: 150px;
+
+        --popup-width-limit: 0.98;
+        --popup-inner-padding: 10px;
+        --popup-outer-padding: 7px;
     }
 }
 

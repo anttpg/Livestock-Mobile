@@ -731,9 +731,14 @@ app.put('/api/cow/weight',
 // BREEDING ROUTES
 
 // Breeding Plans
-app.get('/api/breeding-animal-status',
+app.get('/api/bulls',
     createValidationMiddleware('', true),
-    async (req, res) => apiWrapper.getBreedingAnimalStatus(req, res)
+    async (req, res) => apiWrapper.getBulls(req, res)
+);
+
+app.get('/api/unweaned-calves',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getUnweanedCalves(req, res)
 );
 
 app.get('/api/breeding-plans',
@@ -807,6 +812,12 @@ app.post('/api/pregnancy-checks',
     async (req, res) => apiWrapper.createPregancyCheck(req, res)
 );
 
+app.get('/api/pregnancy-checks/unlinked',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getUnlinkedPregancyChecks(req, res)
+);
+
+
 app.get('/api/pregnancy-checks/:recordId',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getPregancyCheck(req, res)
@@ -835,6 +846,12 @@ app.post('/api/calving-records',
     async (req, res) => apiWrapper.createCalvingRecord(req, res)
 );
 
+app.get('/api/calving-records/unlinked',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getUnlinkedCalvingRecords(req, res)
+);
+
+
 app.get('/api/calving-records/:recordId',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getCalvingRecord(req, res)
@@ -854,9 +871,32 @@ app.delete('/api/calving-records/:recordId',
 
 
 
+// Weaning
 
+app.get('/api/weaning-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getWeaningRecords(req, res)
+);
 
+app.post('/api/weaning-records',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createWeaningRecord(req, res)
+);
 
+app.get('/api/weaning-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getWeaningRecord(req, res)
+);
+
+app.put('/api/weaning-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateWeaningRecord(req, res)
+);
+
+app.delete('/api/weaning-records/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteWeaningRecord(req, res)
+);
 
 
 

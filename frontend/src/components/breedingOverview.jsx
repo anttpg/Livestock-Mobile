@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Minimap from './minimap';
 import PopupConfirm from './popupConfirm';
 import AnimalCombobox, { StatusBadge } from './animalCombobox';
 import AnimalTableSelector from './animalTableSelector';
+import { UnlinkedRecordsBubble } from './recordLinker';
 import Popup from './popup';
 
 // ---------------------------------------------------------------------------
@@ -149,18 +149,16 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                 setSavingId(null);
             }
         } else if (!currentlyOn) {
-            // No existing pregCheck — create one with just CalvingAlert=true.
-            // Note: the createPregancyCheck controller does not yet forward CalvingAlert
-            // in its mapped fields. Add it to the controller when ready.
+            // No existing pregCheck — create a minimal one with just the alert set
             await fetch('/api/pregnancy-checks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
                     cowTag,
-                    planID:     planId,
-                    isPregnant: false,
-                    CalvingAlert: true
+                    planID:      planId ?? null,
+                    testResults: 'Untested',
+                    calvingAlert: true
                 })
             });
             onRefresh();
@@ -247,8 +245,10 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
 
     const calvedTags      = new Set((calvingRecords || []).map(r => r.DamTag));
     const alertedTags     = new Set((calvingAlerts  || []).map(a => a.cowTag));
+
+    // Updated: use TestResults === 'Pregnant' (IsPregnant column was dropped)
     const addAlertOptions = (pregChecks || [])
-        .filter(pc => pc.IsPregnant && !pc.CalvingAlert && !calvedTags.has(pc.CowTag) && !alertedTags.has(pc.CowTag))
+        .filter(pc => pc.TestResults === 'Pregnant' && !pc.CalvingAlert && !calvedTags.has(pc.CowTag) && !alertedTags.has(pc.CowTag))
         .map(pc => ({ CowTag: pc.CowTag, HerdName: null, Status: null }));
 
     const handleAddAlerts = async () => {
@@ -256,7 +256,8 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
         setAddingAlert(true);
         try {
             await Promise.all([...alertSelected].map(cowTag => {
-                const pc = (pregChecks || []).find(p => p.CowTag === cowTag && p.IsPregnant);
+                // Updated: use TestResults === 'Pregnant'
+                const pc = (pregChecks || []).find(p => p.CowTag === cowTag && p.TestResults === 'Pregnant');
                 return pc ? fetch(`/api/pregnancy-checks/${pc.ID}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -271,7 +272,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
     };
 
     return (
-        <div className="bubble-container" style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: '16px' }}>
             <h3 style={{ margin: '0 0 14px 0', fontSize: '16px' }}>Calving Watch</h3>
 
             {/* Calving Alerts */}
@@ -365,7 +366,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
 }
 
 // ---------------------------------------------------------------------------
-// Bubble 2 — Unassigned Animals
+// Bubble 2 — Unassigned Animals  (plan-specific only, not shown in current mode)
 // ---------------------------------------------------------------------------
 
 function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, onRefresh }) {
@@ -433,7 +434,7 @@ function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, o
     if (!unassignedAnimals || unassignedAnimals.length === 0) return null;
 
     return (
-        <div className="bubble-container" style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: '16px' }}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>
                 {unassignedAnimals.length} breeding-age {unassignedAnimals.length === 1 ? 'animal is' : 'animals are'} unassigned to a bull
             </h3>
@@ -506,458 +507,269 @@ function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, o
 }
 
 // ---------------------------------------------------------------------------
-// Bubble 3 — Add Exposure
+// Bubble 3 — Chronically Open Cows  (info only)
 // ---------------------------------------------------------------------------
 
-function AddExposureBubble({ planId, allAnimals, activeAnimals, bullOptions, assignedCowTags, onRefresh }) {
-    const today      = new Date().toISOString().split('T')[0];
-    const defaultEnd = new Date(Date.now() + 45 * 86400000).toISOString().split('T')[0];
+// Derives cows that have been confirmed Open in 2+ separate preg checks.
+// planNames: Map<planId, { PlanName, PlanYear }> — optional, for display.
+function deriveChronicallyOpen(pregChecks, planNames = {}) {
+    const openByTag = {};
+    for (const pc of (pregChecks || [])) {
+        if (pc.TestResults !== 'Open') continue;
+        if (!openByTag[pc.CowTag]) openByTag[pc.CowTag] = [];
+        openByTag[pc.CowTag].push(pc);
+    }
 
-    const [isAI,             setIsAI]             = useState(false);
-    const [exposureDate,     setExposureDate]      = useState(today);
-    const [startDate,        setStartDate]         = useState(today);
-    const [endDate,          setEndDate]           = useState(defaultEnd);
-    const [primaryBulls,     setPrimaryBulls]      = useState([]);
-    const [cleanupBulls,     setCleanupBulls]      = useState([]);
-    const [selectedPasture,  setSelectedPasture]   = useState('');
-    const [availablePastures,setAvailablePastures] = useState([]);
-    const [selectedCows,     setSelectedCows]      = useState(new Set());
-    const [activeOnly,       setActiveOnly]        = useState(true);
-    const [unassignedOnly,  setUnassignedOnly]    = useState(false);
-    const [saving,           setSaving]            = useState(false);
+    return Object.entries(openByTag)
+        .filter(([, checks]) => checks.length >= 2)
+        .map(([cowTag, checks]) => {
+            const sorted = [...checks].sort((a, b) => new Date(a.PregCheckDate) - new Date(b.PregCheckDate));
+            const earliest = new Date(sorted[0].PregCheckDate);
+            const latest   = new Date(sorted[sorted.length - 1].PregCheckDate);
+            const yearSpan = latest.getFullYear() - earliest.getFullYear();
 
-    useEffect(() => {
-        fetch('/api/pastures', { credentials: 'include' })
-            .then(r => r.ok ? r.json() : { pastures: [] })
-            .then(d => setAvailablePastures(d.pastures || []))
-            .catch(() => {});
-    }, []);
-
-    const baseAnimals = activeOnly ? (activeAnimals || []) : (allAnimals || []);
-    const animals = unassignedOnly
-        ? baseAnimals.filter(a => !assignedCowTags.has(a.CowTag))
-        : baseAnimals;
-
-    const handleSubmit = async () => {
-        if (selectedCows.size === 0 || primaryBulls.length === 0) {
-            alert('Select at least one cow and one primary bull');
-            return;
-        }
-        setSaving(true);
-        try {
-            const records = Array.from(selectedCows).map(cowTag => ({
-                planID:            planId,
+            return {
                 cowTag,
-                primaryBulls,
-                cleanupBulls,
-                isAI,
-                exposureStartDate: isAI ? exposureDate : startDate,
-                exposureEndDate:   isAI ? exposureDate : endDate,
-                pasture:           isAI ? null : (selectedPasture || null)
-            }));
-            await fetch('/api/breeding-records', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(records)
-            });
-            setSelectedCows(new Set());
-            setPrimaryBulls([]);
-            setCleanupBulls([]);
-            setSelectedPasture('');
-            setIsAI(false);
-            setExposureDate(today);
-            setStartDate(today);
-            setEndDate(defaultEnd);
-            onRefresh();
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSaving(false);
-        }
-    };
+                count: sorted.length,
+                yearSpan,
+                checks: sorted.map(pc => ({
+                    date:     pc.PregCheckDate,
+                    planId:   pc.PlanID,
+                    planLabel: pc.PlanID && planNames[pc.PlanID]
+                        ? `${planNames[pc.PlanID].PlanYear} — ${planNames[pc.PlanID].PlanName}`
+                        : pc.PlanID ? `Plan ${pc.PlanID}` : 'No plan',
+                })),
+            };
+        })
+        .sort((a, b) => a.yearSpan - b.yearSpan); // most recent repeaters first (small span = recent problem)
+}
 
-    const canSubmit = selectedCows.size > 0 && primaryBulls.length > 0 && !saving;
+function ChronicallyOpenCowsBubble({ pregChecks, planNames }) {
+    const cows = deriveChronicallyOpen(pregChecks, planNames);
+
+    if (cows.length === 0) return null;
 
     return (
-        <div className="bubble-container" style={{ marginBottom: '16px' }}>
-            <h3 style={{ margin: '0 0 14px 0', fontSize: '16px' }}>Add Exposure</h3>
+        <div className="bubble-container" style={{ marginBottom: '16px', borderLeft: '3px solid #f57c00' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px' }}>Repeatedly Open Cows</h3>
+                <span style={{ fontSize: '12px', color: '#f57c00', fontWeight: '600' }}>
+                    {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
+                </span>
+                <span style={{ fontSize: '12px', color: '#888', marginLeft: 'auto' }}>
+                    Info only — open in 2 or more preg checks
+                </span>
+            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-
-                {/* Left — exposure details */}
-                <div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>
-                        <input type="checkbox" checked={isAI} onChange={(e) => setIsAI(e.target.checked)} />
-                        AI Exposure
-                    </label>
-
-                    {isAI ? (
-                        <>
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Insemination Date</label>
-                                <input
-                                    type="date" value={exposureDate} onChange={(e) => setExposureDate(e.target.value)}
-                                    style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '13px', width: '100%', boxSizing: 'border-box' }}
-                                />
-                            </div>
-
-                            <BullInput label="Bull"  bulls={primaryBulls}  bullOptions={bullOptions} onChange={setPrimaryBulls} />
-                        </>
-                    ) : (
-                        <>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                                <div>
-                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Start Date</label>
-                                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                                        style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '13px', width: '100%', boxSizing: 'border-box' }} />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>End Date</label>
-                                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                                        style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '13px', width: '100%', boxSizing: 'border-box' }} />
-                                </div>
-                            </div>
-                            <div style={{ marginBottom: '15px' }}>
-                                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px', fontSize: '13px' }}>Pasture</label>
-                                <select
-                                    value={selectedPasture}
-                                    onChange={(e) => setSelectedPasture(e.target.value)}
-                                    style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '13px', width: '100%', boxSizing: 'border-box' }}
-                                >
-                                    <option value="">Select pasture...</option>
-                                    {availablePastures.map((p, i) => <option key={i} value={p}>{p}</option>)}
-                                </select>
-                            </div>
-                        
-
-                            <BullInput label="Primary Bulls"  bulls={primaryBulls}  bullOptions={bullOptions} onChange={setPrimaryBulls} />
-                            <BullInput label="Cleanup Bulls"  bulls={cleanupBulls}  bullOptions={bullOptions} onChange={setCleanupBulls} />
-                        </>
-                    )}
-
-
-
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!canSubmit}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {cows.map(({ cowTag, count, yearSpan, checks }) => (
+                    <div
+                        key={cowTag}
                         style={{
-                            marginTop: '8px', width: '100%', padding: '9px',
-                            backgroundColor: canSubmit ? '#2e7d32' : '#aaa',
-                            color: 'white', border: 'none', borderRadius: '4px',
-                            fontSize: '14px', fontWeight: 'bold',
-                            cursor: canSubmit ? 'pointer' : 'not-allowed'
+                            padding: '10px 12px',
+                            backgroundColor: '#fffbf5',
+                            border: '1px solid #ffe0b2',
+                            borderRadius: '5px',
                         }}
                     >
-                        {saving ? 'Saving...' : `Create Exposure  (${selectedCows.size} cow${selectedCows.size !== 1 ? 's' : ''})`}
-                    </button>
-                </div>
-
-                {/* Right — cow selector */}
-                <div>
-                    <AnimalTableSelector
-                        animals={animals}
-                        selected={selectedCows}
-                        onChange={setSelectedCows}
-                        maxHeight="320px"
-                        label="Select Cows"
-                        extraControls={
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={unassignedOnly} onChange={(e) => setUnassignedOnly(e.target.checked)} />
-                                    Unassigned only
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
-                                    Active only
-                                </label>
-                            </div>
-                        }
-                    />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Bubble 4 — Existing Exposure
-// ---------------------------------------------------------------------------
-
-function ExposureBubble({ group, bullOptions, onRefresh }) {
-    const [startDate,   setStartDate]   = useState(group.exposureStartDate ? new Date(group.exposureStartDate).toISOString().split('T')[0] : '');
-    const [endDate,     setEndDate]     = useState(group.exposureEndDate   ? new Date(group.exposureEndDate).toISOString().split('T')[0]   : '');
-    const [cleanups,    setCleanups]    = useState(group.cleanupBulls || []);
-    const [saving,      setSaving]      = useState(false);
-
-    const [deleteExposureOpen, setDeleteExposureOpen] = useState(false);
-    const [deleteCowOpen,      setDeleteCowOpen]      = useState(false);
-    const [cowToDelete,        setCowToDelete]        = useState(null);
-
-    // Update every record in this group with the given fields
-    const updateAll = async (fields) => {
-        setSaving(true);
-        try {
-            await Promise.all(
-                group.records.map(r =>
-                    fetch(`/api/breeding-records/${r.ID}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify(fields)
-                    })
-                )
-            );
-            onRefresh();
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleDateBlur = () => {
-        if (startDate && endDate) {
-            updateAll({ ExposureStartDate: startDate, ExposureEndDate: endDate });
-        }
-    };
-
-    const handleCleanupChange = (newBulls) => {
-        setCleanups(newBulls);
-        updateAll({ CleanupBulls: newBulls });
-    };
-
-    const handleDeleteCow = async () => {
-        if (!cowToDelete) return;
-        try {
-            await fetch(`/api/breeding-records/${cowToDelete.ID}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-            setDeleteCowOpen(false);
-            setCowToDelete(null);
-            onRefresh();
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const handleDeleteExposure = async () => {
-        try {
-            await Promise.all(
-                group.records.map(r =>
-                    fetch(`/api/breeding-records/${r.ID}`, {
-                        method: 'DELETE',
-                        credentials: 'include'
-                    })
-                )
-            );
-            setDeleteExposureOpen(false);
-            onRefresh();
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const AddCleanupBullInline = () => {
-        const [val, setVal] = useState('');
-        const add = (tagOverride) => {
-            const tag = (tagOverride !== undefined ? tagOverride : val).trim().toUpperCase();
-            if (tag && !cleanups.find(b => b.tag === tag)) {
-                handleCleanupChange([...cleanups, { tag }]);
-            }
-            setVal('');
-        };
-        return (
-            <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                <div style={{ flex: 1 }}>
-                    <AnimalCombobox
-                        options={bullOptions}
-                        value={val}
-                        onChange={setVal}
-                        onSelect={(v) => { if (v) add(v); }}
-                        onBlur={(v)   => { if (v) add(v); }}
-                        placeholder="Search bull tag..."
-                        allowCustomValue={true}
-                        style={{ fontSize: '12px' }}
-                    />
-                </div>
-                <button
-                    onClick={() => add()}
-                    style={{
-                        padding: '3px 8px', backgroundColor: '#1976d2', color: 'white',
-                        border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: '12px', flexShrink: 0
-                    }}
-                >
-                    + Bull
-                </button>
-            </div>
-        );
-    };
-
-    const sectionLabel = (text) => (
-        <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>
-            {text}
-        </div>
-    );
-
-    return (
-        <div className="bubble-container" style={{ marginBottom: '16px', position: 'relative' }}>
-
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <div>
-                    <span style={{ fontWeight: 'bold', fontSize: '15px' }}>
-                        {group.primaryBulls.map(b => b.tag).join(', ') || 'No primary bulls'}
-                    </span>
-                    <span style={{ marginLeft: '10px', fontSize: '13px', color: '#999' }}>
-                        {group.records.length} {group.records.length === 1 ? 'cow' : 'cows'}
-                    </span>
-                    {saving && <span style={{ marginLeft: '10px', fontSize: '12px', color: '#999' }}>Saving...</span>}
-                </div>
-                <button
-                    onClick={() => setDeleteExposureOpen(true)}
-                    style={{
-                        background: 'none', border: '1px solid #dc3545', borderRadius: '4px',
-                        padding: '4px 10px', cursor: 'pointer', color: '#dc3545', fontSize: '12px',
-                        display: 'flex', alignItems: 'center', gap: '4px'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
-                    Delete Exposure
-                </button>
-            </div>
-
-            {/* Body — each column scrolls independently at its own maxHeight */}
-            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px' }}>
-
-                {/* Left column */}
-                <div style={{ overflowY: 'auto', maxHeight: '40rem', paddingRight: '4px' }}>
-
-                    <div style={{ marginBottom: '10px' }}>
-                        {sectionLabel('Primary Bulls')}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {group.primaryBulls.length > 0
-                                ? group.primaryBulls.map(b => <BullTag key={b.tag} tag={b.tag} />)
-                                : <span style={{ fontSize: '13px', color: '#bbb' }}>None</span>
-                            }
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '14px' }}>{cowTag}</span>
+                            <span style={{ fontSize: '12px', color: '#f57c00' }}>
+                                Open {count}×
+                            </span>
+                            {yearSpan === 0 ? (
+                                <span style={{
+                                    fontSize: '11px', padding: '1px 7px', borderRadius: '8px',
+                                    backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2'
+                                }}>
+                                    Same year — consider culling
+                                </span>
+                            ) : yearSpan <= 2 ? (
+                                <span style={{
+                                    fontSize: '11px', padding: '1px 7px', borderRadius: '8px',
+                                    backgroundColor: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2'
+                                }}>
+                                    {yearSpan}yr span — monitor
+                                </span>
+                            ) : (
+                                <span style={{
+                                    fontSize: '11px', padding: '1px 7px', borderRadius: '8px',
+                                    backgroundColor: '#f3f3f3', color: '#555', border: '1px solid #ddd'
+                                }}>
+                                    {yearSpan}yr span — likely isolated incidents
+                                </span>
+                            )}
                         </div>
-                    </div>
 
-                    <div style={{ marginBottom: '12px' }}>
-                        {sectionLabel('Cleanup Bulls')}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' }}>
-                            {cleanups.map(b => (
-                                <BullTag
-                                    key={b.tag}
-                                    tag={b.tag}
-                                    onRemove={(t) => handleCleanupChange(cleanups.filter(x => x.tag !== t))}
-                                />
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {checks.map((c, i) => (
+                                <span
+                                    key={i}
+                                    style={{
+                                        fontSize: '12px', padding: '2px 8px',
+                                        backgroundColor: 'white', border: '1px solid #ddd',
+                                        borderRadius: '4px', color: '#555'
+                                    }}
+                                >
+                                    {formatDate(c.date)}
+                                    <span style={{ color: '#aaa', marginLeft: '4px' }}>{c.planLabel}</span>
+                                </span>
                             ))}
                         </div>
-                        <AddCleanupBullInline />
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '14px' }}>
-                        <div>
-                            {sectionLabel('Start')}
-                            <input
-                                type="date" value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                onBlur={handleDateBlur}
-                                style={{ padding: '5px 6px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
-                            />
-                        </div>
-                        <div>
-                            {sectionLabel('End')}
-                            <input
-                                type="date" value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                onBlur={handleDateBlur}
-                                style={{ padding: '5px 6px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
-                            />
-                        </div>
-                    </div>
-
-                    {group.pasture && (
-                        <div style={{ height: '150px', borderRadius: '5px', overflow: 'hidden' }}>
-                            <Minimap pastureName={group.pasture} />
-                        </div>
-                    )}
-                </div>
-
-                {/* Right column */}
-                <div style={{ overflowY: 'auto', maxHeight: '20rem' }}>
-                    {sectionLabel('Exposed Cows')}
-                    {group.records.map((record, idx) => (
-                        <div key={record.ID} style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '5px 6px', borderBottom: '1px solid #e8eef3', fontSize: '13px',
-                            backgroundColor: idx % 2 === 0 ? 'white' : '#eef3f7'
-                        }}>
-                            <span style={{ fontWeight: 'bold' }}>{record.CowTag}</span>
-                            <button
-                                onClick={() => { setCowToDelete(record); setDeleteCowOpen(true); }}
-                                title="Remove from exposure"
-                                style={{
-                                    flexShrink: 0, background: 'none', border: 'none',
-                                    padding: '2px', cursor: 'pointer', display: 'flex',
-                                    alignItems: 'center', color: '#dc3545', borderRadius: '3px'
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                            </button>
-                        </div>
-                    ))}
-                </div>
+                ))}
             </div>
-
-            {/* Remove single cow confirm — no delay */}
-            <PopupConfirm
-                isOpen={deleteCowOpen}
-                onClose={() => { setDeleteCowOpen(false); setCowToDelete(null); }}
-                onConfirm={handleDeleteCow}
-                title="Remove Cow"
-                message={`Remove <strong>${cowToDelete?.CowTag}</strong> from this exposure?`}
-                confirmText="Remove"
-            />
-
-            {/* Delete entire exposure confirm — 3 second delay */}
-            <PopupConfirm
-                isOpen={deleteExposureOpen}
-                onClose={() => setDeleteExposureOpen(false)}
-                onConfirm={handleDeleteExposure}
-                title="Delete Exposure"
-                message={`Delete this entire exposure? This will remove all <strong>${group.records.length}</strong> breeding ${group.records.length === 1 ? 'record' : 'records'}.<br/><br/><span style="color:#dc3545;font-weight:bold">This cannot be undone.</span>`}
-                confirmText="Delete Exposure"
-                requireDelay={true}
-                delaySeconds={3}
-            />
         </div>
     );
 }
+
+// remove the duplicate formatDate — the one already in the file is used by both
+
+const fetchUnlinkedPregChecks = () =>
+    fetch('/api/pregnancy-checks/unlinked', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : { records: [] });
+
+const fetchPregCheckCandidates = (rec) =>
+    fetch(`/api/breeding-records?cowTag=${encodeURIComponent(rec.CowTag)}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : { records: [] });
+
+const savePregCheckLink = (rec, candidate) =>
+    fetch(`/api/pregnancy-checks/${rec.ID}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ BreedingRecordID: candidate.ID }),
+    });
+
+const renderPregCheckRecord = (rec) => ({
+    primary:   rec.CowTag,
+    secondary: [
+        formatDate(rec.PregCheckDate),
+        rec.MonthsPregnant != null ? `${rec.MonthsPregnant}mo` : null,
+        rec.TestType || null,
+    ].filter(Boolean).join('  ·  '),
+    badge: rec.TestResults ? {
+        label:  rec.TestResults,
+        bg:     rec.TestResults === 'Pregnant' ? '#e8f5e9' : '#f5f5f5',
+        color:  rec.TestResults === 'Pregnant' ? '#2e7d32' : '#666',
+        border: rec.TestResults === 'Pregnant' ? '#a5d6a7' : '#ddd',
+    } : null,
+    note: rec.Notes || null,
+});
+
+const pregCheckCandidateLabel = (rec) =>
+    `Breeding records for ${rec.CowTag}`;
+
+
+
+
+const fetchUnlinkedCalvingRecords = () =>
+    fetch('/api/calving-records/unlinked', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : { records: [] });
+
+const fetchCalvingCandidates = (rec) => {
+    if (!rec.DamTag) return Promise.resolve({ records: [] });
+    return fetch(`/api/breeding-records?cowTag=${encodeURIComponent(rec.DamTag)}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : { records: [] });
+};
+
+const saveCalvingLink = (rec, candidate) =>
+    fetch(`/api/calving-records/${rec.ID}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ BreedingRecordID: candidate.ID }),
+    });
+
+const renderCalvingRecord = (rec) => ({
+    primary:   rec.DamTag || 'No dam tag',
+    secondary: [
+        rec.CalfTag ? `Calf: ${rec.CalfTag}` : null,
+        formatDate(rec.BirthDate),
+        rec.CalfSex || null,
+        rec.CalfDiedAtBirth ? 'Died at birth' : null,
+    ].filter(Boolean).join('  ·  '),
+    badge: null,
+    note: rec.CalvingNotes || null,
+});
+
+const calvingCandidateLabel = (rec) =>
+    rec.DamTag
+        ? `Breeding records for dam ${rec.DamTag}`
+        : 'No dam tag — cannot look up breeding records';
+
 
 // ---------------------------------------------------------------------------
 // Root component
 // ---------------------------------------------------------------------------
 
 function BreedingOverview({ planId }) {
-    const [overview,      setOverview]      = useState(null);
-    const [loading,       setLoading]       = useState(true);
-    const [allAnimals,    setAllAnimals]    = useState([]);
-    const [activeAnimals, setActiveAnimals] = useState([]);
-    const [bulls,         setBulls]         = useState([]);
+    const [overview,  setOverview]  = useState(null);
+    const [planNames, setPlanNames] = useState({});
+    const [loading,   setLoading]   = useState(true);
 
     const fetchOverview = useCallback(async () => {
-        if (!planId) return;
         setLoading(true);
         try {
-            const res = await fetch(`/api/breeding-plans/${planId}/overview`, { credentials: 'include' });
-            if (res.ok) setOverview(await res.json());
+            if (planId) {
+                // Specific plan selected
+                const res = await fetch(`/api/breeding-plans/${planId}/overview`, { credentials: 'include' });
+                if (res.ok) setOverview(await res.json());
+            } else {
+                // Current Animals: merge all active plans
+                const plansRes = await fetch('/api/breeding-plans', { credentials: 'include' });
+                if (!plansRes.ok) return;
+                const plansData = await plansRes.json();
+
+                const activePlans = (plansData.plans || []).filter(p => p.IsActive);
+
+                // Build planId → label map for ChronicallyOpenCowsBubble
+                const nameMap = {};
+                for (const p of activePlans) nameMap[p.ID] = { PlanName: p.PlanName, PlanYear: p.PlanYear };
+                setPlanNames(nameMap);
+
+                if (activePlans.length === 0) {
+                    setOverview({ calvingAlerts: [], expectedBirths: [], pregChecks: [], calvingRecords: [], breedingRecords: [], unassignedAnimals: [], assignedAnimals: [] });
+                    return;
+                }
+
+                const overviews = await Promise.all(
+                    activePlans.map(p =>
+                        fetch(`/api/breeding-plans/${p.ID}/overview`, { credentials: 'include' })
+                            .then(r => r.ok ? r.json() : null)
+                            .catch(() => null)
+                    )
+                );
+
+                const seenAlerts = new Set();
+                const seenBirths = new Set();
+                const merged = {
+                    calvingAlerts:     [],
+                    expectedBirths:    [],
+                    pregChecks:        [],
+                    calvingRecords:    [],
+                    breedingRecords:   [],
+                    unassignedAnimals: [],   // not meaningful cross-plan
+                    assignedAnimals:   [],
+                };
+
+                for (const data of overviews) {
+                    if (!data) continue;
+                    for (const a of (data.calvingAlerts || [])) {
+                        if (!seenAlerts.has(a.cowTag)) { seenAlerts.add(a.cowTag); merged.calvingAlerts.push(a); }
+                    }
+                    for (const b of (data.expectedBirths || [])) {
+                        const k = b.cowTag + (b.breedingRecordId || '');
+                        if (!seenBirths.has(k)) { seenBirths.add(k); merged.expectedBirths.push(b); }
+                    }
+                    merged.pregChecks.push(...(data.pregChecks        || []));
+                    merged.calvingRecords.push(...(data.calvingRecords || []));
+                    merged.breedingRecords.push(...(data.breedingRecords || []));
+                    merged.assignedAnimals.push(...(data.assignedAnimals || []));
+                }
+
+                setOverview(merged);
+            }
         } catch (e) {
             console.error(e);
         } finally {
@@ -965,34 +777,20 @@ function BreedingOverview({ planId }) {
         }
     }, [planId]);
 
-    useEffect(() => { fetchOverview(); }, [fetchOverview]);
-
-    // Pre-fetch both animal lists so switching the "active only" toggle is instant
+    // Build planNames map when a specific plan is selected
     useEffect(() => {
-        Promise.all([
-            fetch('/api/animals',        { credentials: 'include' }).then(r => r.ok ? r.json() : { recordset: [] }),
-            fetch('/api/animals/active', { credentials: 'include' }).then(r => r.ok ? r.json() : { recordset: [] })
-        ]).then(([all, active]) => {
-            setAllAnimals(all.cows    || []);
-            setActiveAnimals(active.cows || []);
-        }).catch(() => {});
-    }, []);
-
-    // Fetch bulls for combobox options
-    useEffect(() => {
-        fetch('/api/breeding-animal-status', { credentials: 'include' })
-            .then(r => r.ok ? r.json() : {})
-            .then(d => setBulls(d.bulls || []))
+        if (!planId) return;
+        fetch('/api/breeding-plans', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { plans: [] })
+            .then(d => {
+                const map = {};
+                for (const p of (d.plans || [])) map[p.ID] = { PlanName: p.PlanName, PlanYear: p.PlanYear };
+                setPlanNames(map);
+            })
             .catch(() => {});
-    }, []);
+    }, [planId]);
 
-    if (!planId) {
-        return (
-            <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
-                Select a breeding plan to view its overview.
-            </div>
-        );
-    }
+    useEffect(() => { fetchOverview(); }, [fetchOverview]);
 
     if (loading) {
         return (
@@ -1010,51 +808,56 @@ function BreedingOverview({ planId }) {
         );
     }
 
-    const exposureGroups = groupIntoExposures(overview.breedingRecords || []);
-
-    const assignedCowTags = new Set((overview.assignedAnimals || []).map(a => a.cowTag));
-
-    const bullOptions = bulls.map(b => ({
-        name:   b.CowTag,
-        value:  b.CowTag,
-        status: b.Status || 'Current'
-    }));
-
     return (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className='bubble-container' style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* Unlinked records always shown regardless of plan selection */}
+            <UnlinkedRecordsBubble
+                fetchUnlinked={fetchUnlinkedPregChecks}
+                fetchCandidates={fetchPregCheckCandidates}
+                saveLink={savePregCheckLink}
+                renderRecord={renderPregCheckRecord}
+                candidateLabel={pregCheckCandidateLabel}
+                noun="pregnancy check"
+                nounPlural="pregnancy checks"
+                popupTitle="Link Pregnancy Checks to Breeding Records"
+                onRefresh={fetchOverview}
+            />
+            <UnlinkedRecordsBubble
+                fetchUnlinked={fetchUnlinkedCalvingRecords}
+                fetchCandidates={fetchCalvingCandidates}
+                saveLink={saveCalvingLink}
+                renderRecord={renderCalvingRecord}
+                candidateLabel={calvingCandidateLabel}
+                noun="calving record"
+                nounPlural="calving records"
+                popupTitle="Link Calving Records to Breeding Records"
+                onRefresh={fetchOverview}
+            />
+
             <CalvingAlertsBubble
                 calvingAlerts={overview.calvingAlerts}
                 expectedBirths={overview.expectedBirths}
                 pregChecks={overview.pregChecks}
                 calvingRecords={overview.calvingRecords}
-                planId={planId}
+                planId={planId ?? null}
                 onRefresh={fetchOverview}
             />
-
-            <UnassignedAnimalsBubble
-                unassignedAnimals={overview.unassignedAnimals}
-                planId={planId}
-                breedingRecords={overview.breedingRecords}
-                onRefresh={fetchOverview}
-            />
-
-            <AddExposureBubble
-                planId={planId}
-                allAnimals={allAnimals}
-                activeAnimals={activeAnimals}
-                bullOptions={bullOptions}
-                assignedCowTags={assignedCowTags}
-                onRefresh={fetchOverview}
-            />
-
-            {exposureGroups.map(group => (
-                <ExposureBubble
-                    key={group.key}
-                    group={group}
-                    bullOptions={bullOptions}
+ 
+            {planId && (
+                <UnassignedAnimalsBubble
+                    unassignedAnimals={overview.unassignedAnimals}
+                    planId={planId}
+                    breedingRecords={overview.breedingRecords}
                     onRefresh={fetchOverview}
                 />
-            ))}
+            )}
+ 
+
+ 
+            <ChronicallyOpenCowsBubble
+                pregChecks={overview.pregChecks}
+                planNames={planNames}
+            />
         </div>
     );
 }

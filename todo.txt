@@ -9,31 +9,59 @@ FUTURE DBOPERATION OPTIMIZATIONS
 CHANGES MADE TO DB
 (ALREADY PERFORMED ON PROD, JUST HERE TO REMEMBER)
 
-[BreedingRecords]
-Drop WeightID column 
-Drop EventID
-Changed Primary/Cleanup bulls to JSON lists
 
 [BreedingPlan]
-Added DATE column
-Drop  ,[PregSheetInstanceID]
-      ,[BreedingSheetInstanceID]
-      ,[CalvingSheetInstanceID]
+
+
+[BreedingRecords]
+Add BreedingStatus column
+
+Created 
+[BreedingStatus] table, column
+Status, values Active | Open | Pregnant | Calved | Voided
 
 
 [PregnancyCheck]
-Rename EventID -> PlanID
+Drop IsPregant column
+Add TestType column, get values from 
+
+[PregnancyTestTypes], column 
+TestType, values Blood | Palpation | Ultrasound
+
 
 [CalvingRecord]
-Added PlanID
+Added bool col EmbryoAborted
+
+[WeaningRecords]
+Changed WeaningDate to datetime2
+Changed WeaningWeight to int
+Changed EventID to PlanID, FK to BreedingPlan.ID 
+Added CalvingRecordID int NULL, fk to CalvingRecords.ID
+Dropped SSMA_TimeStamp 
+
+
+[AnimalClass]
+Added GestationPeriod column
+
+[Sex]
+Dropped 'Undefined' row
+Updated all 
+Added FK constraint against CowTable Sex
 
 
 
+SELECT 
+    TABLE_NAME,
+    COLUMN_NAME,
+    DATA_TYPE,
+    IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME IN ('BreedingRecords', 'BreedingPlan', 'CalvingRecords','PregancyCheck','WeaningRecords')
+    AND TABLE_SCHEMA = 'dbo'
+ORDER BY TABLE_NAME, ORDINAL_POSITION
 
-getWeaningRecord TODO
-createWeaningRecord TODO
-updateWeaningRecord TODO
-deleteWeaningRecord TODO
+C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER01\MSSQL\Backup
+
 
 
 

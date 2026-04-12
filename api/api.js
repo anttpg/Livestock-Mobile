@@ -590,13 +590,6 @@ class APIWrapper {
         });
     }
 
-    /**
-     * Get animals for breeding assignment
-     */
-    async getBreedingAnimalStatus(req, res) {
-        return this.executeDBOperation(req, res, 'getBreedingAnimalStatus', (req) => ({}));
-    }
-
 
     async getBreedingPlan(req, res) {
         return this.executeDBOperation(req, res, 'getBreedingPlan', (req) => {
@@ -642,7 +635,20 @@ class APIWrapper {
 
 
 
+    /**
+     * Get animals for breeding assignment
+     */
+    async getBulls(req, res) {
+        return this.executeDBOperation(req, res, 'getBulls', (req) => ({}));
+    }
 
+
+    async getUnweanedCalves(req, res) {
+        return this.executeDBOperation(req, res, 'getUnweanedCalves', (req) => {
+            const planId = req.query.planId ? parseInt(req.query.planId) : null;
+            return { planId };
+        });
+    }
 
 
 
@@ -657,14 +663,16 @@ class APIWrapper {
 
     async getBreedingRecords(req, res) {
         return this.executeDBOperation(req, res, 'getBreedingRecords', (req) => {
-            const planId = req.query.planId ? parseInt(req.query.planId) : null;
-            const cowTag = req.query.cowTag || null;
-
-            if (!planId && !cowTag) {
-                throw new Error('At least one filter (planId or cowTag) is required');
+            const planId          = req.query.planId          ? parseInt(req.query.planId)    : null;
+            const cowTag          = req.query.cowTag          || null;
+            const breedingStatus  = req.query.breedingStatus  || null;
+            const newestOnly      = req.query.newestOnly === 'true';
+    
+            if (!planId && !cowTag && !breedingStatus) {
+                throw new Error('At least one filter (planId, cowTag, or breedingStatus) is required');
             }
-
-            return { planId, cowTag };
+    
+            return { planId, cowTag, breedingStatus, newestOnly };
         });
     }
 
@@ -683,6 +691,7 @@ class APIWrapper {
                 exposureStartDate: req.body.exposureStartDate ?? null,
                 exposureEndDate:   req.body.exposureEndDate   ?? null,
                 pasture:           req.body.pasture           ?? null,
+                breedingStatus:    req.body.breedingStatus ?? null,
             };
         });
     }
@@ -718,12 +727,12 @@ class APIWrapper {
                 cowTag:           req.body.cowTag           ?? null,
                 planID:           req.body.planID           ?? null,
                 breedingRecordID: req.body.breedingRecordID ?? null,
-                isPregnant:       req.body.isPregnant       ?? null,
                 pregCheckDate:    req.body.pregCheckDate    ?? null,
                 fetusSex:         req.body.fetusSex         ?? null,
                 monthsPregnant:   req.body.monthsPregnant   ?? null,
                 notes:            req.body.notes            ?? null,
                 testResults:      req.body.testResults      ?? null,
+                testType:         req.body.testType         ?? null,
             };
         });
     }
@@ -742,12 +751,17 @@ class APIWrapper {
         });
     }
 
-
     async getPregancyCheck(req, res) {
         return this.executeDBOperation(req, res, 'getPregancyCheck', (req) => ({
             recordId: parseInt(req.params.recordId)
         }));
     }
+
+    async getUnlinkedPregancyChecks(req, res) {
+        return this.executeDBOperation(req, res, 'getUnlinkedPregancyChecks', () => ({}));
+    }
+
+
 
     async updatePregancyCheck(req, res) {
         return this.executeDBOperation(req, res, 'updatePregancyCheck', (req) => ({
@@ -761,6 +775,7 @@ class APIWrapper {
             recordId: parseInt(req.params.recordId)
         }));
     }
+
 
 
 
@@ -807,6 +822,7 @@ class APIWrapper {
                 calfSex:          req.body.calfSex          ?? null,
                 notes:            req.body.notes            ?? null,
                 calfDiedAtBirth:  req.body.calfDiedAtBirth  ?? false,
+                embryoAborted:    req.body.embryoAborted    ?? false,
                 damDiedAtBirth:   req.body.damDiedAtBirth   ?? false,
             };
         });
@@ -819,6 +835,10 @@ class APIWrapper {
         return this.executeDBOperation(req, res, 'getCalvingRecord', (req) => ({
             id: req.params.id
         }));
+    }
+
+    async getUnlinkedCalvingRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getUnlinkedCalvingRecords', () => ({}));
     }
 
     /**
@@ -846,6 +866,54 @@ class APIWrapper {
 
 
 
+
+    // API Wrapper Functions
+    async getWeaningRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getWeaningRecords', (req) => {
+            const planId          = req.query.planId          ? parseInt(req.query.planId)          : null;
+            const cowTag          = req.query.cowTag          || null;
+            const calvingRecordId = req.query.calvingRecordId ? parseInt(req.query.calvingRecordId) : null;
+
+            if (!planId && !cowTag && !calvingRecordId) {
+                throw new Error('At least one filter (planId, cowTag, or calvingRecordId) is required');
+            }
+
+            return { planId, cowTag, calvingRecordId };
+        });
+    }
+
+    async createWeaningRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createWeaningRecord', (req) => {
+            if (Array.isArray(req.body)) return req.body;
+            return {
+                planId:          req.body.planId          ?? null,
+                cowTag:          req.body.cowTag          ?? null,
+                weaningDate:     req.body.weaningDate     ?? null,
+                weaningWeight:   req.body.weaningWeight   ?? null,
+                notes:           req.body.notes           ?? null,
+                calvingRecordId: req.body.calvingRecordId ?? null,
+            };
+        });
+    }
+
+    async getWeaningRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getWeaningRecord', (req) => ({
+            id: req.params.id
+        }));
+    }
+
+    async updateWeaningRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updateWeaningRecord', (req) => ({
+            id:      req.params.id,
+            updates: req.body.updates
+        }));
+    }
+
+    async deleteWeaningRecord(req, res) {
+        return this.executeDBOperation(req, res, 'deleteWeaningRecord', (req) => ({
+            id: req.params.id
+        }));
+    }
 
 
     /**

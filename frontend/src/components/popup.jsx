@@ -175,17 +175,25 @@ function Popup({
 
     // Rest of popup styling logic
     const headerHeight = title ? 50 : 35;
-    const contentPadding = 15;
+    const contentPaddingPx = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--popup-inner-padding')
+    ) || 15;
     const backdropPadding = 0;
     const bufferSpace = 100;
 
-    const maxContentHeight = `calc(${maxHeight} - ${headerHeight + contentPadding + backdropPadding + bufferSpace}px)`;
+    const maxContentHeight = `calc(${maxHeight} - ${headerHeight + contentPaddingPx + backdropPadding + bufferSpace}px)`;
     const backdropCount = document.querySelectorAll('[data-popup-backdrop]').length;
     const zIndex = 1000 + (backdropCount * 10);
 
     // Convert maxHeight and maxWidth to pixels for proper calculations
     const maxHeightPx = convertToPixels(maxHeight, viewportHeight * 0.95);
-    const maxWidthPx = convertToPixels(maxWidth, window.innerWidth * 0.95);
+    const widthLimitVar = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--popup-width-limit')
+    );
+    const effectiveMaxWidthPx = !isNaN(widthLimitVar)
+        ? widthLimitVar * window.innerWidth
+        : convertToPixels(maxWidth, window.innerWidth * 0.95);
+    const maxWidthPx = effectiveMaxWidthPx;
 
     const popupStyles = fullscreen ? {
         backgroundColor: '#f4f4f4',
@@ -216,8 +224,8 @@ function Popup({
     };
 
     const contentMaxHeight = fullscreen ?
-        `${viewportHeight - headerHeight - contentPadding}px` : // Use dynamic height
-        `${maxHeightPx - headerHeight - contentPadding - backdropPadding - bufferSpace}px`;
+        `${viewportHeight - headerHeight - contentPaddingPx}px` :
+        `${maxHeightPx - headerHeight - contentPaddingPx - backdropPadding - bufferSpace}px`;
     
 
     const popupRoot = document.getElementById('popup-root');
@@ -250,7 +258,7 @@ function Popup({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: fullscreen ? '0px' : '20px',
+                    padding: fullscreen ? '0px' : 'var(--popup-outer-padding)',
                     overflow: 'hidden',
                     touchAction: 'none'
                 }}
@@ -272,7 +280,7 @@ function Popup({
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            padding: '10px 15px',
+                            padding: '10px var(--popup-inner-padding, 15px)',
                             borderBottom: title ? '1px solid #ddd' : 'none',
                             minHeight: '35px',
                             flexShrink: 0,
@@ -313,10 +321,10 @@ function Popup({
                     </div>
 
                     <div style={{
-                        paddingTop: fullscreen ? '0px' : '15px',
-                        paddingLeft: fullscreen ? '0px' : '15px',
-                        paddingRight: fullscreen ? '0px' : '15px',
-                        paddingBottom: fullscreen ? '0px' : '15px',
+                        paddingTop: fullscreen ? '0px' : 'var(--popup-inner-padding, 15px)',
+                        paddingLeft: fullscreen ? '0px' : 'var(--popup-inner-padding, 15px)',
+                        paddingRight: fullscreen ? '0px' : 'var(--popup-inner-padding, 15px)',
+                        paddingBottom: fullscreen ? '0px' : 'var(--popup-inner-padding, 15px)',
                         overflow: 'auto',
                         flex: '1 1 auto',
                         maxHeight: contentMaxHeight,
