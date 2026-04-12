@@ -3,6 +3,7 @@ import Minimap from './minimap';
 import PopupConfirm from './popupConfirm';
 import AnimalCombobox from './animalCombobox';
 import AnimalTableSelector from './animalTableSelector';
+import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 
 // ─── Status colour maps ───────────────────────────────────────────────────────
 
@@ -28,8 +29,8 @@ function groupIntoExposures(records) {
     const groups = {};
     for (const record of records) {
         const key = [
-            record.ExposureStartDate ?? '',
-            record.ExposureEndDate   ?? '',
+            (record.ExposureStartDate ?? '').split('T')[0].split(' ')[0],
+            (record.ExposureEndDate   ?? '').split('T')[0].split(' ')[0],
             JSON.stringify(record.PrimaryBulls ?? []),
             JSON.stringify(record.CleanupBulls ?? []),
             record.Pasture ?? ''
@@ -51,10 +52,6 @@ function groupIntoExposures(records) {
     return Object.values(groups);
 }
 
-function formatDate(d) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString();
-}
 
 function sectionLabel(text) {
     return (
@@ -204,8 +201,8 @@ function AddExposureBubble({ planId, allAnimals, activeAnimals, bullOptions, ass
                 primaryBulls,
                 cleanupBulls,
                 isAI,
-                exposureStartDate: isAI ? exposureDate : startDate,
-                exposureEndDate:   isAI ? exposureDate : endDate,
+                exposureStartDate: toUTC(isAI ? exposureDate : startDate),
+                exposureEndDate:   toUTC(isAI ? exposureDate : endDate),
                 pasture:           isAI ? null : (selectedPasture || null),
                 breedingStatus:    'Active',
             }));
@@ -337,8 +334,8 @@ function ExposureBubble({ group, bullOptions, onRefresh }) {
     const [editMode,        setEditMode]        = useState(false);
     const [primaryBulls,    setPrimaryBulls]    = useState(group.primaryBulls);
     const [cleanupBulls,    setCleanupBulls]    = useState(group.cleanupBulls);
-    const [startDate,       setStartDate]       = useState(group.exposureStartDate?.split('T')[0] ?? '');
-    const [endDate,         setEndDate]         = useState(group.exposureEndDate?.split('T')[0]   ?? '');
+    const [startDate,       setStartDate]       = useState(toLocalInput(group.exposureStartDate) ?? '');
+    const [endDate,         setEndDate]         = useState(toLocalInput(group.exposureEndDate)   ?? '');
     const [saving,          setSaving]          = useState(false);
     const [cowToDelete,     setCowToDelete]     = useState(null);
     const [deleteCowOpen,   setDeleteCowOpen]   = useState(false);
@@ -368,7 +365,7 @@ function ExposureBubble({ group, bullOptions, onRefresh }) {
     };
 
     const handleDateBlur = () => {
-        patchAll({ ExposureStartDate: startDate || null, ExposureEndDate: endDate || null });
+        patchAll({ ExposureStartDate: toUTC(startDate) || null, ExposureEndDate: toUTC(endDate) || null });
     };
 
     const handleDeleteCow = async () => {
@@ -398,7 +395,7 @@ function ExposureBubble({ group, bullOptions, onRefresh }) {
         <>
             <div style={{ marginBottom: '8px' }}>
                 {sectionLabel('Insemination Date')}
-                <div style={{ fontSize: '13px' }}>{formatDate(group.exposureStartDate)}</div>
+                <div style={{ fontSize: '13px' }}>{toLocalDisplay(group.exposureStartDate)}</div>
             </div>
             <BullDisplay label="Insemination Source" bulls={primaryBulls} />
             <BullDisplay label="Cleanup Bulls"       bulls={cleanupBulls} />
@@ -408,11 +405,11 @@ function ExposureBubble({ group, bullOptions, onRefresh }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                 <div>
                     {sectionLabel('Start Date')}
-                    <div style={{ fontSize: '13px' }}>{formatDate(group.exposureStartDate)}</div>
+                    <div style={{ fontSize: '13px' }}>{toLocalDisplay(group.exposureStartDate)}</div>
                 </div>
                 <div>
                     {sectionLabel('End Date')}
-                    <div style={{ fontSize: '13px' }}>{formatDate(group.exposureEndDate)}</div>
+                    <div style={{ fontSize: '13px' }}>{toLocalDisplay(group.exposureEndDate)}</div>
                 </div>
             </div>
             {group.pasture && (
@@ -494,8 +491,8 @@ function ExposureBubble({ group, bullOptions, onRefresh }) {
                 <div>
                     <h3 style={{ margin: '0 0 2px 0', fontSize: '15px', fontWeight: '600' }}>
                         {isAI
-                            ? formatDate(group.exposureStartDate)
-                            : `${formatDate(group.exposureStartDate)} – ${formatDate(group.exposureEndDate)}`
+                            ? toLocalDisplay(group.exposureStartDate)
+                            : `${toLocalDisplay(group.exposureStartDate)} – ${toLocalDisplay(group.exposureEndDate)}`
                         }
                         {isAI && (
                             <span style={{

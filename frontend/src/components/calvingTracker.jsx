@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Form, { fmtDate, addDays } from './forms';
+import { toLocalDisplay } from '../utils/dateUtils';
 import AddAnimal from './addAnimal';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
@@ -73,7 +74,7 @@ function CalvingHistoricalTable({ planId }) {
                                     <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
                                         <td style={{ ...TD, fontWeight: '600' }}>{r.DamTag || '—'}</td>
                                         <td style={TD}>{r.CalfTag || '—'}</td>
-                                        <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.BirthDate || '—'}</td>
+                                        <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.BirthDate ? toLocalDisplay(r.BirthDate) : '—'}</td>
                                         <td style={TD}>{r.CalfSex || '—'}</td>
                                         <td style={TD}>
                                             <span style={{

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
+import { toUTC, toLocalDisplay } from '../utils/dateUtils';
 import '../screenSizing.css';
 
 // ─── Style constants (mirror pregCheck) ──────────────────────────────────────
@@ -67,7 +68,7 @@ function WeaningHistoricalTable({ planId }) {
                             {records.map((r, i) => (
                                 <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
                                     <td style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>
-                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.WeaningDate ? fmtDate(r.WeaningDate) : '—'}</td>
+                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.WeaningDate ? toLocalDisplay(r.WeaningDate) : '—'}</td>
                                     <td style={TD}>{r.WeaningWeight != null ? r.WeaningWeight : '—'}</td>
                                     <td style={{ ...TD, color: '#6c757d', maxWidth: '200px' }}>{r.Notes || '—'}</td>
                                 </tr>
@@ -233,7 +234,7 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
             const payload = toSubmit.map(({ record, value }) => ({
                 planId:          breedingPlanId ?? record.PlanID ?? null,
                 cowTag:          record.CalfTag,
-                weaningDate:     value.weaningDate,
+                weaningDate:     toUTC(value.weaningDate),
                 weaningWeight:   value.weaningWeight ? parseInt(value.weaningWeight) : null,
                 notes:           value.notes || null,
                 calvingRecordId: record.ID,

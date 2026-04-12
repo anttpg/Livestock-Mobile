@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
+import { toUTC, toLocalDisplay } from '../utils/dateUtils';
 import '../screenSizing.css';
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
@@ -80,7 +81,7 @@ function PregCheckHistoricalTable({ planId }) {
                             {records.map((r, i) => (
                                 <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
                                     <td style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>
-                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.PregCheckDate || '—'}</td>
+                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.PregCheckDate ? toLocalDisplay(r.PregCheckDate) : '—'}</td>
                                     <td style={TD}>{r.TestType || '—'}</td>
                                     <td style={TD}>
                                         {r.TestResults ? (
@@ -222,7 +223,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
                 fields: {
                     PlanID:           breedingPlanId ?? record.PlanID ?? null,
                     BreedingRecordID: record.ID      ?? null,
-                    PregCheckDate:    value.checkDate      || today,
+                    PregCheckDate:    toUTC(value.checkDate || today),
                     TestType:         value.testType       || null,
                     TestResults:      value.testResults    || 'Untested',
                     FetusSex:         value.fetusSex       || null,
