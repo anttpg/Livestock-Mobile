@@ -1096,7 +1096,7 @@ app.post('/api/pastures/maintenance',
 
 // User preferences
 app.get('/api/users/:username/preferences',
-  createValidationMiddleware('getUserPreferences'),
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.getUserPreferences(req, res);
   }

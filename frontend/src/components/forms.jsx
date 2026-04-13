@@ -271,39 +271,43 @@ function Form({
     const [rowData,       setRowData]       = useState({});
     const [colVisibility, setColVisibility] = useState({});
     const [filterOpen,    setFilterOpen]    = useState(false);
-    const prefLoadedRef = useRef(false);
+    // Caches the full preferences object so saves never need a redundant GET.
+    const cachedPrefs = useRef({});
 
-    // Load column visibility from user preferences on mount.
+    // Resolve the username regardless of capitalisation on the user object.
+    const username = user?.Username ?? user?.username ?? null;
+
+    // Load column visibility from user preferences on mount (or when auth resolves).
     useEffect(() => {
-        if (!formName || !user?.Username) return;
-        fetch(`/api/users/${user.Username}/preferences`, { credentials: 'include' })
+        if (!formName || !username) return;
+        fetch(`/api/users/${encodeURIComponent(username)}/preferences`, { credentials: 'include' })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                const saved = data?.preferences?.formSettings?.[formName];
+                const prefs = data?.preferences || {};
+                cachedPrefs.current = prefs;
+                const saved = prefs?.formSettings?.[formName];
                 if (saved) {
                     setColVisibility(saved);
                     onColVisibilityChange?.(saved);
                 }
             })
-            .catch(() => {})
-            .finally(() => { prefLoadedRef.current = true; });
-    }, [formName, user?.Username]);
+            .catch(() => {});
+    }, [formName, username]);
 
-    // Persist an updated visibility map to user preferences.
+    // Persist an updated visibility map. Uses the cached prefs to avoid a
+    // redundant GET — just merges and PUTs in a single request.
     const saveVisibility = async (newVis) => {
-        if (!formName || !user?.Username) return;
+        if (!formName || !username) return;
+        const updated = {
+            ...cachedPrefs.current,
+            formSettings: {
+                ...(cachedPrefs.current.formSettings || {}),
+                [formName]: newVis,
+            },
+        };
+        cachedPrefs.current = updated;
         try {
-            const r    = await fetch(`/api/users/${user.Username}/preferences`, { credentials: 'include' });
-            const data = r.ok ? await r.json() : { preferences: {} };
-            const prefs = data.preferences || {};
-            const updated = {
-                ...prefs,
-                formSettings: {
-                    ...(prefs.formSettings || {}),
-                    [formName]: newVis,
-                },
-            };
-            await fetch(`/api/users/${user.Username}/preferences`, {
+            await fetch(`/api/users/${encodeURIComponent(username)}/preferences`, {
                 method:      'PUT',
                 headers:     { 'Content-Type': 'application/json' },
                 credentials: 'include',
