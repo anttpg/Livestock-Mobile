@@ -270,7 +270,6 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
 
     return (
         <div style={{ marginBottom: '16px' }}>
-            <h3 style={{ margin: '0 0 14px 0', fontSize: '16px' }}>Calving Watch</h3>
 
             {/* Calving Alerts */}
             <div style={{ marginBottom: '16px' }}>
@@ -287,19 +286,20 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                             No animals on calving alert
                         </div>
                     ) : calvingAlerts.map(item => <AnimalRow key={item.cowTag} item={item} isAlert={true} />)}
-                </div>
-                <div style={{ padding: '8px 10px 4px' }}>
-                    <button
-                        onClick={() => setShowAddAlert(true)}
-                        style={{
-                            padding: '5px 12px', fontSize: '12px', border: 'none', borderRadius: '3px',
-                            cursor: 'pointer', backgroundColor: '#c62828', color: 'white',
-                            display: 'flex', alignItems: 'center', gap: '4px'
-                        }}
-                    >
-                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
-                        Add to Alert
-                    </button>
+                    
+                    <div style={{ padding: '8px 10px 4px'  }}>
+                        <button
+                            onClick={() => setShowAddAlert(true)}
+                            style={{
+                                padding: '5px 12px', fontSize: '12px', border: 'none', borderRadius: '3px',
+                                cursor: 'pointer', backgroundColor: '#c62828', color: 'white',
+                                display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto'
+                            }}
+                        >
+                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
+                            Add to Alert
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -553,12 +553,10 @@ function ChronicallyOpenCowsBubble({ pregChecks, planNames }) {
                 <span style={{ fontSize: '12px', color: '#f57c00', fontWeight: '600' }}>
                     {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
                 </span>
-                <span style={{ fontSize: '12px', color: '#888', marginLeft: 'auto' }}>
-                    Info only — open in 2 or more preg checks
-                </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                The following animals were open in 2 or more preg checks
                 {cows.map(({ cowTag, count, yearSpan, checks }) => (
                     <div
                         key={cowTag}
@@ -829,6 +827,11 @@ function BreedingOverview({ planId }) {
                 onRefresh={fetchOverview}
             />
 
+            <ChronicallyOpenCowsBubble
+                pregChecks={overview.pregChecks}
+                planNames={planNames}
+            />
+
             <CalvingAlertsBubble
                 calvingAlerts={overview.calvingAlerts}
                 expectedBirths={overview.expectedBirths}
@@ -848,11 +851,7 @@ function BreedingOverview({ planId }) {
             )}
  
 
- 
-            <ChronicallyOpenCowsBubble
-                pregChecks={overview.pregChecks}
-                planNames={planNames}
-            />
+
         </div>
     );
 }
