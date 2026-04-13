@@ -218,8 +218,8 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
             render: row => row.IsAI ? 'AI' : 'NS',
         },
         {
-            key:    'Mating',
-            label:  'Mating',
+            key:    'Exposure',
+            label:  'Exposure',
             render: row => (row.PrimaryBulls || []).map(b => b.tag).join(', ') || '—',
         },
         {

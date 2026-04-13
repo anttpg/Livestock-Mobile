@@ -35,24 +35,120 @@ const TH = {
 };
 const TD = { padding: '7px 10px', borderBottom: '1px solid #dee2e6', fontSize: '13px' };
 
-function PregCheckHistoricalTable({ planId }) {
-    const [records, setRecords] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState(null);
+function formatBulls(bulls) {
+    if (!bulls) return '—';
+    if (Array.isArray(bulls)) return bulls.map(b => b.tag || b).join(', ') || '—';
+    if (typeof bulls === 'string') return bulls || '—';
+    return '—';
+}
+
+// Column definitions for the historical table. Keys match the hidable column keys
+// used in the entry form so that the same visibility settings apply to both.
+const HIST_COLUMNS = [
+    { key: 'cow',            label: 'Cow' },
+    { key: 'breedingRecord', label: 'Breeding Record' },
+    { key: 'exposure',       label: 'Exposure' },
+    { key: 'checkDate',      label: 'Check Date *' },
+    { key: 'testResults',    label: 'Test Result *' },
+    { key: 'testType',       label: 'Test Type',    hidable: true },
+    { key: 'monthsPregnant', label: 'Months Preg.', hidable: true },
+    { key: 'fetusSex',       label: 'Fetus Sex',    hidable: true },
+    { key: 'notes',          label: 'Notes' },
+];
+
+function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
+    const [records,  setRecords]  = useState([]);
+    const [breedMap, setBreedMap] = useState({});
+    const [loading,  setLoading]  = useState(true);
+    const [error,    setError]    = useState(null);
 
     useEffect(() => {
         if (!planId) return;
         setLoading(true);
         setError(null);
-        fetch(`/api/pregnancy-checks?planId=${planId}`, { credentials: 'include' })
-            .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-            .then(d  => setRecords(d.records || []))
+
+        Promise.all([
+            fetch(`/api/pregnancy-checks?planId=${planId}`, { credentials: 'include' }),
+            fetch(`/api/breeding-records?planId=${planId}`, { credentials: 'include' }),
+        ])
+            .then(async ([pcRes, brRes]) => {
+                if (!pcRes.ok) throw new Error(`${pcRes.status}`);
+                const pcData = await pcRes.json();
+                const brData = brRes.ok ? await brRes.json() : { records: [] };
+
+                const map = {};
+                for (const br of (brData.records || [])) map[br.ID] = br;
+
+                setRecords(pcData.records || []);
+                setBreedMap(map);
+            })
             .catch(e => setError(e.message))
             .finally(() => setLoading(false));
     }, [planId]);
 
-    if (loading) return <div style={{ padding: '12px 0', color: '#888', fontSize: '13px' }}>Loading records...</div>;
-    if (error)   return <div style={{ padding: '12px 0', color: '#dc3545', fontSize: '13px' }}>Failed to load records: {error}</div>;
+    // Apply the same visibility settings as the entry form.
+    const visibleCols = HIST_COLUMNS.filter(c => !c.hidable || colVisibility[c.key] !== false);
+
+    const renderCell = (col, r) => {
+        const br = breedMap[r.BreedingRecordID];
+        switch (col.key) {
+            case 'cow':
+                return <td key={col.key} style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>;
+            case 'breedingRecord':
+                return (
+                    <td key={col.key} style={{ ...TD, whiteSpace: 'nowrap', fontSize: '12px', color: '#555' }}>
+                        {br
+                            ? <>
+                                {fmtDate(br.ExposureStartDate)}
+                                {br.ExposureEndDate
+                                    ? <span style={{ color: '#aaa' }}> – {fmtDate(br.ExposureEndDate)}</span>
+                                    : null
+                                }
+                              </>
+                            : '—'
+                        }
+                    </td>
+                );
+            case 'exposure':
+                return (
+                    <td key={col.key} style={{ ...TD, fontSize: '12px', color: '#555' }}>
+                        {br ? formatBulls(br.PrimaryBulls) : '—'}
+                    </td>
+                );
+            case 'checkDate':
+                return (
+                    <td key={col.key} style={{ ...TD, whiteSpace: 'nowrap' }}>
+                        {r.PregCheckDate ? toLocalDisplay(r.PregCheckDate) : '—'}
+                    </td>
+                );
+            case 'testResults':
+                return (
+                    <td key={col.key} style={TD}>
+                        {r.TestResults ? (
+                            <span style={{
+                                padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
+                                backgroundColor: RESULT_BG[r.TestResults]   || '#e9ecef',
+                                color:           RESULT_COLOR[r.TestResults] || '#495057',
+                                border: `1px solid ${RESULT_COLOR[r.TestResults] || '#dee2e6'}44`,
+                                whiteSpace: 'nowrap',
+                            }}>
+                                {r.TestResults}
+                            </span>
+                        ) : '—'}
+                    </td>
+                );
+            case 'testType':
+                return <td key={col.key} style={TD}>{r.TestType || '—'}</td>;
+            case 'monthsPregnant':
+                return <td key={col.key} style={TD}>{r.MonthsPregnant != null ? `${r.MonthsPregnant} mo` : '—'}</td>;
+            case 'fetusSex':
+                return <td key={col.key} style={TD}>{r.FetusSex || '—'}</td>;
+            case 'notes':
+                return <td key={col.key} style={{ ...TD, color: '#6c757d', maxWidth: '200px' }}>{r.Notes || '—'}</td>;
+            default:
+                return <td key={col.key} style={TD}>—</td>;
+        }
+    };
 
     return (
         <div className="bubble-container" style={{ marginTop: '16px' }}>
@@ -63,50 +159,40 @@ function PregCheckHistoricalTable({ planId }) {
                 </span>
             </h3>
 
-            {records.length === 0 ? (
-                <div style={{ padding: '12px 0', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
-                    No pregnancy check records for this plan yet.
+            {error ? (
+                <div style={{ padding: '12px 0', color: '#dc3545', fontSize: '13px' }}>
+                    Failed to load records: {error}
                 </div>
             ) : (
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                             <tr>
-                                {['Cow', 'Check Date', 'Test Type', 'Result', 'Fetus Sex', 'Months Preg.', 'Calving Alert', 'Notes'].map(h => (
-                                    <th key={h} style={TH}>{h}</th>
+                                {visibleCols.map(c => (
+                                    <th key={c.key} style={TH}>{c.label}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
-                            {records.map((r, i) => (
-                                <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
-                                    <td style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>
-                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.PregCheckDate ? toLocalDisplay(r.PregCheckDate) : '—'}</td>
-                                    <td style={TD}>{r.TestType || '—'}</td>
-                                    <td style={TD}>
-                                        {r.TestResults ? (
-                                            <span style={{
-                                                padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
-                                                backgroundColor: RESULT_BG[r.TestResults]  || '#e9ecef',
-                                                color:           RESULT_COLOR[r.TestResults] || '#495057',
-                                                border: `1px solid ${RESULT_COLOR[r.TestResults] || '#dee2e6'}44`,
-                                                whiteSpace: 'nowrap',
-                                            }}>
-                                                {r.TestResults}
-                                            </span>
-                                        ) : '—'}
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={visibleCols.length} style={{ padding: '12px', color: '#888', fontSize: '13px' }}>
+                                        Loading...
                                     </td>
-                                    <td style={TD}>{r.FetusSex || '—'}</td>
-                                    <td style={TD}>{r.MonthsPregnant != null ? `${r.MonthsPregnant} mo` : '—'}</td>
-                                    <td style={{ ...TD, textAlign: 'center' }}>
-                                        {r.CalvingAlert
-                                            ? <span style={{ color: '#dc3545', fontSize: '16px' }}>●</span>
-                                            : <span style={{ color: '#dee2e6', fontSize: '16px' }}>○</span>
-                                        }
-                                    </td>
-                                    <td style={{ ...TD, color: '#6c757d', maxWidth: '200px' }}>{r.Notes || '—'}</td>
                                 </tr>
-                            ))}
+                            ) : records.length === 0 ? (
+                                <tr>
+                                    <td colSpan={visibleCols.length} style={{ padding: '12px', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
+                                        No pregnancy check records for this plan yet.
+                                    </td>
+                                </tr>
+                            ) : (
+                                records.map((r, i) => (
+                                    <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
+                                        {visibleCols.map(col => renderCell(col, r))}
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -116,13 +202,16 @@ function PregCheckHistoricalTable({ planId }) {
 }
 
 function PregCheck({ breedingPlanId, breedingYear }) {
-    const [rows,        setRows]        = useState([]);
-    const [loading,     setLoading]     = useState(true);
-    const [error,       setError]       = useState(null);
-    const [submitting,  setSubmitting]  = useState(false);
-    const [submitError, setSubmitError] = useState(null);
-    const [savedCount,  setSavedCount]  = useState(null);
-    const [dropdowns,   setDropdowns]   = useState({ pregTestResults: [], pregTestTypes: [], sex: [] });
+    const [rows,             setRows]             = useState([]);
+    const [loading,          setLoading]          = useState(true);
+    const [error,            setError]            = useState(null);
+    const [submitting,       setSubmitting]       = useState(false);
+    const [submitError,      setSubmitError]      = useState(null);
+    const [savedCount,       setSavedCount]       = useState(null);
+    const [dropdowns,        setDropdowns]        = useState({ pregTestResults: [], pregTestTypes: [], sex: [] });
+    // Mirrors the column visibility managed inside <Form> so PregCheckHistoricalTable
+    // can apply the same settings without a separate preferences fetch.
+    const [sharedVisibility, setSharedVisibility] = useState({});
 
     useEffect(() => {
         fetch('/api/form-dropdown-data', { credentials: 'include' })
@@ -130,7 +219,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
             .then(d => setDropdowns({
                 pregTestResults: d.pregTestResults || [],
                 pregTestTypes:   d.pregTestTypes   || [],
-                sex: d.sexes || [],
+                sex:             d.sexes           || [],
             }))
             .catch(() => {});
     }, []);
@@ -158,6 +247,9 @@ function PregCheck({ breedingPlanId, breedingYear }) {
 
     useEffect(() => { fetchRows(); }, [fetchRows]);
 
+    // Columns marked required: true get the pink header styling.
+    // Columns marked hidable: true can be toggled via the column settings popup.
+    // calvingAlert is intentionally excluded — it is managed by the calving tracker.
     const columns = [
         {
             key:     'CowTag',
@@ -182,23 +274,65 @@ function PregCheck({ breedingPlanId, breedingYear }) {
             label:  'Exposure',
             render: row => (
                 <span style={{ fontSize: '12px', color: '#555' }}>
-                    {(row.PrimaryBulls || []).map(b => b.tag).join(', ') || '—'}
+                    {formatBulls(row.PrimaryBulls)}
                 </span>
             ),
         },
-        { key: 'checkDate',      label: 'Check Date *',  type: 'date',     minWidth: '118px' },
-        { key: 'testResults',    label: 'Test Result *',       type: 'select',   options: dropdowns.pregTestResults, minWidth: '128px' },
-        { key: 'testType',       label: 'Test Type',      type: 'select',   options: dropdowns.pregTestTypes,   minWidth: '108px' },
-        { key: 'monthsPregnant', label: 'Months Preg.',     type: 'number',   width: '80px', step: '0.5', min: '0', placeholder: 'mo' },
-        { key: 'fetusSex',       label: 'Fetus Sex',      type: 'select',   options: dropdowns.sex, minWidth: '80px' },
-        { key: 'calvingAlert',   label: 'Alert',          type: 'checkbox', thStyle: { textAlign: 'center' }, tdStyle: { textAlign: 'center' } },
-        { key: 'notes',          label: 'Notes',          type: 'text',     maxLength: 256, placeholder: 'Notes...', minWidth: '140px' },
+        {
+            key:      'checkDate',
+            label:    'Check Date *',
+            type:     'date',
+            minWidth: '118px',
+            required: true,
+        },
+        {
+            key:      'testResults',
+            label:    'Test Result *',
+            type:     'select',
+            options:  dropdowns.pregTestResults,
+            minWidth: '128px',
+            required: true,
+        },
+        {
+            key:      'testType',
+            label:    'Test Type',
+            type:     'select',
+            options:  dropdowns.pregTestTypes,
+            minWidth: '108px',
+            hidable:  true,
+        },
+        {
+            key:         'monthsPregnant',
+            label:       'Months Preg.',
+            type:        'number',
+            width:       '80px',
+            step:        '0.5',
+            min:         '0',
+            placeholder: 'mo',
+            hidable:     true,
+        },
+        {
+            key:      'fetusSex',
+            label:    'Fetus Sex',
+            type:     'select',
+            options:  dropdowns.sex,
+            minWidth: '80px',
+            hidable:  true,
+        },
+        {
+            key:        'notes',
+            label:      'Notes',
+            type:       'text',
+            maxLength:  256,
+            placeholder:'Notes...',
+            minWidth:   '140px',
+        },
     ];
 
     const prefillFields = [
-        { key: 'checkDate',   label: 'Check Date',       type: 'date'   },
-        { key: 'testType',    label: 'Test Type',         type: 'select', options: dropdowns.pregTestTypes   },
-        { key: 'testResults', label: 'Pregnancy Status',  type: 'select', options: dropdowns.pregTestResults },
+        { key: 'checkDate',   label: 'Check Date',      type: 'date'   },
+        { key: 'testType',    label: 'Test Type',        type: 'select', options: dropdowns.pregTestTypes   },
+        { key: 'testResults', label: 'Pregnancy Status', type: 'select', options: dropdowns.pregTestResults },
     ];
 
     const handleSubmit = async (rows, rowData) => {
@@ -221,6 +355,9 @@ function PregCheck({ breedingPlanId, breedingYear }) {
             const payload = toSubmit.map(({ record, value }) => ({
                 cowTag: record.CowTag,
                 fields: {
+                    // Prefer the prop-level plan ID. If absent, use the breeding record's own
+                    // PlanID so that checks created outside a specific plan view are still
+                    // correctly associated with a plan.
                     PlanID:           breedingPlanId ?? record.PlanID ?? null,
                     BreedingRecordID: record.ID      ?? null,
                     PregCheckDate:    toUTC(value.checkDate || today),
@@ -228,7 +365,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
                     TestResults:      value.testResults    || 'Untested',
                     FetusSex:         value.fetusSex       || null,
                     MonthsPregnant:   value.monthsPregnant ? parseFloat(value.monthsPregnant) : null,
-                    CalvingAlert:     value.calvingAlert   ?? false,
+                    CalvingAlert:     false,
                     Notes:            value.notes          || null,
                 },
             }));
@@ -241,7 +378,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
             });
             if (!res.ok) throw new Error(await res.text());
 
-            // Sync BreedingStatus on records that have a final result
+            // Sync BreedingStatus on records that have a final result.
             const statusPatches = toSubmit
                 .filter(({ record, value }) => record.ID && RESULT_TO_BREEDING_STATUS[value.testResults])
                 .map(({ record, value }) =>
@@ -289,10 +426,12 @@ function PregCheck({ breedingPlanId, breedingYear }) {
                 error={error}
                 onRetry={fetchRows}
                 showImportButton={true}
+                formName="PregCheck"
+                onColVisibilityChange={setSharedVisibility}
             />
 
             {breedingPlanId && (
-                <PregCheckHistoricalTable planId={breedingPlanId} />
+                <PregCheckHistoricalTable planId={breedingPlanId} colVisibility={sharedVisibility} />
             )}
         </>
     );

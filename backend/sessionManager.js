@@ -1103,7 +1103,7 @@ app.get('/api/users/:username/preferences',
 );
 
 app.put('/api/users/:username/preferences',
-  createValidationMiddleware('updateUserPreferences'),
+  createValidationMiddleware('', true),
   async (req, res) => {
     return apiWrapper.updateUserPreferences(req, res);
   }

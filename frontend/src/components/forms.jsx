@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import '../screenSizing.css';
 import { addDays } from '../utils/dateUtils';
+import { useUser } from '../UserContext';
+import Popup from './Popup';
 export { addDays };
 
 export const TH_STYLE = {
@@ -13,6 +15,13 @@ export const TH_STYLE = {
     whiteSpace: 'nowrap',
     fontSize: '12px',
     letterSpacing: '0.2px',
+};
+
+// Applied to columns marked required: true
+const REQUIRED_TH_STYLE = {
+    ...TH_STYLE,
+    backgroundColor: '#FCE4EC',
+    borderBottom: '2px solid #F48FB1',
 };
 
 export const TD_STYLE = {
@@ -221,6 +230,8 @@ function InputCell({ column, value, onChange }) {
 //   { key, label }                                      — display, renders row[key]
 //   { key, label, render: (row) => JSX }                — display, custom render
 //   { key, label, type: 'date'|'select'|..., options? } — input, Form manages state
+//   { key, label, ..., required: true }                 — marks header with required styling
+//   { key, label, ..., hidable: true }                  — column can be toggled via column settings
 //
 // prefillFields: if provided, renders PrefillPanel above the table.
 //   [{ key, label, type, options? }]
@@ -228,6 +239,9 @@ function InputCell({ column, value, onChange }) {
 // onSubmit(rows, rowData): called when submit button clicked.
 //   rows:    original row objects
 //   rowData: { [rowKey]: { [columnKey]: value } }
+//
+// formName: string identifier used to persist column visibility in user preferences
+//   under preferences.formSettings[formName]
 //
 // rows, loading, error, onRetry: data lifecycle owned by parent.
 
@@ -237,7 +251,7 @@ function Form({
     rows             = [],
     columns          = [],
     rowKey           = defaultRowKey,
-    prefillFields  = null,
+    prefillFields    = null,
     onSubmit         = null,
     submitLabel      = 'Save',
     submitting       = false,
@@ -246,10 +260,73 @@ function Form({
     loading          = false,
     error            = null,
     onRetry          = null,
-    showImportButton = false,
+    showImportButton       = false,
+    formName               = null,
+    // Called whenever column visibility changes (initial load or toggle).
+    // Use this to mirror visibility into sibling components.
+    onColVisibilityChange  = null,
     children,
 }) {
-    const [rowData, setRowData] = useState({});
+    const { user } = useUser();
+    const [rowData,       setRowData]       = useState({});
+    const [colVisibility, setColVisibility] = useState({});
+    const [filterOpen,    setFilterOpen]    = useState(false);
+    const prefLoadedRef = useRef(false);
+
+    // Load column visibility from user preferences on mount.
+    useEffect(() => {
+        if (!formName || !user?.Username) return;
+        fetch(`/api/users/${user.Username}/preferences`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                const saved = data?.preferences?.formSettings?.[formName];
+                if (saved) {
+                    setColVisibility(saved);
+                    onColVisibilityChange?.(saved);
+                }
+            })
+            .catch(() => {})
+            .finally(() => { prefLoadedRef.current = true; });
+    }, [formName, user?.Username]);
+
+    // Persist an updated visibility map to user preferences.
+    const saveVisibility = async (newVis) => {
+        if (!formName || !user?.Username) return;
+        try {
+            const r    = await fetch(`/api/users/${user.Username}/preferences`, { credentials: 'include' });
+            const data = r.ok ? await r.json() : { preferences: {} };
+            const prefs = data.preferences || {};
+            const updated = {
+                ...prefs,
+                formSettings: {
+                    ...(prefs.formSettings || {}),
+                    [formName]: newVis,
+                },
+            };
+            await fetch(`/api/users/${user.Username}/preferences`, {
+                method:      'PUT',
+                headers:     { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body:        JSON.stringify({ preferences: updated }),
+            });
+        } catch {}
+    };
+
+    const toggleColumn = (colKey) => {
+        const currently = colVisibility[colKey] !== false; // default: visible
+        const newVis = { ...colVisibility, [colKey]: !currently };
+        setColVisibility(newVis);
+        saveVisibility(newVis);
+        onColVisibilityChange?.(newVis);
+    };
+
+    const hidableColumns = columns.filter(c => c.hidable);
+
+    // Columns that are actually rendered — non-hidable always show, hidable only if not explicitly false.
+    const visibleColumns = columns.filter(c => {
+        if (!c.hidable) return true;
+        return colVisibility[c.key] !== false;
+    });
 
     // Re-seed rowData when rows change. Preserves any in-progress values.
     useEffect(() => {
@@ -267,7 +344,7 @@ function Form({
         setRowData(prev => {
             const next = { ...prev };
             for (const k of Object.keys(next)) {
-                const cur  = next[k];
+                const cur   = next[k];
                 const patch = {};
                 for (const [key, val] of Object.entries(fillValues)) {
                     if (!val && val !== false) continue;
@@ -290,13 +367,30 @@ function Form({
         <div style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                 <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>{title}</h2>
-                {showImportButton && (
-                    <button style={{
-                        padding: '5px 12px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontSize: '13px',
-                    }}>
-                        Import
-                    </button>
-                )}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {formName && hidableColumns.length > 0 && (
+                        <button
+                            onClick={() => setFilterOpen(true)}
+                            title="Column settings"
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '4px',
+                                padding: '5px 10px', border: '1px solid #ccc', borderRadius: '4px',
+                                cursor: 'pointer', fontSize: '13px', background: 'white', color: '#333',
+                            }}
+                        >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px', lineHeight: 1 }}>tune</span>
+                            Columns
+                        </button>
+                    )}
+                    {showImportButton && (
+                        <button style={{
+                            padding: '5px 12px', border: '1px solid #ccc', borderRadius: '4px',
+                            cursor: 'pointer', fontSize: '13px',
+                        }}>
+                            Import
+                        </button>
+                    )}
+                </div>
             </div>
             {headerContent && <div style={{ marginTop: '6px' }}>{headerContent}</div>}
         </div>
@@ -355,66 +449,78 @@ function Form({
                 </div>
             )}
 
-            {rows.length === 0 ? (
-                <div style={{ padding: '16px 0', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
-                    No records to display.
-                </div>
-            ) : (
-                <>
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '400px' }}>
-                            <thead>
-                                <tr>
-                                    {columns.map(col => (
-                                        <th key={col.key} style={{ ...TH_STYLE, ...(col.thStyle || {}) }}>
-                                            {col.label}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((row, i) => {
-                                    const k  = rowKey(row);
-                                    const bg = i % 2 === 0 ? 'white' : '#fafbfc';
-                                    return (
-                                        <tr key={k} style={{ backgroundColor: bg }}>
-                                            {columns.map(col => {
-                                                const tdStyle = { ...TD_STYLE, ...(col.tdStyle || {}) };
+            {/* Table always renders so column headers are visible even with no rows */}
+            <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '400px' }}>
+                    <thead>
+                        <tr>
+                            {visibleColumns.map(col => (
+                                <th
+                                    key={col.key}
+                                    style={{
+                                        ...(col.required ? REQUIRED_TH_STYLE : TH_STYLE),
+                                        ...(col.thStyle || {}),
+                                    }}
+                                >
+                                    {col.label}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.length === 0 ? (
+                            <tr>
+                                <td
+                                    colSpan={visibleColumns.length}
+                                    style={{ padding: '16px', color: '#888', fontStyle: 'italic', fontSize: '13px' }}
+                                >
+                                    No records to display.
+                                </td>
+                            </tr>
+                        ) : (
+                            rows.map((row, i) => {
+                                const k  = rowKey(row);
+                                const bg = i % 2 === 0 ? 'white' : '#fafbfc';
+                                return (
+                                    <tr key={k} style={{ backgroundColor: bg }}>
+                                        {visibleColumns.map(col => {
+                                            const tdStyle = { ...TD_STYLE, ...(col.tdStyle || {}) };
 
-                                                if (col.render) {
-                                                    return (
-                                                        <td key={col.key} style={tdStyle}>
-                                                            {col.render(row)}
-                                                        </td>
-                                                    );
-                                                }
-
-                                                if (isInput(col.type)) {
-                                                    return (
-                                                        <td key={col.key} style={tdStyle}>
-                                                            <InputCell
-                                                                column={col}
-                                                                value={(rowData[k] || {})[col.key]}
-                                                                onChange={val => setCellValue(k, col.key, val)}
-                                                            />
-                                                        </td>
-                                                    );
-                                                }
-
+                                            if (col.render) {
                                                 return (
-                                                    <td key={col.key} style={{ ...tdStyle, ...(col.display === 'bold' ? { fontWeight: '600' } : {}) }}>
-                                                        {row[col.key] ?? '—'}
+                                                    <td key={col.key} style={tdStyle}>
+                                                        {col.render(row)}
                                                     </td>
                                                 );
-                                            })}
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                            }
 
-                    {onSubmit && (
+                                            if (isInput(col.type)) {
+                                                return (
+                                                    <td key={col.key} style={tdStyle}>
+                                                        <InputCell
+                                                            column={col}
+                                                            value={(rowData[k] || {})[col.key]}
+                                                            onChange={val => setCellValue(k, col.key, val)}
+                                                        />
+                                                    </td>
+                                                );
+                                            }
+
+                                            return (
+                                                <td key={col.key} style={{ ...tdStyle, ...(col.display === 'bold' ? { fontWeight: '600' } : {}) }}>
+                                                    {row[col.key] ?? '—'}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {rows.length > 0 && onSubmit && (
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
                             <button
                                 onClick={() => onSubmit(rows, rowData)}
@@ -434,10 +540,45 @@ function Form({
                             </button>
                         </div>
                     )}
-                </>
-            )}
 
             {children}
+
+            {/* Column visibility settings popup */}
+            <Popup
+                isOpen={filterOpen}
+                onClose={() => setFilterOpen(false)}
+                title="Column Settings"
+                width={340}
+            >
+                <div style={{ padding: '4px 0' }}>
+                    <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#6c757d' }}>
+                        Choose which optional columns are visible in this form.
+                    </p>
+                    {hidableColumns.map((col, i) => {
+                        const visible = colVisibility[col.key] !== false;
+                        return (
+                            <label
+                                key={col.key}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px',
+                                    padding: '9px 4px', cursor: 'pointer',
+                                    borderBottom: i < hidableColumns.length - 1 ? '1px solid #f0f0f0' : 'none',
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={visible}
+                                    onChange={() => toggleColumn(col.key)}
+                                    style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
+                                />
+                                <span style={{ fontSize: '14px', color: '#333' }}>
+                                    {col.label.replace(' *', '')}
+                                </span>
+                            </label>
+                        );
+                    })}
+                </div>
+            </Popup>
         </div>
     );
 }
