@@ -23,6 +23,7 @@ function groupIntoExposures(breedingRecords) {
         if (!groups[key]) {
             groups[key] = {
                 key,
+                planId:            record.PlanID           ?? null,
                 exposureStartDate: record.ExposureStartDate,
                 exposureEndDate:   record.ExposureEndDate,
                 primaryBulls:      record.PrimaryBulls  ?? [],
@@ -246,7 +247,8 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
     // Updated: use TestResults === 'Pregnant' (IsPregnant column was dropped)
     const addAlertOptions = (pregChecks || [])
         .filter(pc => pc.TestResults === 'Pregnant' && !pc.CalvingAlert && !calvedTags.has(pc.CowTag) && !alertedTags.has(pc.CowTag))
-        .map(pc => ({ CowTag: pc.CowTag, HerdName: null, Status: null }));
+        .map(pc => ({ CowTag: pc.CowTag, HerdName: null, Status: null }))
+        .filter((opt, idx, arr) => arr.findIndex(o => o.CowTag === opt.CowTag) === idx);
 
     const handleAddAlerts = async () => {
         if (alertSelected.size === 0) return;
@@ -289,6 +291,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                     
                     <div style={{ padding: '8px 10px 4px'  }}>
                         <button
+                            type="button"
                             onClick={() => setShowAddAlert(true)}
                             style={{
                                 padding: '5px 12px', fontSize: '12px', border: 'none', borderRadius: '3px',
@@ -324,6 +327,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                                 label="Pregnant animals"
                             />
                             <button
+                                type="button"
                                 onClick={handleAddAlerts}
                                 disabled={alertSelected.size === 0 || addingAlert}
                                 style={{
@@ -366,7 +370,7 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
 // Bubble 2 — Unassigned Animals  (plan-specific only, not shown in current mode)
 // ---------------------------------------------------------------------------
 
-function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, onRefresh }) {
+function UnassignedAnimalsBubble({ unassignedAnimals, planId = null, breedingRecords, onRefresh }) {
     const [linkingTag, setLinkingTag]           = useState(null);
     const [selectedExposureKey, setSelectedKey] = useState('');
     const [saving, setSaving]                   = useState(false);
@@ -388,7 +392,7 @@ function UnassignedAnimalsBubble({ unassignedAnimals, planId, breedingRecords, o
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
-                    planID:            planId,
+                    planID:            group.planId,
                     cowTag,
                     primaryBulls:      group.primaryBulls,
                     cleanupBulls:      group.cleanupBulls,
@@ -704,84 +708,68 @@ function BreedingOverview({ planId }) {
     const fetchOverview = useCallback(async () => {
         setLoading(true);
         try {
-            if (planId) {
-                // Specific plan selected
-                const res = await fetch(`/api/breeding-plans/${planId}/overview`, { credentials: 'include' });
-                if (res.ok) setOverview(await res.json());
-            } else {
-                // Current Animals: merge all active plans
-                const plansRes = await fetch('/api/breeding-plans', { credentials: 'include' });
-                if (!plansRes.ok) return;
-                const plansData = await plansRes.json();
+            const plansRes = await fetch('/api/breeding-plans', { credentials: 'include' });
+            if (!plansRes.ok) return;
+            const plansData = await plansRes.json();
 
-                const activePlans = (plansData.plans || []).filter(p => p.IsActive);
+            const activePlans = (plansData.plans || []).filter(p => p.IsActive);
 
-                // Build planId → label map for ChronicallyOpenCowsBubble
-                const nameMap = {};
-                for (const p of activePlans) nameMap[p.ID] = { PlanName: p.PlanName, PlanYear: p.PlanYear };
-                setPlanNames(nameMap);
+            // Build planId → label map for ChronicallyOpenCowsBubble
+            const nameMap = {};
+            for (const p of activePlans) nameMap[p.ID] = { PlanName: p.PlanName, PlanYear: p.PlanYear };
+            setPlanNames(nameMap);
 
-                if (activePlans.length === 0) {
-                    setOverview({ calvingAlerts: [], expectedBirths: [], pregChecks: [], calvingRecords: [], breedingRecords: [], unassignedAnimals: [], assignedAnimals: [] });
-                    return;
-                }
-
-                const overviews = await Promise.all(
-                    activePlans.map(p =>
-                        fetch(`/api/breeding-plans/${p.ID}/overview`, { credentials: 'include' })
-                            .then(r => r.ok ? r.json() : null)
-                            .catch(() => null)
-                    )
-                );
-
-                const seenAlerts = new Set();
-                const seenBirths = new Set();
-                const merged = {
-                    calvingAlerts:     [],
-                    expectedBirths:    [],
-                    pregChecks:        [],
-                    calvingRecords:    [],
-                    breedingRecords:   [],
-                    unassignedAnimals: [],   // not meaningful cross-plan
-                    assignedAnimals:   [],
-                };
-
-                for (const data of overviews) {
-                    if (!data) continue;
-                    for (const a of (data.calvingAlerts || [])) {
-                        if (!seenAlerts.has(a.cowTag)) { seenAlerts.add(a.cowTag); merged.calvingAlerts.push(a); }
-                    }
-                    for (const b of (data.expectedBirths || [])) {
-                        const k = b.cowTag + (b.breedingRecordId || '');
-                        if (!seenBirths.has(k)) { seenBirths.add(k); merged.expectedBirths.push(b); }
-                    }
-                    merged.pregChecks.push(...(data.pregChecks        || []));
-                    merged.calvingRecords.push(...(data.calvingRecords || []));
-                    merged.breedingRecords.push(...(data.breedingRecords || []));
-                    merged.assignedAnimals.push(...(data.assignedAnimals || []));
-                }
-
-                setOverview(merged);
+            if (activePlans.length === 0) {
+                setOverview({ calvingAlerts: [], expectedBirths: [], pregChecks: [], calvingRecords: [], breedingRecords: [], unassignedAnimals: [], assignedAnimals: [] });
+                return;
             }
+
+            const overviews = await Promise.all(
+                activePlans.map(p =>
+                    fetch(`/api/breeding-plans/${p.ID}/overview`, { credentials: 'include' })
+                        .then(r => r.ok ? r.json() : null)
+                        .catch(() => null)
+                )
+            );
+
+            const seenAlerts = new Set();
+            const seenBirths = new Set();
+            const seenUnassigned = new Set();
+            const merged = {
+                calvingAlerts:     [],
+                expectedBirths:    [],
+                pregChecks:        [],
+                calvingRecords:    [],
+                breedingRecords:   [],
+                unassignedAnimals: [],
+                assignedAnimals:   [],
+            };
+
+            for (const data of overviews) {
+                if (!data) continue;
+                for (const a of (data.calvingAlerts || [])) {
+                    if (!seenAlerts.has(a.cowTag)) { seenAlerts.add(a.cowTag); merged.calvingAlerts.push(a); }
+                }
+                for (const b of (data.expectedBirths || [])) {
+                    const k = b.cowTag + (b.breedingRecordId || '');
+                    if (!seenBirths.has(k)) { seenBirths.add(k); merged.expectedBirths.push(b); }
+                }
+                for (const u of (data.unassignedAnimals || [])) {
+                    if (!seenUnassigned.has(u.CowTag)) { seenUnassigned.add(u.CowTag); merged.unassignedAnimals.push(u); }
+                }
+                merged.pregChecks.push(...(data.pregChecks        || []));
+                merged.calvingRecords.push(...(data.calvingRecords || []));
+                merged.breedingRecords.push(...(data.breedingRecords || []));
+                merged.assignedAnimals.push(...(data.assignedAnimals || []));
+            }
+
+            setOverview(merged);
         } catch (e) {
             console.error(e);
         } finally {
             setLoading(false);
         }
-    }, [planId]);
-
-    // Build planNames map when a specific plan is selected
-    useEffect(() => {
-        if (!planId) return;
-        fetch('/api/breeding-plans', { credentials: 'include' })
-            .then(r => r.ok ? r.json() : { plans: [] })
-            .then(d => {
-                const map = {};
-                for (const p of (d.plans || [])) map[p.ID] = { PlanName: p.PlanName, PlanYear: p.PlanYear };
-                setPlanNames(map);
-            })
-            .catch(() => {});
-    }, [planId]);
+    }, []);
 
     useEffect(() => { fetchOverview(); }, [fetchOverview]);
 
@@ -841,14 +829,11 @@ function BreedingOverview({ planId }) {
                 onRefresh={fetchOverview}
             />
  
-            {planId && (
-                <UnassignedAnimalsBubble
-                    unassignedAnimals={overview.unassignedAnimals}
-                    planId={planId}
-                    breedingRecords={overview.breedingRecords}
-                    onRefresh={fetchOverview}
-                />
-            )}
+            <UnassignedAnimalsBubble
+                unassignedAnimals={overview.unassignedAnimals}
+                breedingRecords={overview.breedingRecords}
+                onRefresh={fetchOverview}
+            />
  
 
 

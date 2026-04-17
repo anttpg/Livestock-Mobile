@@ -20,9 +20,18 @@ function AnimalTableSelector({
     label        = 'Select Cows',
     extraControls = null,
 }) {
+    // Deduplicate by CowTag (normalized) — keep first occurrence
+    const seen = new Set();
+    const uniqueAnimals = animals.filter(a => {
+        const key = (a.CowTag ?? '').trim().toUpperCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
     // Group by herd
     const herdGroups = {};
-    for (const a of animals) {
+    for (const a of uniqueAnimals) {
         const herd = a.HerdName || 'No Herd';
         if (!herdGroups[herd]) herdGroups[herd] = [];
         herdGroups[herd].push(a);
@@ -90,7 +99,7 @@ function AnimalTableSelector({
                             </div>
 
                             {herdAnimals.map((animal, idx) => (
-                                <label key={animal.CowTag} style={{
+                                <label key={`${herdName}:${animal.CowTag}:${idx}`} style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
                                     padding: '4px 10px 4px 24px',
                                     borderBottom: '1px solid #f5f5f5',

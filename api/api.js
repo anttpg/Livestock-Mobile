@@ -710,6 +710,13 @@ class APIWrapper {
         }));
     }
 
+    async refreshBreedingStatuses(req, res) {
+        return this.executeDBOperation(req, res, 'refreshBreedingStatuses', (req) => ({
+            planId: req.body.planId ? parseInt(req.body.planId) : null,
+            dryRun: req.body.dryRun === true,
+        }));
+    }
+
 
 
 
@@ -833,7 +840,7 @@ class APIWrapper {
      */
     async getCalvingRecord(req, res) {
         return this.executeDBOperation(req, res, 'getCalvingRecord', (req) => ({
-            id: req.params.id
+            id: parseInt(req.params.id)
         }));
     }
 
@@ -846,8 +853,8 @@ class APIWrapper {
      */
     async updateCalvingRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateCalvingRecord', (req) => ({
-            id: req.params.id,
-            updates: req.body.updates
+            id: parseInt(req.params.id),
+            updates: req.body
         }));
     }
 
@@ -856,7 +863,7 @@ class APIWrapper {
      */
     async deleteCalvingRecord(req, res) {
         return this.executeDBOperation(req, res, 'deleteCalvingRecord', (req) => ({
-            id: req.params.id
+            id: parseInt(req.params.id)
         }));
     }
 
@@ -898,20 +905,20 @@ class APIWrapper {
 
     async getWeaningRecord(req, res) {
         return this.executeDBOperation(req, res, 'getWeaningRecord', (req) => ({
-            id: req.params.id
+            id: parseInt(req.params.id)
         }));
     }
 
     async updateWeaningRecord(req, res) {
         return this.executeDBOperation(req, res, 'updateWeaningRecord', (req) => ({
-            id:      req.params.id,
-            updates: req.body.updates
+            id: parseInt(req.params.id),
+            updates: req.body
         }));
     }
 
     async deleteWeaningRecord(req, res) {
         return this.executeDBOperation(req, res, 'deleteWeaningRecord', (req) => ({
-            id: req.params.id
+            id: parseInt(req.params.id)
         }));
     }
 

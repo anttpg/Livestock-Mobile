@@ -784,6 +784,13 @@ app.post('/api/breeding-records',
     async (req, res) => apiWrapper.createBreedingRecord(req, res)
 );
 
+app.post('/api/breeding-records/refresh-status',
+    // requireAuth(),
+    // requireDev(),
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.refreshBreedingStatuses(req, res)
+);
+
 app.get('/api/breeding-records/:recordId',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getBreedingRecord(req, res)
@@ -798,6 +805,11 @@ app.delete('/api/breeding-records/:recordId',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.deleteBreedingRecord(req, res)
 );
+
+
+
+
+
 
 
 // Pregnancy Checks
@@ -852,17 +864,17 @@ app.get('/api/calving-records/unlinked',
 );
 
 
-app.get('/api/calving-records/:recordId',
+app.get('/api/calving-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getCalvingRecord(req, res)
 );
 
-app.put('/api/calving-records/:recordId',
+app.put('/api/calving-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.updateCalvingRecord(req, res)
 );
 
-app.delete('/api/calving-records/:recordId',
+app.delete('/api/calving-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.deleteCalvingRecord(req, res)
 );
@@ -883,17 +895,17 @@ app.post('/api/weaning-records',
     async (req, res) => apiWrapper.createWeaningRecord(req, res)
 );
 
-app.get('/api/weaning-records/:recordId',
+app.get('/api/weaning-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getWeaningRecord(req, res)
 );
 
-app.put('/api/weaning-records/:recordId',
+app.put('/api/weaning-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.updateWeaningRecord(req, res)
 );
 
-app.delete('/api/weaning-records/:recordId',
+app.delete('/api/weaning-records/:id',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.deleteWeaningRecord(req, res)
 );

@@ -3,6 +3,7 @@ import '../screenSizing.css';
 import { addDays } from '../utils/dateUtils';
 import { useUser } from '../UserContext';
 import Popup from './Popup';
+import PopupConfirm from './popupConfirm';
 export { addDays };
 
 export const TH_STYLE = {
@@ -265,12 +266,16 @@ function Form({
     // Called whenever column visibility changes (initial load or toggle).
     // Use this to mirror visibility into sibling components.
     onColVisibilityChange  = null,
+    // If provided, adds a delete (×) button on each row. Called with the row object.
+    onDelete               = null,
     children,
 }) {
     const { user } = useUser();
     const [rowData,       setRowData]       = useState({});
     const [colVisibility, setColVisibility] = useState({});
     const [filterOpen,    setFilterOpen]    = useState(false);
+    const [deleteTarget,  setDeleteTarget]  = useState(null);
+    const [deleteMode,    setDeleteMode]    = useState(false);
     // Caches the full preferences object so saves never need a redundant GET.
     const cachedPrefs = useRef({});
 
@@ -469,6 +474,29 @@ function Form({
                                     {col.label}
                                 </th>
                             ))}
+                            {onDelete && (
+                                <th style={{ ...TH_STYLE, width: '32px', padding: '4px', textAlign: 'center' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setDeleteMode(m => !m)}
+                                        title={deleteMode ? 'Done' : 'Delete rows'}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center',
+                                            background: deleteMode ? '#e3f2fd' : 'none',
+                                            border: deleteMode ? '1px solid #90caf9' : '1px solid transparent',
+                                            borderRadius: '4px', padding: '2px 4px',
+                                            cursor: 'pointer', color: deleteMode ? '#1976d2' : '#888',
+                                            transition: 'all 0.15s',
+                                        }}
+                                        onMouseEnter={e => { if (!deleteMode) { e.currentTarget.style.backgroundColor = '#f5f5f5'; e.currentTarget.style.color = '#333'; }}}
+                                        onMouseLeave={e => { if (!deleteMode) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#888'; }}}
+                                    >
+                                        <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>
+                                            {deleteMode ? 'check' : 'edit'}
+                                        </span>
+                                    </button>
+                                </th>
+                            )}
                         </tr>
                     </thead>
                     <tbody>
@@ -516,6 +544,26 @@ function Form({
                                                 </td>
                                             );
                                         })}
+                                        {onDelete && (
+                                            <td style={{ ...TD_STYLE, width: '32px', padding: '4px', textAlign: 'center' }}>
+                                                {deleteMode && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDeleteTarget(row)}
+                                                        title="Delete record"
+                                                        style={{
+                                                            background: 'none', border: 'none', padding: '2px 4px',
+                                                            cursor: 'pointer', color: '#dc3545',
+                                                            display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
+                                                        }}
+                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
+                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                    >
+                                                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                                                    </button>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 );
                             })
@@ -547,6 +595,15 @@ function Form({
 
             {children}
 
+            <PopupConfirm
+                isOpen={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => { await onDelete?.(deleteTarget); setDeleteTarget(null); }}
+                title="Delete Record"
+                message="Delete this record? This cannot be undone."
+                confirmText="Delete"
+            />
+
             {/* Column visibility settings popup */}
             <Popup
                 isOpen={filterOpen}
@@ -554,10 +611,11 @@ function Form({
                 title="Column Settings"
                 width={340}
             >
-                <div style={{ padding: '4px 0' }}>
-                    <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#6c757d' }}>
-                        Choose which optional columns are visible in this form.
+                <div>
+                    <p>
+                        Choose which optional columns are visible to you in this form.
                     </p>
+                    <p><b>Note:</b> This does not change the actual record, this only changes what you are able to see</p>
                     {hidableColumns.map((col, i) => {
                         const visible = colVisibility[col.key] !== false;
                         return (

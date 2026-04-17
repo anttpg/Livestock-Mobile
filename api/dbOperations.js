@@ -2966,7 +2966,7 @@ class DatabaseOperations {
             // Build lookup sets from already fetched records
             const calvedCowTags = new Set(calvingRecords.map(r => r.DamTag));
             const calvingAlertTags = new Set(
-                pregChecks.filter(pc => pc.CalvingAlert && pc.IsPregnant).map(pc => pc.CowTag)
+                pregChecks.filter(pc => pc.CalvingAlert && pc.TestResults === 'Pregnant').map(pc => pc.CowTag)
             );
 
             const today = new Date();
@@ -3564,7 +3564,117 @@ class DatabaseOperations {
         }
     }
 
+    /**
+     * Refreshes BreedingStatus on BreedingRecords by inspecting linked
+     * CalvingRecords and PregancyCheck records. Voided records are never modified.
+     *
+     * Derivation priority:
+     *   1. A CalvingRecord exists for the record         -> Calved
+     *   2. Most recent PregancyCheck result = 'Pregnant' -> Pregnant
+     *   3. Most recent PregancyCheck result = 'Open'     -> Open
+     *   4. No linked evidence                            -> Active
+     *
+     * Intended as a one-off correction tool, not a routine operation.
+     *
+     * @param {Object}  [options]
+     * @param {number}  [options.planId] - Scope the refresh to a single plan. Omit to run across all plans.
+     * @param {boolean} [options.dryRun=false] - When true, returns what would change without writing.
+     * @returns {Promise<{
+     *   success:   boolean,
+     *   updated:   number,
+     *   dryRun:    boolean,
+     *   breakdown: { Calved: number, Pregnant: number, Open: number, Active: number, Voided: number },
+     *   changes:   Array<{ id: number, cowTag: string, planId: number, from: string, to: string }>
+     * }>}
+     */
+    async refreshBreedingStatuses({ planId = null, dryRun = false } = {}) {
+        await this.ensureConnection();
 
+        const planFilter = planId ? 'AND br.PlanID = @planId' : '';
+
+        const readRequest = this.pool.request();
+        if (planId) readRequest.input('planId', sql.Int, planId);
+
+        const derived = await readRequest.query(`
+            WITH LatestPregCheck AS (
+                SELECT
+                    pc.BreedingRecordID,
+                    pc.TestResults,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY pc.BreedingRecordID
+                        ORDER BY pc.PregCheckDate DESC
+                    ) AS rn
+                FROM PregancyCheck pc
+                WHERE pc.BreedingRecordID IS NOT NULL
+            )
+            SELECT
+                br.ID,
+                br.CowTag,
+                br.PlanID,
+                br.BreedingStatus AS CurrentStatus,
+                CASE
+                    WHEN cr.BreedingRecordID IS NOT NULL THEN 'Calved'
+                    WHEN lpc.TestResults = 'Pregnant'    THEN 'Pregnant'
+                    WHEN lpc.TestResults = 'Open'        THEN 'Open'
+                    ELSE 'Active'
+                END AS DerivedStatus
+            FROM BreedingRecords br
+            LEFT JOIN CalvingRecords cr
+                ON cr.BreedingRecordID = br.ID
+            LEFT JOIN LatestPregCheck lpc
+                ON lpc.BreedingRecordID = br.ID AND lpc.rn = 1
+            WHERE (br.BreedingStatus != 'Voided' OR br.BreedingStatus IS NULL)
+            ${planFilter}
+        `);
+
+        const changes = derived.recordset
+            .filter(row => row.CurrentStatus !== row.DerivedStatus)
+            .map(row => ({
+                id:      row.ID,
+                cowTag:  row.CowTag,
+                planId:  row.PlanID,
+                from:    row.CurrentStatus ?? null,
+                to:      row.DerivedStatus,
+            }));
+
+        if (!dryRun && changes.length > 0) {
+            for (const change of changes) {
+                const upd = this.pool.request();
+                upd.input('id',     sql.Int,     change.id);
+                upd.input('status', sql.NVarChar, change.to);
+                await upd.query(`
+                    UPDATE BreedingRecords
+                    SET    BreedingStatus = @status
+                    WHERE  ID = @id
+                `);
+            }
+        }
+
+        const breakdownRequest = this.pool.request();
+        if (planId) breakdownRequest.input('planId', sql.Int, planId);
+
+        const breakdownResult = await breakdownRequest.query(`
+            SELECT BreedingStatus, COUNT(*) AS cnt
+            FROM   BreedingRecords
+            ${planId ? 'WHERE PlanID = @planId' : ''}
+            GROUP BY BreedingStatus
+        `);
+
+        const breakdown = { Calved: 0, Pregnant: 0, Open: 0, Active: 0, Voided: 0 };
+        for (const row of breakdownResult.recordset) {
+            if (row.BreedingStatus in breakdown) {
+                breakdown[row.BreedingStatus] = row.cnt;
+            }
+        }
+
+        return {
+            success:   true,
+            updated:   dryRun ? 0 : changes.length,
+            dryRun,
+            breakdown,
+            changes,
+        };
+    }
 
 
 
@@ -8402,147 +8512,6 @@ class DatabaseOperations {
         }
     }
 
-    async getCalvingRecordsValue(cowTag, fieldName, breedingYear = null) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            let yearFilter = '';
-            if (breedingYear) {
-                request.input('breedingYear', sql.Int, breedingYear);
-                yearFilter = `
-                INNER JOIN BreedingRecords br ON cr.BreedingRecordID = br.ID
-                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                WHERE cr.DamTag = @cowTag AND bp.PlanYear = @breedingYear`;
-            } else {
-                yearFilter = 'WHERE cr.DamTag = @cowTag';
-            }
-
-            switch (fieldName) {
-                case 'CalfTag':
-                    const calfTagQuery = `
-                    SELECT TOP 1 CalfTag
-                    FROM CalvingRecords cr
-                    ${yearFilter}
-                    ORDER BY BirthDate DESC`;
-                    const calfTagResult = await request.query(calfTagQuery);
-                    return calfTagResult.recordset[0]?.CalfTag || '';
-
-                case 'CalfSex':
-                    const sexQuery = `
-                    SELECT TOP 1 CalfSex
-                    FROM CalvingRecords cr
-                    ${yearFilter}
-                    ORDER BY BirthDate DESC`;
-                    const sexResult = await request.query(sexQuery);
-                    return sexResult.recordset[0]?.CalfSex || '';
-
-                case 'BirthDate':
-                    const birthQuery = `
-                    SELECT TOP 1 FORMAT(BirthDate, 'MM/dd/yyyy') AS FormattedBirthDate
-                    FROM CalvingRecords cr
-                    ${yearFilter}
-                    ORDER BY BirthDate DESC`;
-                    const birthResult = await request.query(birthQuery);
-                    return birthResult.recordset[0]?.FormattedBirthDate || '';
-
-                case 'CalvingNotes':
-                    const notesQuery = `
-                    SELECT TOP 1 CalvingNotes
-                    FROM CalvingRecords cr
-                    ${yearFilter}
-                    ORDER BY BirthDate DESC`;
-                    const notesResult = await request.query(notesQuery);
-                    return notesResult.recordset[0]?.CalvingNotes || '';
-
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error fetching CalvingRecords value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
-    async getBreedingRecordsValue(cowTag, fieldName, breedingYear = null) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            let yearFilter = '';
-            if (breedingYear) {
-                request.input('breedingYear', sql.Int, breedingYear);
-                yearFilter = `
-                    INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                    WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
-            } else {
-                yearFilter = 'WHERE br.CowTag = @cowTag';
-            }
-
-            switch (fieldName) {
-                case 'PrimaryBulls': {
-                    const primaryQuery = `
-                        SELECT TOP 1 PrimaryBulls
-                        FROM BreedingRecords br
-                        ${yearFilter}
-                        ORDER BY ExposureStartDate DESC`;
-                    const primaryResult = await request.query(primaryQuery);
-                    return primaryResult.recordset[0]?.PrimaryBulls || '';
-                }
-
-                case 'CleanupBulls': {
-                    const cleanupQuery = `
-                        SELECT TOP 1 CleanupBulls
-                        FROM BreedingRecords br
-                        ${yearFilter}
-                        ORDER BY ExposureStartDate DESC`;
-                    const cleanupResult = await request.query(cleanupQuery);
-                    return cleanupResult.recordset[0]?.CleanupBulls || '';
-                }
-
-                case 'CurrentBull': {
-                    const currentQuery = `
-                        SELECT TOP 1 PrimaryBulls, ExposureStartDate, ExposureEndDate
-                        FROM BreedingRecords br
-                        ${yearFilter} AND GETUTCDATE() BETWEEN ExposureStartDate AND ExposureEndDate
-                        ORDER BY ExposureStartDate DESC`;
-                    const currentResult = await request.query(currentQuery);
-                    return currentResult.recordset[0]?.PrimaryBulls || 'None';
-                }
-
-                case 'ExposureStartDate': {
-                    const startQuery = `
-                        SELECT TOP 1 FORMAT(ExposureStartDate, 'MM/dd/yyyy') AS FormattedStartDate
-                        FROM BreedingRecords br
-                        ${yearFilter}
-                        ORDER BY ExposureStartDate DESC`;
-                    const startResult = await request.query(startQuery);
-                    return startResult.recordset[0]?.FormattedStartDate || '';
-                }
-
-                case 'ExposureEndDate': {
-                    const endQuery = `
-                        SELECT TOP 1 FORMAT(ExposureEndDate, 'MM/dd/yyyy') AS FormattedEndDate
-                        FROM BreedingRecords br
-                        ${yearFilter}
-                        ORDER BY ExposureStartDate DESC`;
-                    const endResult = await request.query(endQuery);
-                    return endResult.recordset[0]?.FormattedEndDate || '';
-                }
-
-                default:
-                    return '';
-            }
-        } catch (error) {
-            console.error(`Error fetching BreedingRecords value for ${fieldName}:`, error);
-            return '';
-        }
-    }
-
 
     async getMedicalTableValue(cowTag, fieldName) {
         await this.ensureConnection();
@@ -8717,88 +8686,6 @@ class DatabaseOperations {
 
 
 
-
-
-
-    async getBreedingRecordsValueWithSource(cowTag, fieldName, breedingYear = null) {
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar, cowTag);
-
-            let yearFilter = '';
-            if (breedingYear) {
-                request.input('breedingYear', sql.Int, breedingYear);
-                yearFilter = `
-                INNER JOIN BreedingPlan bp ON br.PlanID = bp.ID
-                WHERE br.CowTag = @cowTag AND bp.PlanYear = @breedingYear`;
-            } else {
-                yearFilter = 'WHERE br.CowTag = @cowTag';
-            }
-
-            switch (fieldName) {
-                case 'PrimaryBulls': {
-                    const query = `
-                    SELECT TOP 1 PrimaryBulls, br.ID
-                    FROM BreedingRecords br
-                    ${yearFilter}
-                    ORDER BY ExposureStartDate DESC`;
-                    const result = await request.query(query);
-                    return {
-                        value: result.recordset[0]?.PrimaryBulls || '',
-                        recordId: result.recordset[0]?.ID || null
-                    };
-                }
-
-                case 'CleanupBulls': {
-                    const query = `
-                    SELECT TOP 1 CleanupBulls, br.ID
-                    FROM BreedingRecords br
-                    ${yearFilter}
-                    ORDER BY ExposureStartDate DESC`;
-                    const result = await request.query(query);
-                    return {
-                        value: result.recordset[0]?.CleanupBulls || '',
-                        recordId: result.recordset[0]?.ID || null
-                    };
-                }
-
-                case 'CurrentBull': {
-                    const query = `
-                    SELECT TOP 1 PrimaryBulls, br.ID
-                    FROM BreedingRecords br
-                    ${yearFilter} AND GETUTCDATE() BETWEEN ExposureStartDate AND ExposureEndDate
-                    ORDER BY ExposureStartDate DESC`;
-                    const result = await request.query(query);
-                    return {
-                        value: result.recordset[0]?.PrimaryBulls || 'None',
-                        recordId: result.recordset[0]?.ID || null
-                    };
-                }
-
-                case 'ExposureStartDate':
-                case 'ExposureEndDate': {
-                    const query = `
-                    SELECT TOP 1 FORMAT(${fieldName}, 'MM/dd/yyyy') AS FormattedDate, br.ID
-                    FROM BreedingRecords br
-                    ${yearFilter}
-                    ORDER BY ExposureStartDate DESC`;
-                    const result = await request.query(query);
-                    return {
-                        value: result.recordset[0]?.FormattedDate || '',
-                        recordId: result.recordset[0]?.ID || null
-                    };
-                }
-
-                default:
-                    return { value: '', recordId: null };
-            }
-        } catch (error) {
-            console.error(`Error fetching BreedingRecords value for ${fieldName}:`, error);
-            return { value: '', recordId: null };
-        }
-    }
 
 
 
@@ -9564,6 +9451,9 @@ module.exports = {
     createBreedingRecord: (params) => dbOps.createBreedingRecord(params),
     updateBreedingRecord: (params) => dbOps.updateBreedingRecord(params),
     deleteBreedingRecord: (params) => dbOps.deleteBreedingRecord(params),
+    refreshBreedingStatuses: (params) => dbOps.refreshBreedingStatuses(params),
+
+    
 
 
     // Pregnancy Check

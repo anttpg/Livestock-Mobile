@@ -94,16 +94,10 @@ IssueSubform.jsx
 -New issue fails to save
 -Fix UPDATE ISSUE problems
 
-HerdSplitter.jsx
--Fix selected Herd so that the contents display.
--Width problems (On small screens, side gets cut off)
--Lock buttons to bottom
--Scrollbar lock
 
 Herds.jsx
 -Graphical feed level display. Display how much feed was left as of LAST RECORDING, and the projected current feed 
 -Design feed estimation algorithm
--Hook up 'click to add a new event'.
 
 Overview.jsx
 -Show a miniviewer of the current status of the herds (Tiny minimap, animal count, herdname.)
@@ -117,13 +111,8 @@ Overview.jsx
 HerdLog.jsx
 -Expand recorded operations to Herd Events as well (Breeding / Vaxx, ect)
 
-PastureLog.jsx
--Remove dummy event types, plan out & replace with actual events
--complete 'Add event' functionality & follow ups on pasture logs
-
 Timeline.jsx
 -Make it possible to minimize a timeline after expanding
--Add bkg color to new event button to make more clear
 
 General.jsx
 -Allow bulk importing of images
@@ -133,14 +122,7 @@ Herds.jsx
 
 
 
-
 **WOULD BE NICE, LOW PRIORITY**
-sheetEditor.jsx
--return to pretty animation when dragging / swapping rows?
-
-Fieldsheets.jsx
--Indent child sheets from parent (Currently show on same line)
-
 FolderTabs.jsx
 -Pretty animated Tabs
 -Collapse when screen too small, expaning on clicked tab

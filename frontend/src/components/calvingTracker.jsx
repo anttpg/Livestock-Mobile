@@ -6,6 +6,7 @@ import AddAnimal from './addAnimal';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
 import AnimalFolder from './animalFolder';
+import AnimalCombobox from './animalCombobox';
 import '../screenSizing.css';
 
 const DEFAULT_GESTATION_DAYS = 283;
@@ -97,6 +98,242 @@ function CalvingHistoricalTable({ planId }) {
     );
 }
 
+// ─── LinkExistingCalfPopup ────────────────────────────────────────────────────
+
+function LinkExistingCalfPopup({ row, breedingPlanId, onClose, onSuccess }) {
+    const [calfTag,  setCalfTag]  = useState('');
+    const [animals,  setAnimals]  = useState([]);
+    const [saving,   setSaving]   = useState(false);
+    const [error,    setError]    = useState(null);
+
+    useEffect(() => {
+        fetch('/api/animals', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { cows: [] })
+            .then(d => setAnimals(d.cows || []))
+            .catch(() => {});
+    }, []);
+
+    const comboOptions = animals.map(a => ({
+        name:   a.CowTag,
+        value:  a.CowTag,
+        status: a.Status || '',
+    }));
+
+    const handleConfirm = async () => {
+        const tag = calfTag.trim().toUpperCase();
+        if (!tag) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const animal    = animals.find(a => a.CowTag === tag);
+            const birthDate = animal?.DateOfBirth
+                ? toUTC(toLocalInput(animal.DateOfBirth))
+                : null;
+
+            await fetch('/api/calving-records', {
+                method:      'POST',
+                headers:     { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    planID:           breedingPlanId ?? row.PlanID ?? null,
+                    breedingRecordId: row.ID         ?? null,
+                    damTag:           row.CowTag,
+                    isTagged:         true,
+                    calfTag:          tag,
+                    birthDate,
+                    calfDiedAtBirth:  false,
+                    damDiedAtBirth:   false,
+                    embryoAborted:    false,
+                    notes:            'Linked existing calf',
+                }),
+            });
+            if (row.ID) {
+                await fetch(`/api/breeding-records/${row.ID}`, {
+                    method:      'PUT',
+                    headers:     { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body:        JSON.stringify({ BreedingStatus: 'Calved' }),
+                });
+            }
+            onSuccess();
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div style={{ padding: '16px', minWidth: '320px' }}>
+            <p style={{ marginTop: 0, fontSize: '14px' }}>
+                Select the existing calf to link to <strong>{row?.CowTag}</strong>:
+            </p>
+            <AnimalCombobox
+                options={comboOptions}
+                value={calfTag}
+                onChange={v => setCalfTag(v.toUpperCase())}
+                onSelect={v => { if (v) setCalfTag(v.toUpperCase()); }}
+                placeholder="Search calf tag..."
+                allowCustomValue={true}
+            />
+            {error && <div style={{ color: '#dc3545', fontSize: '13px', marginTop: '8px' }}>{error}</div>}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={onClose} style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'white' }}>
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    onClick={handleConfirm}
+                    disabled={!calfTag.trim() || saving}
+                    style={{
+                        padding: '7px 16px', border: 'none', borderRadius: '3px', cursor: 'pointer',
+                        backgroundColor: calfTag.trim() && !saving ? '#1976d2' : '#aaa',
+                        color: 'white', fontWeight: 'bold',
+                    }}
+                >
+                    {saving ? 'Saving...' : 'Link Calf'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ─── UnexpectedEntryPopup ─────────────────────────────────────────────────────
+
+function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
+    const [checks,       setChecks]       = useState([]);
+    const [selectedTags, setSelectedTags] = useState(new Set());
+    const [loading,      setLoading]      = useState(true);
+    const [saving,       setSaving]       = useState(false);
+    const [error,        setError]        = useState(null);
+
+    useEffect(() => {
+        const url = breedingPlanId
+            ? `/api/pregnancy-checks?planId=${breedingPlanId}`
+            : `/api/pregnancy-checks`;
+        fetch(url, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { records: [] })
+            .then(d => {
+                const nonPregnant = (d.records || []).filter(r => r.TestResults !== 'Pregnant');
+                // Dedupe by CowTag, keep most recent per cow
+                const seen = new Set();
+                const unique = nonPregnant.filter(r => {
+                    if (seen.has(r.CowTag)) return false;
+                    seen.add(r.CowTag);
+                    return true;
+                });
+                setChecks(unique);
+            })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, [breedingPlanId]);
+
+    const toggle = (tag) => {
+        setSelectedTags(prev => {
+            const next = new Set(prev);
+            next.has(tag) ? next.delete(tag) : next.add(tag);
+            return next;
+        });
+    };
+
+    const handleConfirm = async () => {
+        if (selectedTags.size === 0) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const selected = checks.filter(pc => selectedTags.has(pc.CowTag));
+            await Promise.all(selected.map(pc =>
+                fetch('/api/calving-records', {
+                    method:      'POST',
+                    headers:     { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        planID:           breedingPlanId ?? pc.PlanID ?? null,
+                        breedingRecordId: pc.BreedingRecordID ?? null,
+                        damTag:           pc.CowTag,
+                        isTagged:         false,
+                        calfTag:          null,
+                        birthDate:        null,
+                        calfDiedAtBirth:  false,
+                        damDiedAtBirth:   false,
+                        embryoAborted:    false,
+                        notes:            'Unexpected calving entry',
+                    }),
+                })
+            ));
+            // Build synthetic rows so they appear in the table immediately
+            const newRows = selected.map(pc => ({
+                CowTag:            pc.CowTag,
+                PlanID:            breedingPlanId ?? pc.PlanID ?? null,
+                ID:                pc.BreedingRecordID ?? null,
+                PrimaryBulls:      [],
+                Pasture:           null,
+                ExposureStartDate: null,
+                dueDate:           null,
+                CalfTag:           '',
+            }));
+            onSuccess(newRows);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div style={{ padding: '16px', minWidth: '320px' }}>
+            <p style={{ marginTop: 0, fontSize: '14px', color: '#555' }}>
+                Select cows with non-pregnant preg check results to add as unexpected calving entries:
+            </p>
+            {loading ? (
+                <div style={{ color: '#888', fontStyle: 'italic' }}>Loading...</div>
+            ) : checks.length === 0 ? (
+                <div style={{ color: '#888', fontStyle: 'italic' }}>No non-pregnant preg check records found.</div>
+            ) : (
+                <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}>
+                    {checks.map(pc => (
+                        <label
+                            key={pc.CowTag}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '8px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer',
+                                backgroundColor: selectedTags.has(pc.CowTag) ? '#e3f2fd' : 'white',
+                            }}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={selectedTags.has(pc.CowTag)}
+                                onChange={() => toggle(pc.CowTag)}
+                            />
+                            <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{pc.CowTag}</span>
+                            {pc.TestResults && (
+                                <span style={{ fontSize: '12px', color: '#888' }}>{pc.TestResults}</span>
+                            )}
+                        </label>
+                    ))}
+                </div>
+            )}
+            {error && <div style={{ color: '#dc3545', fontSize: '13px', marginTop: '8px' }}>{error}</div>}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+                <button onClick={onClose} style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'white' }}>
+                    Cancel
+                </button>
+                <button
+                    onClick={handleConfirm}
+                    disabled={selectedTags.size === 0 || saving}
+                    style={{
+                        padding: '7px 16px', border: 'none', borderRadius: '3px', cursor: 'pointer',
+                        backgroundColor: selectedTags.size > 0 && !saving ? '#28a745' : '#aaa',
+                        color: 'white', fontWeight: 'bold',
+                    }}
+                >
+                    {saving ? 'Saving...' : `Add ${selectedTags.size} Entr${selectedTags.size === 1 ? 'y' : 'ies'}`}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function CalvingTracker({ breedingPlanId, breedingYear }) {
     const [rows,              setRows]              = useState([]);
     const [loading,           setLoading]           = useState(true);
@@ -109,6 +346,9 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
     const [selectedAnimalTag, setSelectedAnimalTag] = useState(null);
     const [noCalfRow,         setNoCalfRow]         = useState(null);
     const [noCalfSaving,      setNoCalfSaving]      = useState(false);
+    const [showLinkPopup,     setShowLinkPopup]     = useState(false);
+    const [linkRow,           setLinkRow]           = useState(null);
+    const [showUnexpectedPopup, setShowUnexpectedPopup] = useState(false);
     const [, setSearchParams] = useSearchParams();
 
     const fetchRows = useCallback(async () => {
@@ -157,6 +397,16 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
     const handleNoCalfClick = (row) => {
         setNoCalfRow(row);
         setShowNoCalfConfirm(true);
+    };
+
+    const handleLinkCalfClick = (row) => {
+        setLinkRow(row);
+        setShowLinkPopup(true);
+    };
+
+    const handleUnexpectedAdded = (newRows) => {
+        setRows(prev => [...prev, ...newRows]);
+        setShowUnexpectedPopup(false);
     };
 
     const handleNoCalfConfirm = async () => {
@@ -213,11 +463,6 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
             ),
         },
         {
-            key:    'Method',
-            label:  'Method',
-            render: row => row.IsAI ? 'AI' : 'NS',
-        },
-        {
             key:    'Exposure',
             label:  'Exposure',
             render: row => (row.PrimaryBulls || []).map(b => b.tag).join(', ') || '—',
@@ -240,6 +485,20 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                         >
                             {calfTag.trim() ? `View ${calfTag}` : '+ Add Calf'}
                         </button>
+
+                        {!calfTag.trim() && (
+                            <button
+                                onClick={() => handleLinkCalfClick(row)}
+                                style={{
+                                    padding: '5px 10px',
+                                    backgroundColor: '#6c757d',
+                                    color: 'white', border: 'none', borderRadius: '4px',
+                                    cursor: 'pointer', fontSize: '12px', fontWeight: '500',
+                                }}
+                            >
+                                Link Existing
+                            </button>
+                        )}
 
                         {!calfTag.trim() && (
                             <button
@@ -287,7 +546,20 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 error={error}
                 onRetry={fetchRows}
                 showImportButton={true}
-            />
+            >
+                <div style={{ marginTop: '12px', borderTop: '1px solid #e9ecef', paddingTop: '12px' }}>
+                    <button
+                        onClick={() => setShowUnexpectedPopup(true)}
+                        style={{
+                            padding: '6px 14px', fontSize: '13px', cursor: 'pointer',
+                            border: '1px solid #6c757d', borderRadius: '4px',
+                            background: 'white', color: '#495057',
+                        }}
+                    >
+                        + Add Unexpected Entry
+                    </button>
+                </div>
+            </Form>
 
             {breedingPlanId && (
                 <CalvingHistoricalTable planId={breedingPlanId} />
@@ -318,6 +590,33 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 fullscreen={true}
             >
                 <AnimalFolder />
+            </Popup>
+
+            <Popup
+                isOpen={showLinkPopup}
+                onClose={() => { setShowLinkPopup(false); setLinkRow(null); }}
+                title={`Link Existing Calf — ${linkRow?.CowTag}`}
+            >
+                {linkRow && (
+                    <LinkExistingCalfPopup
+                        row={linkRow}
+                        breedingPlanId={breedingPlanId}
+                        onClose={() => { setShowLinkPopup(false); setLinkRow(null); }}
+                        onSuccess={() => { setShowLinkPopup(false); setLinkRow(null); fetchRows(); }}
+                    />
+                )}
+            </Popup>
+
+            <Popup
+                isOpen={showUnexpectedPopup}
+                onClose={() => setShowUnexpectedPopup(false)}
+                title="Add Unexpected Calving Entry"
+            >
+                <UnexpectedEntryPopup
+                    breedingPlanId={breedingPlanId}
+                    onClose={() => setShowUnexpectedPopup(false)}
+                    onSuccess={handleUnexpectedAdded}
+                />
             </Popup>
 
             <PopupConfirm

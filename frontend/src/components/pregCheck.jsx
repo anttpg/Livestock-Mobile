@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
 import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
+import PopupConfirm from './popupConfirm';
 import '../screenSizing.css';
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
@@ -56,11 +57,13 @@ const HIST_COLUMNS = [
     { key: 'notes',          label: 'Notes' },
 ];
 
-function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
-    const [records,  setRecords]  = useState([]);
-    const [breedMap, setBreedMap] = useState({});
-    const [loading,  setLoading]  = useState(true);
-    const [error,    setError]    = useState(null);
+function PregCheckHistoricalTable({ planId, colVisibility = {}, allowDelete = false }) {
+    const [records,      setRecords]      = useState([]);
+    const [breedMap,     setBreedMap]     = useState({});
+    const [loading,      setLoading]      = useState(true);
+    const [error,        setError]        = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting,     setDeleting]     = useState(false);
 
     useEffect(() => {
         if (!planId) return;
@@ -88,6 +91,23 @@ function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
 
     // Apply the same visibility settings as the entry form.
     const visibleCols = HIST_COLUMNS.filter(c => !c.hidable || colVisibility[c.key] !== false);
+
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            await fetch(`/api/pregnancy-checks/${deleteTarget.ID}`, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+            setRecords(prev => prev.filter(r => r.ID !== deleteTarget.ID));
+            setDeleteTarget(null);
+        } catch (e) {
+            console.error('Delete preg check failed:', e);
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     const renderCell = (col, r) => {
         const br = breedMap[r.BreedingRecordID];
@@ -151,6 +171,7 @@ function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
     };
 
     return (
+        <>
         <div className="bubble-container" style={{ marginTop: '16px' }}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '600' }}>
                 Plan Records
@@ -171,6 +192,7 @@ function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
                                 {visibleCols.map(c => (
                                     <th key={c.key} style={TH}>{c.label}</th>
                                 ))}
+                                {allowDelete && <th style={{ ...TH, width: '32px', padding: '4px' }} />}
                             </tr>
                         </thead>
                         <tbody>
@@ -190,6 +212,23 @@ function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
                                 records.map((r, i) => (
                                     <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
                                         {visibleCols.map(col => renderCell(col, r))}
+                                        {allowDelete && (
+                                            <td style={{ ...TD, width: '32px', padding: '4px', textAlign: 'center' }}>
+                                                <button
+                                                    onClick={() => setDeleteTarget(r)}
+                                                    title="Delete record"
+                                                    style={{
+                                                        background: 'none', border: 'none', padding: '2px 4px',
+                                                        cursor: 'pointer', color: '#dc3545',
+                                                        display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                >
+                                                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                                                </button>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -198,6 +237,15 @@ function PregCheckHistoricalTable({ planId, colVisibility = {} }) {
                 </div>
             )}
         </div>
+        <PopupConfirm
+            isOpen={deleteTarget !== null}
+            onClose={() => setDeleteTarget(null)}
+            onConfirm={handleDelete}
+            title="Delete Pregnancy Check"
+            message={`Delete the pregnancy check record for <strong>${deleteTarget?.CowTag}</strong>? This cannot be undone.`}
+            confirmText={deleting ? 'Deleting...' : 'Delete'}
+        />
+        </>
     );
 }
 
@@ -430,8 +478,14 @@ function PregCheck({ breedingPlanId, breedingYear }) {
                 onColVisibilityChange={setSharedVisibility}
             />
 
-            {breedingPlanId && (
-                <PregCheckHistoricalTable planId={breedingPlanId} colVisibility={sharedVisibility} />
+            {breedingPlanId ? (
+                <PregCheckHistoricalTable planId={breedingPlanId} colVisibility={sharedVisibility} allowDelete={true} />
+            ) : (
+                <div className="bubble-container" style={{ marginTop: '16px' }}>
+                    <div className="empty-state-box">
+                        To see existing records, select a breeding plan.
+                    </div>
+                </div>
             )}
         </>
     );
