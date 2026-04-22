@@ -468,6 +468,7 @@ class DatabaseOperations {
         }
     }
 
+
     /**
      * Add a new note
      * @param {Object} params - { cowTag, note, dateOfEntry (optional) }

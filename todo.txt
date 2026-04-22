@@ -1,52 +1,242 @@
 
 FUTURE DBOPERATION OPTIMIZATIONS
 
--All of the breeding operations...
--make getAllFeedTypes use the type getters/setters from before
--make getHerdFeedStatus find herd location its own function.
 
 
-CHANGES MADE TO DB
-(ALREADY PERFORMED ON PROD, JUST HERE TO REMEMBER)
+CHANGES MADE TO DB, TABLES 
+
+todo;
+-Run Notes sql on primary and prod dbs.
+-Update notes db ops & route calls
+-Decide how to handle customers table
 
 
-[BreedingPlan]
+-- LOOKUP TABLES
+
+EquipmentStatus
+  EquipmentStatus nvarchar PK    -- 'Active', 'Inactive', 'Sold' (if sold selected, show 'Sold' panel for input before purchase panel.)
+
+EquipmentTypes
+  EquipmentType nvarchar PK          -- user-defined categories, starts empty (such as 'UTV', 'Tractor', 'Trailer', 'SUV', etc.)
+
+ServiceTypes
+  ServiceType nvarchar PK          -- user-defined categories, starts empty (such as 'Filter Change', 'Oil Change', etc.)
+
+PastureTypes
+  PastureType nvarchar PK -- User defined, starts empty, (Such as 'Grazable', 'Mowing Field', ect...)
+
+MeterUnits 
+  Unit nvarchar PK -- 'Miles' or 'Hours'
+
+VegetationTypes
+  VegetationType nvarchar PK  -- grass, bermuda, fescue, ect... Will ONLY include grass as value on table create / new db instance.
+
+LandUnits
+  LandUnit nvarchar PK 
+
+HayUnitTypes
+  HayUnitType nvarchar PK -- 'Round Bale', 'LBS', 'Ton', etc.
 
 
-[BreedingRecords]
-Add BreedingStatus column
-
-Created 
-[BreedingStatus] table, column
-Status, values Active | Open | Pregnant | Calved | Voided
 
 
-[PregnancyCheck]
-Drop IsPregant column
-Add TestType column, get values from 
-
-[PregnancyTestTypes], column 
-TestType, values Blood | Palpation | Ultrasound
+Locations
+  ID int PK IDENTITY
+  LocationName nvarchar NOT NULL
+  Position nvarchar              -- JSON lat/long
 
 
-[CalvingRecord]
-Added bool col EmbryoAborted
-
-[WeaningRecords]
-Changed WeaningDate to datetime2
-Changed WeaningWeight to int
-Changed EventID to PlanID, FK to BreedingPlan.ID 
-Added CalvingRecordID int NULL, fk to CalvingRecords.ID
-Dropped SSMA_TimeStamp 
 
 
-[AnimalClass]
-Added GestationPeriod column
 
-[Sex]
-Dropped 'Undefined' row
-Updated all 
-Added FK constraint against CowTable Sex
+
+-- Generic custom filler columns, in case we're missing cols
+
+EAVAttributes
+  ID int PK IDENTITY
+  EntityType nvarchar NOT NULL
+  AttributeName nvarchar NOT NULL
+
+EAVAttributeValues
+  ID int PK IDENTITY
+  AttributeID int FK -> EAVAttributes
+  EntityType nvarchar NOT NULL
+  EntityID nvarchar NOT NULL
+  Value nvarchar
+
+Use index to speedup lookup
+CREATE INDEX IX_EAVAttributeValues_EntityType_EntityID
+ON EAVAttributeValues (EntityType, EntityID)
+
+
+-- EQUIPMENT
+
+Equipment
+  ID int PK IDENTITY
+  Name nvarchar NOT NULL
+  Description nvarchar
+  PastureName nvarchar FK -> Pastures
+  LocationID int FK -> Locations
+
+  IsVehicle bit NOT NULL DEFAULT 0
+  EquipmentStatus nvarchar FK -> EquipmentStatus
+  EquipmentType int FK -> EquipmentTypes
+
+  Make nvarchar
+  Model nvarchar
+  Year int
+  VIN/SerialNumber nvarchar	 -- Displays as VIN if vehicle bit true, serial if not
+
+  Registration nvarchar          -- plate / registration number, vehicles only
+  RegistrationExpiry datetime2   -- vehicles only
+  GrossWeightRating nvarchar     -- vehicles only
+
+  WarrantyExpiry datetime2
+  WarrantyNotes nvarchar
+
+  PurchaseRecordID int FK -> PurchaseRecords
+  SaleRecordID int FK -> SaleRecords
+  Notes nvarchar
+
+
+EquipmentMaintenance
+  ID int PK IDENTITY
+  EquipmentID int FK -> Equipment
+  DateRecorded datetime2 NOT NULL
+  RecordedByUsername nvarchar FK -> Users.Username
+
+  DatePerformed datetime2 NOT NULL
+  PerformedByUsername int FK -> Users.Username
+
+  Title nvarchar
+  Description nvarchar
+  ServiceType nvarchar FK -> ServiceTypes -- 'Oil Change', 'Major Rebuild' (like a carb rebuild), 'Filter Change'
+
+  MeterReadingAtService decimal  -- odometer or hours at time of service
+  MeterUnit nvarchar FK -> MeterUnits     -- 'Miles' or 'Hours'
+  NextServiceDue decimal         -- threshold value entered by user
+  NextServiceUnits nvarchar FK -> MeterUnits
+
+
+EquipmentParts  -- Stores relevant parts for a piece of equipment, for easy future lookup
+  ID int PK IDENTITY
+  EquipmentID int FK -> Equipment
+  PartType nvarchar 		   -- 'Oil Filter', 'Air Filter', 'Fuel Filter', etc.
+  PartNumber nvarchar NOT NULL
+  Manufacturer nvarchar
+  Notes nvarchar
+  Visible bit NOT NULL DEFAULT 1
+
+
+-- Pastures
+add these columns
+  PastureType nvarchar FK -> PastureTypes
+  VegetationType nvarchar FK -> VegetationTypes
+  Area decimal
+  AreaUnits FK -> LandUnits
+  Notes nvarchar
+
+
+PastureSprayApplications         -- legally required pesticide records
+  ID int PK IDENTITY
+  PastureName nvarchar FK -> Pastures
+
+  DateRecorded datetime2 NOT NULL
+  RecordedByUsername nvarchar FK -> Users.Username
+
+  DateApplied datetime2 NOT NULL
+  AppliedByUsername int FK -> Users
+
+  ChemicalName nvarchar NOT NULL FK -> PastureChemicals TODO determine if seperate table...
+  Rate decimal
+  RateUnit nvarchar              -- 'oz/acre', 'pt/acre', 'lb/acre', etc.
+  AcresSprayed decimal
+  WindSpeed decimal
+  WindDirection nvarchar
+  Temperature decimal
+  TemperatureUnit nvarchar NOT NULL DEFAULT 'F'
+
+  Notes nvarchar
+
+
+PastureActivity (New version of PastureMaintenceRecords, Jeremy noted that they do more than just maintence, could be any generic activity...)
+  ID int PK IDENTITY
+  PastureName nvarchar FK -> Pastures
+
+  DateRecorded datetime2 NOT NULL
+  RecordedByUsername nvarchar FK -> Users.Username
+
+  DatePerformed datetime2 NOT NULL
+  PerformedByUsername int FK -> Users
+
+  Title nvarchar
+  Description nvarchar
+  ActivityType nvarchar FK -> PastureActivityType
+
+
+
+PastureHayProduction
+  ID int PK IDENTITY
+  PastureName nvarchar FK -> Pastures
+
+  DateMowed datetime2
+  DateBaled  datetime2
+
+  AcresCut decimal
+
+  VegetationType nvarchar FK -> VegetationTypes.VegetationType
+
+  UnitsProduced decimal
+  HayUnitType int FK -> HayUnitTypes.HayUnitType
+
+  WeightProduced decimal
+  Notes nvarchar
+
+
+
+-- Want to make tasks more modular... currently only PastureMaintenceRecords references tasks. Flip the design, instead have TaskReferences store the link to the table.
+
+TaskReferences                   -- links any task to any entity, 
+  ID int PK IDENTITY
+  TaskID int FK -> Tasks
+  EntityType nvarchar            -- 'Equipment', 'Pasture', 'CowTable', ect...
+  EntityID nvarchar              -- int or nvarchar PK depending on EntityType
+
+
+
+
+
+
+
+
+CHANGES TO NOTES;
+Remove [CowTag]
+Drop [SSMA timestamp]
+Add EntityType/ID as lookup
+
+
+ALTER TABLE [dbo].[Notes]
+DROP COLUMN SSMA_TimeStamp;
+
+-- Add new columns
+ALTER TABLE [dbo].[Notes]
+ADD EntityType nvarchar(100) NULL,
+    EntityID nvarchar(100) NULL;
+
+-- Migrate existing CowTag data
+UPDATE [dbo].[Notes]
+SET EntityType = 'CowTable',
+    EntityID = CowTag
+WHERE CowTag IS NOT NULL;
+
+-- Add composite index
+CREATE INDEX IX_Notes_EntityType_EntityID
+ON [dbo].[Notes] (EntityType, EntityID);
+
+-- Drop old column
+ALTER TABLE [dbo].[Notes]
+DROP COLUMN CowTag;
+
 
 
 
