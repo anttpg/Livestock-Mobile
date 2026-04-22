@@ -25,6 +25,9 @@ ServiceTypes
 PastureTypes
   PastureType nvarchar PK -- User defined, starts empty, (Such as 'Grazable', 'Mowing Field', ect...)
 
+PastureActivityTypes
+  PastureActivityType nvarchar PK -- User defined, starts empty
+
 MeterUnits 
   Unit nvarchar PK -- 'Miles' or 'Hours'
 
@@ -80,7 +83,7 @@ Equipment
 
   IsVehicle bit NOT NULL DEFAULT 0
   EquipmentStatus nvarchar FK -> EquipmentStatus
-  EquipmentType int FK -> EquipmentTypes
+  EquipmentType nvarchar FK -> EquipmentTypes
 
   Make nvarchar
   Model nvarchar
@@ -171,7 +174,7 @@ PastureActivity (New version of PastureMaintenceRecords, Jeremy noted that they 
 
   Title nvarchar
   Description nvarchar
-  ActivityType nvarchar FK -> PastureActivityType
+  ActivityType nvarchar FK -> PastureActivityTypes
 
 
 
@@ -236,6 +239,607 @@ ON [dbo].[Notes] (EntityType, EntityID);
 -- Drop old column
 ALTER TABLE [dbo].[Notes]
 DROP COLUMN CowTag;
+
+
+
+=== SQL UPDATE CMD === 
+
+-- ============================================================
+-- DATABASE UPDATE SCRIPT
+-- Applies new schema: Equipment, Pasture expansion, Notes
+-- migration, EAV, TaskReferences, and related lookups.
+-- Run in order. Do not reorder sections.
+-- ============================================================
+
+
+-- ============================================================
+-- SECTION 1: DROP OBSOLETE TABLES
+-- PastureMaintenanceRecords must go before its lookup tables.
+-- ============================================================
+
+IF OBJECT_ID('dbo.PastureMaintenanceRecords', 'U') IS NOT NULL
+    DROP TABLE [dbo].[PastureMaintenanceRecords];
+
+IF OBJECT_ID('dbo.PastureMaintenanceTargets', 'U') IS NOT NULL
+    DROP TABLE [dbo].[PastureMaintenanceTargets];
+
+IF OBJECT_ID('dbo.PastureMaintenanceTypes', 'U') IS NOT NULL
+    DROP TABLE [dbo].[PastureMaintenanceTypes];
+
+IF OBJECT_ID('dbo.PastureHerbicideApplication', 'U') IS NOT NULL
+    DROP TABLE [dbo].[PastureHerbicideApplication];
+
+
+-- ============================================================
+-- SECTION 2: NEW LOOKUP TABLES
+-- All lookups must exist before entity tables reference them.
+-- ============================================================
+
+IF OBJECT_ID('dbo.EquipmentStatus', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EquipmentStatus] (
+        [EquipmentStatus] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_EquipmentStatus PRIMARY KEY ([EquipmentStatus])
+    );
+    INSERT INTO [dbo].[EquipmentStatus] ([EquipmentStatus])
+    VALUES ('Active'), ('Inactive'), ('Sold');
+END;
+
+IF OBJECT_ID('dbo.EquipmentTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EquipmentTypes] (
+        [EquipmentType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_EquipmentTypes PRIMARY KEY ([EquipmentType])
+    );
+    -- Starts empty; user-defined
+END;
+
+IF OBJECT_ID('dbo.ServiceTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[ServiceTypes] (
+        [ServiceType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_ServiceTypes PRIMARY KEY ([ServiceType])
+    );
+    -- Starts empty; user-defined
+END;
+
+IF OBJECT_ID('dbo.PastureTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PastureTypes] (
+        [PastureType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_PastureTypes PRIMARY KEY ([PastureType])
+    );
+    -- Starts empty; user-defined
+END;
+
+IF OBJECT_ID('dbo.PastureActivityTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PastureActivityTypes] (
+        [PastureActivityType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_PastureActivityTypes PRIMARY KEY ([PastureActivityType])
+    );
+    -- Starts empty; user-defined
+END;
+
+IF OBJECT_ID('dbo.MeterUnits', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[MeterUnits] (
+        [Unit] nvarchar(50) NOT NULL,
+        CONSTRAINT PK_MeterUnits PRIMARY KEY ([Unit])
+    );
+    INSERT INTO [dbo].[MeterUnits] ([Unit])
+    VALUES ('Miles'), ('Hours');
+END;
+
+IF OBJECT_ID('dbo.VegetationTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[VegetationTypes] (
+        [VegetationType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_VegetationTypes PRIMARY KEY ([VegetationType])
+    );
+    INSERT INTO [dbo].[VegetationTypes] ([VegetationType])
+    VALUES ('Grass');
+END;
+
+IF OBJECT_ID('dbo.LandUnits', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[LandUnits] (
+        [LandUnit] nvarchar(50) NOT NULL,
+        CONSTRAINT PK_LandUnits PRIMARY KEY ([LandUnit])
+    );
+    -- Starts empty; user-defined
+END;
+
+IF OBJECT_ID('dbo.HayUnitTypes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[HayUnitTypes] (
+        [HayUnitType] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_HayUnitTypes PRIMARY KEY ([HayUnitType])
+    );
+    INSERT INTO [dbo].[HayUnitTypes] ([HayUnitType])
+    VALUES ('Round Bale'), ('LBS'), ('Ton');
+END;
+
+
+-- ============================================================
+-- SECTION 3: ALTER EXISTING TABLES
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- Pastures
+-- Drop SSMA_TimeStamp, add new columns, add FK constraints.
+-- ------------------------------------------------------------
+
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'SSMA_TimeStamp'
+)
+    ALTER TABLE [dbo].[Pastures] DROP COLUMN [SSMA_TimeStamp];
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'PastureType'
+)
+    ALTER TABLE [dbo].[Pastures] ADD [PastureType] nvarchar(100) NULL;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'VegetationType'
+)
+    ALTER TABLE [dbo].[Pastures] ADD [VegetationType] nvarchar(100) NULL;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'Area'
+)
+    ALTER TABLE [dbo].[Pastures] ADD [Area] decimal(18, 4) NULL;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'AreaUnits'
+)
+    ALTER TABLE [dbo].[Pastures] ADD [AreaUnits] nvarchar(50) NULL;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Pastures')
+      AND name = 'Notes'
+)
+    ALTER TABLE [dbo].[Pastures] ADD [Notes] nvarchar(MAX) NULL;
+
+IF OBJECT_ID('FK_Pastures_PastureTypes', 'F') IS NULL
+    ALTER TABLE [dbo].[Pastures]
+    ADD CONSTRAINT FK_Pastures_PastureTypes
+        FOREIGN KEY ([PastureType]) REFERENCES [dbo].[PastureTypes]([PastureType]);
+
+IF OBJECT_ID('FK_Pastures_VegetationTypes', 'F') IS NULL
+    ALTER TABLE [dbo].[Pastures]
+    ADD CONSTRAINT FK_Pastures_VegetationTypes
+        FOREIGN KEY ([VegetationType]) REFERENCES [dbo].[VegetationTypes]([VegetationType]);
+
+IF OBJECT_ID('FK_Pastures_LandUnits', 'F') IS NULL
+    ALTER TABLE [dbo].[Pastures]
+    ADD CONSTRAINT FK_Pastures_LandUnits
+        FOREIGN KEY ([AreaUnits]) REFERENCES [dbo].[LandUnits]([LandUnit]);
+
+
+-- ------------------------------------------------------------
+-- Notes
+-- Drop CowTag FK, drop SSMA_TimeStamp, add EntityType/EntityID,
+-- migrate existing CowTag rows, add composite index, drop CowTag.
+--
+-- IMPORTANT: Any statement referencing a column that may not
+-- exist at parse time must run inside EXEC so SQL Server
+-- compiles it at runtime rather than up front.
+-- ------------------------------------------------------------
+
+-- Drop the FK constraint on Notes.CowTag (name is system-generated)
+DECLARE @notesFKName nvarchar(256);
+SELECT @notesFKName = fk.name
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+JOIN sys.columns c ON fkc.parent_object_id = c.object_id
+                   AND fkc.parent_column_id = c.column_id
+WHERE fk.parent_object_id = OBJECT_ID('dbo.Notes')
+  AND c.name = 'CowTag';
+
+IF @notesFKName IS NOT NULL
+    EXEC('ALTER TABLE [dbo].[Notes] DROP CONSTRAINT [' + @notesFKName + ']');
+
+-- Drop SSMA_TimeStamp
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'SSMA_TimeStamp'
+)
+    ALTER TABLE [dbo].[Notes] DROP COLUMN [SSMA_TimeStamp];
+
+-- Add EntityType / EntityID before migrating data
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'EntityType'
+)
+    ALTER TABLE [dbo].[Notes] ADD [EntityType] nvarchar(100) NULL;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'EntityID'
+)
+    ALTER TABLE [dbo].[Notes] ADD [EntityID] nvarchar(100) NULL;
+
+-- Migrate existing CowTag data.
+-- Wrapped in EXEC so SQL Server compiles it at runtime, after the
+-- ADD columns above are committed, and skips cleanly on re-runs
+-- once CowTag no longer exists.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'CowTag'
+)
+    EXEC('
+        UPDATE [dbo].[Notes]
+        SET [EntityType] = ''CowTable'',
+            [EntityID]   = [CowTag]
+        WHERE [CowTag] IS NOT NULL
+    ');
+
+-- Add composite index
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'IX_Notes_EntityType_EntityID'
+)
+    CREATE INDEX IX_Notes_EntityType_EntityID
+    ON [dbo].[Notes] ([EntityType], [EntityID]);
+
+-- Drop any index on CowTag before dropping the column.
+-- Name is system-generated so look it up dynamically.
+DECLARE @cowTagIndexName nvarchar(256);
+SELECT @cowTagIndexName = i.name
+FROM sys.indexes i
+JOIN sys.index_columns ic ON i.object_id = ic.object_id
+                          AND i.index_id  = ic.index_id
+JOIN sys.columns c        ON ic.object_id = c.object_id
+                          AND ic.column_id = c.column_id
+WHERE i.object_id      = OBJECT_ID('dbo.Notes')
+  AND c.name           = 'CowTag'
+  AND i.is_primary_key = 0;
+
+IF @cowTagIndexName IS NOT NULL
+    EXEC('DROP INDEX [' + @cowTagIndexName + '] ON [dbo].[Notes]');
+
+-- Drop CowTag now that data is migrated and its index is gone
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Notes')
+      AND name = 'CowTag'
+)
+    ALTER TABLE [dbo].[Notes] DROP COLUMN [CowTag];
+
+
+-- ============================================================
+-- SECTION 4: NEW ENTITY TABLES
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- Locations
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.Locations', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Locations] (
+        [ID]           int           NOT NULL IDENTITY(1,1),
+        [LocationName] nvarchar(200) NOT NULL,
+        [Position]     nvarchar(MAX) NULL,    -- JSON { lat, lng }
+        CONSTRAINT PK_Locations PRIMARY KEY ([ID])
+    );
+END;
+
+
+-- ------------------------------------------------------------
+-- EAV (generic custom attribute columns)
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.EAVAttributes', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EAVAttributes] (
+        [ID]            int           NOT NULL IDENTITY(1,1),
+        [EntityType]    nvarchar(100) NOT NULL,
+        [AttributeName] nvarchar(100) NOT NULL,
+        CONSTRAINT PK_EAVAttributes PRIMARY KEY ([ID])
+    );
+END;
+
+IF OBJECT_ID('dbo.EAVAttributeValues', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EAVAttributeValues] (
+        [ID]          int           NOT NULL IDENTITY(1,1),
+        [AttributeID] int           NOT NULL,
+        [EntityType]  nvarchar(100) NOT NULL,
+        [EntityID]    nvarchar(100) NOT NULL,
+        [Value]       nvarchar(MAX) NULL,
+        CONSTRAINT PK_EAVAttributeValues PRIMARY KEY ([ID]),
+        CONSTRAINT FK_EAVAttributeValues_EAVAttributes
+            FOREIGN KEY ([AttributeID]) REFERENCES [dbo].[EAVAttributes]([ID])
+    );
+
+    CREATE INDEX IX_EAVAttributeValues_EntityType_EntityID
+    ON [dbo].[EAVAttributeValues] ([EntityType], [EntityID]);
+END;
+
+
+-- ------------------------------------------------------------
+-- Resolve Pastures.PastureName column length once.
+-- All tables that FK to it must use the exact same length.
+-- max_length in sys.columns is stored in bytes; nvarchar uses
+-- 2 bytes per character, so divide by 2.
+-- -1 means nvarchar(MAX).
+-- ------------------------------------------------------------
+
+DECLARE @pnRawLen smallint;
+DECLARE @pnLenStr nvarchar(20);
+
+SELECT @pnRawLen = max_length
+FROM sys.columns
+WHERE object_id = OBJECT_ID('dbo.Pastures')
+  AND name = 'PastureName';
+
+SET @pnLenStr = CASE
+    WHEN @pnRawLen = -1 THEN 'MAX'
+    ELSE CAST(@pnRawLen / 2 AS nvarchar(20))
+END;
+
+
+-- ------------------------------------------------------------
+-- Equipment
+-- PastureName added post-creation via dynamic SQL so its
+-- declared length matches Pastures.PastureName exactly.
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.Equipment', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Equipment] (
+        [ID]                 int           NOT NULL IDENTITY(1,1),
+        [Name]               nvarchar(200) NOT NULL,
+        [Description]        nvarchar(MAX) NULL,
+        -- PastureName added below via dynamic SQL
+        [LocationID]         int           NULL,
+        [IsVehicle]          bit           NOT NULL DEFAULT 0,
+        [EquipmentStatus]    nvarchar(100) NULL,
+        [EquipmentType]      nvarchar(100) NULL,
+        [Make]               nvarchar(100) NULL,
+        [Model]              nvarchar(100) NULL,
+        [Year]               int           NULL,
+        [VINSerialNumber]    nvarchar(100) NULL,   -- Displayed as VIN when IsVehicle = 1, Serial Number otherwise
+        [Registration]       nvarchar(100) NULL,   -- Vehicles only
+        [RegistrationExpiry] datetime2     NULL,   -- Vehicles only
+        [GrossWeightRating]  nvarchar(100) NULL,   -- Vehicles only
+        [WarrantyExpiry]     datetime2     NULL,
+        [WarrantyNotes]      nvarchar(MAX) NULL,
+        [PurchaseRecordID]   int           NULL,
+        [SaleRecordID]       int           NULL,
+        [Notes]              nvarchar(MAX) NULL,
+        CONSTRAINT PK_Equipment PRIMARY KEY ([ID]),
+        CONSTRAINT FK_Equipment_Locations
+            FOREIGN KEY ([LocationID])       REFERENCES [dbo].[Locations]([ID]),
+        CONSTRAINT FK_Equipment_EquipmentStatus
+            FOREIGN KEY ([EquipmentStatus])  REFERENCES [dbo].[EquipmentStatus]([EquipmentStatus]),
+        CONSTRAINT FK_Equipment_EquipmentTypes
+            FOREIGN KEY ([EquipmentType])    REFERENCES [dbo].[EquipmentTypes]([EquipmentType]),
+        CONSTRAINT FK_Equipment_PurchaseRecords
+            FOREIGN KEY ([PurchaseRecordID]) REFERENCES [dbo].[PurchaseRecords]([ID]),
+        CONSTRAINT FK_Equipment_SaleRecords
+            FOREIGN KEY ([SaleRecordID])     REFERENCES [dbo].[SaleRecords]([ID])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Equipment') AND name = 'PastureName'
+)
+BEGIN
+    EXEC('ALTER TABLE [dbo].[Equipment] ADD [PastureName] nvarchar(' + @pnLenStr + ') NULL');
+    EXEC('ALTER TABLE [dbo].[Equipment] ADD CONSTRAINT FK_Equipment_Pastures
+              FOREIGN KEY ([PastureName]) REFERENCES [dbo].[Pastures]([PastureName])');
+END;
+
+
+-- ------------------------------------------------------------
+-- EquipmentMaintenance
+-- RecordedByUsername / PerformedByUsername stored as plain
+-- nvarchar (no FK) — consistent with the rest of the schema.
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.EquipmentMaintenance', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EquipmentMaintenance] (
+        [ID]                    int            NOT NULL IDENTITY(1,1),
+        [EquipmentID]           int            NOT NULL,
+        [DateRecorded]          datetime2      NOT NULL,
+        [RecordedByUsername]    nvarchar(100)  NULL,
+        [DatePerformed]         datetime2      NOT NULL,
+        [PerformedByUsername]   nvarchar(100)  NULL,
+        [Title]                 nvarchar(200)  NULL,
+        [Description]           nvarchar(MAX)  NULL,
+        [ServiceType]           nvarchar(100)  NULL,
+        [MeterReadingAtService] decimal(18, 2) NULL,
+        [MeterUnit]             nvarchar(50)   NULL,
+        [NextServiceDue]        decimal(18, 2) NULL,
+        [NextServiceUnits]      nvarchar(50)   NULL,
+        CONSTRAINT PK_EquipmentMaintenance PRIMARY KEY ([ID]),
+        CONSTRAINT FK_EquipmentMaintenance_Equipment
+            FOREIGN KEY ([EquipmentID])      REFERENCES [dbo].[Equipment]([ID]),
+        CONSTRAINT FK_EquipmentMaintenance_ServiceTypes
+            FOREIGN KEY ([ServiceType])      REFERENCES [dbo].[ServiceTypes]([ServiceType]),
+        CONSTRAINT FK_EquipmentMaintenance_MeterUnit
+            FOREIGN KEY ([MeterUnit])        REFERENCES [dbo].[MeterUnits]([Unit]),
+        CONSTRAINT FK_EquipmentMaintenance_NextServiceUnits
+            FOREIGN KEY ([NextServiceUnits]) REFERENCES [dbo].[MeterUnits]([Unit])
+    );
+END;
+
+
+-- ------------------------------------------------------------
+-- EquipmentParts
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.EquipmentParts', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[EquipmentParts] (
+        [ID]           int           NOT NULL IDENTITY(1,1),
+        [EquipmentID]  int           NOT NULL,
+        [PartType]     nvarchar(100) NULL,
+        [PartNumber]   nvarchar(100) NOT NULL,
+        [Manufacturer] nvarchar(100) NULL,
+        [Notes]        nvarchar(MAX) NULL,
+        [Visible]      bit           NOT NULL DEFAULT 1,
+        CONSTRAINT PK_EquipmentParts PRIMARY KEY ([ID]),
+        CONSTRAINT FK_EquipmentParts_Equipment
+            FOREIGN KEY ([EquipmentID]) REFERENCES [dbo].[Equipment]([ID])
+    );
+END;
+
+
+-- ------------------------------------------------------------
+-- PastureSprayApplications
+-- Replaces the unfinished PastureHerbicideApplication table.
+-- Legal pesticide application record.
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.PastureSprayApplications', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PastureSprayApplications] (
+        [ID]                 int            NOT NULL IDENTITY(1,1),
+        -- PastureName added below via dynamic SQL
+        [DateRecorded]       datetime2      NOT NULL,
+        [RecordedByUsername] nvarchar(100)  NULL,
+        [DateApplied]        datetime2      NOT NULL,
+        [AppliedByUsername]  nvarchar(100)  NULL,
+        [ChemicalName]       nvarchar(200)  NOT NULL,
+        [Rate]               decimal(18, 4) NULL,
+        [RateUnit]           nvarchar(50)   NULL,    -- 'oz/acre', 'pt/acre', 'lb/acre', etc.
+        [AcresSprayed]       decimal(18, 4) NULL,
+        [WindSpeed]          decimal(18, 2) NULL,
+        [WindDirection]      nvarchar(50)   NULL,
+        [Temperature]        decimal(18, 2) NULL,
+        [TemperatureUnit]    nvarchar(10)   NOT NULL DEFAULT 'F',
+        [Notes]              nvarchar(MAX)  NULL,
+        CONSTRAINT PK_PastureSprayApplications PRIMARY KEY ([ID])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.PastureSprayApplications') AND name = 'PastureName'
+)
+BEGIN
+    EXEC('ALTER TABLE [dbo].[PastureSprayApplications] ADD [PastureName] nvarchar(' + @pnLenStr + ') NULL');
+    EXEC('ALTER TABLE [dbo].[PastureSprayApplications] ADD CONSTRAINT FK_PastureSprayApplications_Pastures
+              FOREIGN KEY ([PastureName]) REFERENCES [dbo].[Pastures]([PastureName])');
+END;
+
+
+-- ------------------------------------------------------------
+-- PastureActivity
+-- Replaces PastureMaintenanceRecords.
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.PastureActivity', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PastureActivity] (
+        [ID]                  int           NOT NULL IDENTITY(1,1),
+        -- PastureName added below via dynamic SQL
+        [DateRecorded]        datetime2     NOT NULL,
+        [RecordedByUsername]  nvarchar(100) NULL,
+        [DatePerformed]       datetime2     NOT NULL,
+        [PerformedByUsername] nvarchar(100) NULL,
+        [Title]               nvarchar(200) NULL,
+        [Description]         nvarchar(MAX) NULL,
+        [ActivityType]        nvarchar(100) NULL,
+        CONSTRAINT PK_PastureActivity PRIMARY KEY ([ID]),
+        CONSTRAINT FK_PastureActivity_PastureActivityTypes
+            FOREIGN KEY ([ActivityType]) REFERENCES [dbo].[PastureActivityTypes]([PastureActivityType])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.PastureActivity') AND name = 'PastureName'
+)
+BEGIN
+    EXEC('ALTER TABLE [dbo].[PastureActivity] ADD [PastureName] nvarchar(' + @pnLenStr + ') NULL');
+    EXEC('ALTER TABLE [dbo].[PastureActivity] ADD CONSTRAINT FK_PastureActivity_Pastures
+              FOREIGN KEY ([PastureName]) REFERENCES [dbo].[Pastures]([PastureName])');
+END;
+
+
+-- ------------------------------------------------------------
+-- PastureHayProduction
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.PastureHayProduction', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PastureHayProduction] (
+        [ID]             int            NOT NULL IDENTITY(1,1),
+        -- PastureName added below via dynamic SQL
+        [DateMowed]      datetime2      NULL,
+        [DateBaled]      datetime2      NULL,
+        [AcresCut]       decimal(18, 4) NULL,
+        [VegetationType] nvarchar(100)  NULL,
+        [UnitsProduced]  decimal(18, 4) NULL,
+        [HayUnitType]    nvarchar(100)  NULL,
+        [WeightProduced] decimal(18, 4) NULL,
+        [Notes]          nvarchar(MAX)  NULL,
+        CONSTRAINT PK_PastureHayProduction PRIMARY KEY ([ID]),
+        CONSTRAINT FK_PastureHayProduction_VegetationTypes
+            FOREIGN KEY ([VegetationType]) REFERENCES [dbo].[VegetationTypes]([VegetationType]),
+        CONSTRAINT FK_PastureHayProduction_HayUnitTypes
+            FOREIGN KEY ([HayUnitType])    REFERENCES [dbo].[HayUnitTypes]([HayUnitType])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.PastureHayProduction') AND name = 'PastureName'
+)
+BEGIN
+    EXEC('ALTER TABLE [dbo].[PastureHayProduction] ADD [PastureName] nvarchar(' + @pnLenStr + ') NULL');
+    EXEC('ALTER TABLE [dbo].[PastureHayProduction] ADD CONSTRAINT FK_PastureHayProduction_Pastures
+              FOREIGN KEY ([PastureName]) REFERENCES [dbo].[Pastures]([PastureName])');
+END;
+
+
+-- ------------------------------------------------------------
+-- TaskReferences
+-- Links any task to any entity by type + ID string.
+-- ------------------------------------------------------------
+
+IF OBJECT_ID('dbo.TaskReferences', 'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[TaskReferences] (
+        [ID]         int           NOT NULL IDENTITY(1,1),
+        [TaskID]     int           NOT NULL,
+        [EntityType] nvarchar(100) NULL,    -- 'Equipment', 'Pasture', 'CowTable', etc.
+        [EntityID]   nvarchar(100) NULL,    -- int or nvarchar PK depending on EntityType
+        CONSTRAINT PK_TaskReferences PRIMARY KEY ([ID]),
+        CONSTRAINT FK_TaskReferences_Tasks
+            FOREIGN KEY ([TaskID]) REFERENCES [dbo].[Tasks]([ID])
+    );
+END;
+
+
+=== END OF SQL UPDATE CMD === 
+
+
+
+
 
 
 
