@@ -3564,18 +3564,81 @@ class DatabaseOperations {
         }
     }
 
+
+
     /**
-     * Refreshes BreedingStatus on BreedingRecords by inspecting linked
-     * CalvingRecords and PregancyCheck records. Voided records are never modified.
+     * Refresh BreedingStatus for a single BreedingRecord based on its current
+     * linked evidence (CalvingRecords and PregancyCheck). Voided records are
+     * never modified.
      *
-     * Derivation priority:
+     * Order Checked:
      *   1. A CalvingRecord exists for the record         -> Calved
      *   2. Most recent PregancyCheck result = 'Pregnant' -> Pregnant
      *   3. Most recent PregancyCheck result = 'Open'     -> Open
      *   4. No linked evidence                            -> Active
      *
-     * Intended as a one-off correction tool, not a routine operation.
-     *
+     * @param {{ breedingRecordId: number }}
+     * @returns {Promise<{ success: boolean, updated: boolean, from: string|null, to: string|null }>}
+     */
+    async refreshBreedingStatus({ breedingRecordId }) {
+        await this.ensureConnection();
+        if (!breedingRecordId) throw new Error('breedingRecordId is required for refreshBreedingStatus');
+ 
+        const result = await this.pool.request()
+            .input('id', sql.Int, breedingRecordId)
+            .query(`
+                WITH LatestPregCheck AS (
+                    SELECT
+                        pc.BreedingRecordID,
+                        pc.TestResults,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY pc.BreedingRecordID
+                            ORDER BY pc.PregCheckDate DESC
+                        ) AS rn
+                    FROM PregancyCheck pc
+                    WHERE pc.BreedingRecordID = @id
+                )
+                SELECT
+                    br.BreedingStatus AS CurrentStatus,
+                    CASE
+                        WHEN cr.BreedingRecordID IS NOT NULL THEN 'Calved'
+                        WHEN lpc.TestResults = 'Pregnant'    THEN 'Pregnant'
+                        WHEN lpc.TestResults = 'Open'        THEN 'Open'
+                        ELSE 'Active'
+                    END AS DerivedStatus
+                FROM BreedingRecords br
+                LEFT JOIN CalvingRecords cr
+                    ON cr.BreedingRecordID = br.ID
+                LEFT JOIN LatestPregCheck lpc
+                    ON lpc.BreedingRecordID = br.ID AND lpc.rn = 1
+                WHERE br.ID = @id
+                  AND (br.BreedingStatus != 'Voided' OR br.BreedingStatus IS NULL)
+            `);
+ 
+        // No row means the record is Voided or doesn't exist — leave it alone.
+        if (result.recordset.length === 0) {
+            return { success: true, updated: false, from: null, to: null };
+        }
+ 
+        const { CurrentStatus, DerivedStatus } = result.recordset[0];
+ 
+        if (CurrentStatus === DerivedStatus) {
+            return { success: true, updated: false, from: CurrentStatus ?? null, to: DerivedStatus };
+        }
+ 
+        await this.pool.request()
+            .input('id',     sql.Int,     breedingRecordId)
+            .input('status', sql.NVarChar, DerivedStatus)
+            .query(`UPDATE BreedingRecords SET BreedingStatus = @status WHERE ID = @id`);
+ 
+        return { success: true, updated: true, from: CurrentStatus ?? null, to: DerivedStatus };
+    }
+
+
+
+    /**
+     * Refreshes BreedingStatus on BreedingRecords by inspecting linked
+     * CalvingRecords and PregancyCheck records. Voided records are never modified.
      * @param {Object}  [options]
      * @param {number}  [options.planId] - Scope the refresh to a single plan. Omit to run across all plans.
      * @param {boolean} [options.dryRun=false] - When true, returns what would change without writing.
@@ -4133,24 +4196,32 @@ class DatabaseOperations {
      */
     async deletePregancyCheck({ recordId }) {
         await this.ensureConnection();
-
         if (!recordId) throw new Error('recordId is required for deletePregancyCheck');
-
+ 
         try {
+            const lookup = await this.pool.request()
+                .input('id', sql.Int, recordId)
+                .query(`SELECT BreedingRecordID FROM PregancyCheck WHERE ID = @id`);
+ 
+            const breedingRecordId = lookup.recordset[0]?.BreedingRecordID ?? null;
+ 
             const result = await this.pool.request()
                 .input('id', sql.Int, recordId)
                 .query(`DELETE FROM PregancyCheck WHERE ID = @id`);
-
+ 
             if (result.rowsAffected[0] === 0) throw new Error(`No pregnancy check found with ID ${recordId}`);
-
+ 
+            if (breedingRecordId) {
+                await this.refreshBreedingStatus({ breedingRecordId });
+            }
+ 
             return { success: true, deleted: result.rowsAffected[0] };
-
+ 
         } catch (error) {
             console.error('Error deleting pregnancy check:', error);
             throw error;
         }
     }
-
 
 
 
@@ -4531,16 +4602,26 @@ class DatabaseOperations {
     async deleteCalvingRecord({ id }) {
         await this.ensureConnection();
         if (!id) throw new Error('id is required for deleteCalvingRecord');
-
+ 
         try {
+            const lookup = await this.pool.request()
+                .input('id', sql.Int, id)
+                .query(`SELECT BreedingRecordID FROM CalvingRecords WHERE ID = @id`);
+ 
+            const breedingRecordId = lookup.recordset[0]?.BreedingRecordID ?? null;
+ 
             const result = await this.pool.request()
                 .input('id', sql.Int, id)
                 .query(`DELETE FROM CalvingRecords WHERE ID = @id`);
-
+ 
             if (result.rowsAffected[0] === 0) throw new Error(`No calving record found with ID ${id}`);
-
+ 
+            if (breedingRecordId) {
+                await this.refreshBreedingStatus({ breedingRecordId });
+            }
+ 
             return { success: true, deleted: result.rowsAffected[0] };
-
+ 
         } catch (error) {
             console.error('Error deleting calving record:', error);
             throw error;
@@ -9451,6 +9532,7 @@ module.exports = {
     createBreedingRecord: (params) => dbOps.createBreedingRecord(params),
     updateBreedingRecord: (params) => dbOps.updateBreedingRecord(params),
     deleteBreedingRecord: (params) => dbOps.deleteBreedingRecord(params),
+    refreshBreedingStatus: (params) => dbOps.refreshBreedingStatus(params),
     refreshBreedingStatuses: (params) => dbOps.refreshBreedingStatuses(params),
 
     

@@ -26,6 +26,10 @@ function outcomeLabel(r) {
     return                        { text: 'Calf Recorded', bg: '#e8f5e9', color: '#2e7d32' };
 }
 
+// ─── CalvingHistoricalTable ───────────────────────────────────────────────────
+// Uses Form with onDelete so all delete state, confirm popup, and delete-mode
+// toggle are handled by the shared Form infrastructure.
+
 function CalvingHistoricalTable({ planId }) {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -42,59 +46,67 @@ function CalvingHistoricalTable({ planId }) {
             .finally(() => setLoading(false));
     }, [planId]);
 
-    if (loading) return <div style={{ padding: '12px 0', color: '#888', fontSize: '13px' }}>Loading records...</div>;
-    if (error)   return <div style={{ padding: '12px 0', color: '#dc3545', fontSize: '13px' }}>Failed to load records: {error}</div>;
+    const handleDelete = async (row) => {
+        await fetch(`/api/calving-records/${row.ID}`, {
+            method:      'DELETE',
+            credentials: 'include',
+        });
+        setRecords(prev => prev.filter(r => r.ID !== row.ID));
+    };
+
+    const columns = [
+        {
+            key:     'DamTag',
+            label:   'Dam',
+            display: 'bold',
+        },
+        {
+            key:    'CalfTag',
+            label:  'Calf Tag',
+            render: row => row.CalfTag || '—',
+        },
+        {
+            key:    'BirthDate',
+            label:  'Birth Date',
+            render: row => row.BirthDate ? toLocalDisplay(row.BirthDate) : '—',
+        },
+        {
+            key:    'CalfSex',
+            label:  'Sex',
+            render: row => row.CalfSex || '—',
+        },
+        {
+            key:    'outcome',
+            label:  'Outcome',
+            render: row => {
+                const o = outcomeLabel(row);
+                return (
+                    <span style={{
+                        padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
+                        backgroundColor: o.bg, color: o.color,
+                        border: `1px solid ${o.color}44`, whiteSpace: 'nowrap',
+                    }}>
+                        {o.text}
+                    </span>
+                );
+            },
+        },
+        {
+            key:     'CalvingNotes',
+            label:   'Notes',
+            tdStyle: { color: '#6c757d', maxWidth: '220px' },
+        },
+    ];
 
     return (
-        <div className="bubble-container" style={{ marginTop: '16px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '600' }}>
-                Plan Records
-                <span style={{ marginLeft: '8px', fontSize: '13px', fontWeight: 'normal', color: '#888' }}>
-                    ({records.length})
-                </span>
-            </h3>
-
-            {records.length === 0 ? (
-                <div style={{ padding: '12px 0', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
-                    No calving records for this plan yet.
-                </div>
-            ) : (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr>
-                                {['Dam', 'Calf Tag', 'Birth Date', 'Sex', 'Outcome', 'Notes'].map(h => (
-                                    <th key={h} style={TH}>{h}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {records.map((r, i) => {
-                                const outcome = outcomeLabel(r);
-                                return (
-                                    <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
-                                        <td style={{ ...TD, fontWeight: '600' }}>{r.DamTag || '—'}</td>
-                                        <td style={TD}>{r.CalfTag || '—'}</td>
-                                        <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.BirthDate ? toLocalDisplay(r.BirthDate) : '—'}</td>
-                                        <td style={TD}>{r.CalfSex || '—'}</td>
-                                        <td style={TD}>
-                                            <span style={{
-                                                padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
-                                                backgroundColor: outcome.bg, color: outcome.color,
-                                                border: `1px solid ${outcome.color}44`, whiteSpace: 'nowrap',
-                                            }}>
-                                                {outcome.text}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...TD, color: '#6c757d', maxWidth: '220px' }}>{r.CalvingNotes || '—'}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
+        <Form
+            title={`Plan Records (${records.length})`}
+            rows={records}
+            columns={columns}
+            loading={loading}
+            error={error}
+            onDelete={handleDelete}
+        />
     );
 }
 

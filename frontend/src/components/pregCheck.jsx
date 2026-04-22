@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
 import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
-import PopupConfirm from './popupConfirm';
 import '../screenSizing.css';
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
@@ -29,13 +28,6 @@ const RESULT_BG = {
     'Untested':         '#f8f9fa',
 };
 
-const TH = {
-    padding: '8px 10px', textAlign: 'left', fontWeight: '600',
-    color: '#495057', backgroundColor: '#f8f9fa',
-    borderBottom: '2px solid #dee2e6', whiteSpace: 'nowrap', fontSize: '12px',
-};
-const TD = { padding: '7px 10px', borderBottom: '1px solid #dee2e6', fontSize: '13px' };
-
 function formatBulls(bulls) {
     if (!bulls) return '—';
     if (Array.isArray(bulls)) return bulls.map(b => b.tag || b).join(', ') || '—';
@@ -43,27 +35,14 @@ function formatBulls(bulls) {
     return '—';
 }
 
-// Column definitions for the historical table. Keys match the hidable column keys
-// used in the entry form so that the same visibility settings apply to both.
-const HIST_COLUMNS = [
-    { key: 'cow',            label: 'Cow' },
-    { key: 'breedingRecord', label: 'Breeding Record' },
-    { key: 'exposure',       label: 'Exposure' },
-    { key: 'checkDate',      label: 'Check Date *' },
-    { key: 'testResults',    label: 'Test Result *' },
-    { key: 'testType',       label: 'Test Type',    hidable: true },
-    { key: 'monthsPregnant', label: 'Months Preg.', hidable: true },
-    { key: 'fetusSex',       label: 'Fetus Sex',    hidable: true },
-    { key: 'notes',          label: 'Notes' },
-];
+// ─── PregCheckHistoricalTable ─────────────────────────────────────────────────
+// Uses Form with onDelete so all delete state, confirm popup, and delete-mode
+// toggle are handled by the shared Form infrastructure.
 
-function PregCheckHistoricalTable({ planId, colVisibility = {}, allowDelete = false }) {
-    const [records,      setRecords]      = useState([]);
-    const [breedMap,     setBreedMap]     = useState({});
-    const [loading,      setLoading]      = useState(true);
-    const [error,        setError]        = useState(null);
-    const [deleteTarget, setDeleteTarget] = useState(null);
-    const [deleting,     setDeleting]     = useState(false);
+function PregCheckHistoricalTable({ planId }) {
+    const [records, setRecords] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error,   setError]   = useState(null);
 
     useEffect(() => {
         if (!planId) return;
@@ -79,187 +58,129 @@ function PregCheckHistoricalTable({ planId, colVisibility = {}, allowDelete = fa
                 const pcData = await pcRes.json();
                 const brData = brRes.ok ? await brRes.json() : { records: [] };
 
-                const map = {};
-                for (const br of (brData.records || [])) map[br.ID] = br;
+                const breedMap = {};
+                for (const br of (brData.records || [])) breedMap[br.ID] = br;
 
-                setRecords(pcData.records || []);
-                setBreedMap(map);
+                // Attach the related breeding record directly so render fns can
+                // access it from the row object without a separate map lookup.
+                const enriched = (pcData.records || []).map(r => ({
+                    ...r,
+                    _br: breedMap[r.BreedingRecordID] || null,
+                }));
+                setRecords(enriched);
             })
             .catch(e => setError(e.message))
             .finally(() => setLoading(false));
     }, [planId]);
 
-    // Apply the same visibility settings as the entry form.
-    const visibleCols = HIST_COLUMNS.filter(c => !c.hidable || colVisibility[c.key] !== false);
-
-    const handleDelete = async () => {
-        if (!deleteTarget) return;
-        setDeleting(true);
-        try {
-            await fetch(`/api/pregnancy-checks/${deleteTarget.ID}`, {
-                method: 'DELETE',
-                credentials: 'include',
-            });
-            setRecords(prev => prev.filter(r => r.ID !== deleteTarget.ID));
-            setDeleteTarget(null);
-        } catch (e) {
-            console.error('Delete preg check failed:', e);
-        } finally {
-            setDeleting(false);
-        }
+    const handleDelete = async (row) => {
+        await fetch(`/api/pregnancy-checks/${row.ID}`, {
+            method:      'DELETE',
+            credentials: 'include',
+        });
+        setRecords(prev => prev.filter(r => r.ID !== row.ID));
     };
 
-    const renderCell = (col, r) => {
-        const br = breedMap[r.BreedingRecordID];
-        switch (col.key) {
-            case 'cow':
-                return <td key={col.key} style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>;
-            case 'breedingRecord':
+    // Column keys for the hidable columns intentionally match those used in the
+    // entry form so that both Form instances share the same persisted preference
+    // under formName="PregCheck".
+    const columns = [
+        {
+            key:     'CowTag',
+            label:   'Cow',
+            display: 'bold',
+        },
+        {
+            key:    'breedingRecord',
+            label:  'Breeding Record',
+            render: row => {
+                const br = row._br;
+                if (!br) return '—';
                 return (
-                    <td key={col.key} style={{ ...TD, whiteSpace: 'nowrap', fontSize: '12px', color: '#555' }}>
-                        {br
-                            ? <>
-                                {fmtDate(br.ExposureStartDate)}
-                                {br.ExposureEndDate
-                                    ? <span style={{ color: '#aaa' }}> – {fmtDate(br.ExposureEndDate)}</span>
-                                    : null
-                                }
-                              </>
-                            : '—'
-                        }
-                    </td>
+                    <span style={{ whiteSpace: 'nowrap', fontSize: '12px', color: '#555' }}>
+                        {fmtDate(br.ExposureStartDate)}
+                        {br.ExposureEndDate && (
+                            <span style={{ color: '#aaa' }}> – {fmtDate(br.ExposureEndDate)}</span>
+                        )}
+                    </span>
                 );
-            case 'exposure':
-                return (
-                    <td key={col.key} style={{ ...TD, fontSize: '12px', color: '#555' }}>
-                        {br ? formatBulls(br.PrimaryBulls) : '—'}
-                    </td>
-                );
-            case 'checkDate':
-                return (
-                    <td key={col.key} style={{ ...TD, whiteSpace: 'nowrap' }}>
-                        {r.PregCheckDate ? toLocalDisplay(r.PregCheckDate) : '—'}
-                    </td>
-                );
-            case 'testResults':
-                return (
-                    <td key={col.key} style={TD}>
-                        {r.TestResults ? (
-                            <span style={{
-                                padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
-                                backgroundColor: RESULT_BG[r.TestResults]   || '#e9ecef',
-                                color:           RESULT_COLOR[r.TestResults] || '#495057',
-                                border: `1px solid ${RESULT_COLOR[r.TestResults] || '#dee2e6'}44`,
-                                whiteSpace: 'nowrap',
-                            }}>
-                                {r.TestResults}
-                            </span>
-                        ) : '—'}
-                    </td>
-                );
-            case 'testType':
-                return <td key={col.key} style={TD}>{r.TestType || '—'}</td>;
-            case 'monthsPregnant':
-                return <td key={col.key} style={TD}>{r.MonthsPregnant != null ? `${r.MonthsPregnant} mo` : '—'}</td>;
-            case 'fetusSex':
-                return <td key={col.key} style={TD}>{r.FetusSex || '—'}</td>;
-            case 'notes':
-                return <td key={col.key} style={{ ...TD, color: '#6c757d', maxWidth: '200px' }}>{r.Notes || '—'}</td>;
-            default:
-                return <td key={col.key} style={TD}>—</td>;
-        }
-    };
+            },
+        },
+        {
+            key:    'exposure',
+            label:  'Exposure',
+            render: row => (
+                <span style={{ fontSize: '12px', color: '#555' }}>
+                    {row._br ? formatBulls(row._br.PrimaryBulls) : '—'}
+                </span>
+            ),
+        },
+        {
+            key:    'checkDate',
+            label:  'Check Date *',
+            render: row => row.PregCheckDate ? toLocalDisplay(row.PregCheckDate) : '—',
+        },
+        {
+            key:    'testResults',
+            label:  'Test Result *',
+            render: row => row.TestResults ? (
+                <span style={{
+                    padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: RESULT_BG[row.TestResults]   || '#e9ecef',
+                    color:           RESULT_COLOR[row.TestResults] || '#495057',
+                    border:          `1px solid ${RESULT_COLOR[row.TestResults] || '#dee2e6'}44`,
+                    whiteSpace:      'nowrap',
+                }}>
+                    {row.TestResults}
+                </span>
+            ) : '—',
+        },
+        {
+            key:    'testType',
+            label:  'Test Type',
+            hidable: true,
+            render: row => row.TestType || '—',
+        },
+        {
+            key:    'monthsPregnant',
+            label:  'Months Preg.',
+            hidable: true,
+            render: row => row.MonthsPregnant != null ? `${row.MonthsPregnant} mo` : '—',
+        },
+        {
+            key:    'fetusSex',
+            label:  'Fetus Sex',
+            hidable: true,
+            render: row => row.FetusSex || '—',
+        },
+        {
+            key:     'Notes',
+            label:   'Notes',
+            tdStyle: { color: '#6c757d', maxWidth: '200px' },
+        },
+    ];
 
     return (
-        <>
-        <div className="bubble-container" style={{ marginTop: '16px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '600' }}>
-                Plan Records
-                <span style={{ marginLeft: '8px', fontSize: '13px', fontWeight: 'normal', color: '#888' }}>
-                    ({records.length})
-                </span>
-            </h3>
-
-            {error ? (
-                <div style={{ padding: '12px 0', color: '#dc3545', fontSize: '13px' }}>
-                    Failed to load records: {error}
-                </div>
-            ) : (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr>
-                                {visibleCols.map(c => (
-                                    <th key={c.key} style={TH}>{c.label}</th>
-                                ))}
-                                {allowDelete && <th style={{ ...TH, width: '32px', padding: '4px' }} />}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={visibleCols.length} style={{ padding: '12px', color: '#888', fontSize: '13px' }}>
-                                        Loading...
-                                    </td>
-                                </tr>
-                            ) : records.length === 0 ? (
-                                <tr>
-                                    <td colSpan={visibleCols.length} style={{ padding: '12px', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
-                                        No pregnancy check records for this plan yet.
-                                    </td>
-                                </tr>
-                            ) : (
-                                records.map((r, i) => (
-                                    <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
-                                        {visibleCols.map(col => renderCell(col, r))}
-                                        {allowDelete && (
-                                            <td style={{ ...TD, width: '32px', padding: '4px', textAlign: 'center' }}>
-                                                <button
-                                                    onClick={() => setDeleteTarget(r)}
-                                                    title="Delete record"
-                                                    style={{
-                                                        background: 'none', border: 'none', padding: '2px 4px',
-                                                        cursor: 'pointer', color: '#dc3545',
-                                                        display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                >
-                                                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                                                </button>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
-        <PopupConfirm
-            isOpen={deleteTarget !== null}
-            onClose={() => setDeleteTarget(null)}
-            onConfirm={handleDelete}
-            title="Delete Pregnancy Check"
-            message={`Delete the pregnancy check record for <strong>${deleteTarget?.CowTag}</strong>? This cannot be undone.`}
-            confirmText={deleting ? 'Deleting...' : 'Delete'}
+        <Form
+            title={`Plan Records (${records.length})`}
+            rows={records}
+            columns={columns}
+            loading={loading}
+            error={error}
+            formName="PregCheck"
+            onDelete={handleDelete}
         />
-        </>
     );
 }
 
 function PregCheck({ breedingPlanId, breedingYear }) {
-    const [rows,             setRows]             = useState([]);
-    const [loading,          setLoading]          = useState(true);
-    const [error,            setError]            = useState(null);
-    const [submitting,       setSubmitting]       = useState(false);
-    const [submitError,      setSubmitError]      = useState(null);
-    const [savedCount,       setSavedCount]       = useState(null);
-    const [dropdowns,        setDropdowns]        = useState({ pregTestResults: [], pregTestTypes: [], sex: [] });
-    // Mirrors the column visibility managed inside <Form> so PregCheckHistoricalTable
-    // can apply the same settings without a separate preferences fetch.
-    const [sharedVisibility, setSharedVisibility] = useState({});
+    const [rows,        setRows]        = useState([]);
+    const [loading,     setLoading]     = useState(true);
+    const [error,       setError]       = useState(null);
+    const [submitting,  setSubmitting]  = useState(false);
+    const [submitError, setSubmitError] = useState(null);
+    const [savedCount,  setSavedCount]  = useState(null);
+    const [dropdowns,   setDropdowns]   = useState({ pregTestResults: [], pregTestTypes: [], sex: [] });
 
     useEffect(() => {
         fetch('/api/form-dropdown-data', { credentials: 'include' })
@@ -368,12 +289,12 @@ function PregCheck({ breedingPlanId, breedingYear }) {
             hidable:  true,
         },
         {
-            key:        'notes',
-            label:      'Notes',
-            type:       'text',
-            maxLength:  256,
-            placeholder:'Notes...',
-            minWidth:   '140px',
+            key:         'notes',
+            label:       'Notes',
+            type:        'text',
+            maxLength:   256,
+            placeholder: 'Notes...',
+            minWidth:    '140px',
         },
     ];
 
@@ -475,11 +396,10 @@ function PregCheck({ breedingPlanId, breedingYear }) {
                 onRetry={fetchRows}
                 showImportButton={true}
                 formName="PregCheck"
-                onColVisibilityChange={setSharedVisibility}
             />
 
             {breedingPlanId ? (
-                <PregCheckHistoricalTable planId={breedingPlanId} colVisibility={sharedVisibility} allowDelete={true} />
+                <PregCheckHistoricalTable planId={breedingPlanId} />
             ) : (
                 <div className="bubble-container" style={{ marginTop: '16px' }}>
                     <div className="empty-state-box">
