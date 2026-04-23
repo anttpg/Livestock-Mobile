@@ -153,6 +153,7 @@ function LinkExistingCalfPopup({ row, breedingPlanId, onClose, onSuccess }) {
                     isTagged:         true,
                     calfTag:          tag,
                     birthDate,
+                    calfSex:          animal?.Sex ?? null,
                     calfDiedAtBirth:  false,
                     damDiedAtBirth:   false,
                     embryoAborted:    false,

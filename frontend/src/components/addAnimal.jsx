@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Form from './forms';
 import TagGenerator from './tagGenerator';
 import AnimalCombobox from './animalCombobox';
 import { toUTC, toLocalInput } from '../utils/dateUtils';

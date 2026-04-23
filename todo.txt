@@ -9,6 +9,7 @@ todo;
 -Run Notes sql on primary and prod dbs.
 -Update notes db ops & route calls
 -Decide how to handle customers table
+-Seperate out Bull Performance data (The stuff they added to medical records...)
 
 
 -- LOOKUP TABLES
@@ -207,38 +208,12 @@ TaskReferences                   -- links any task to any entity,
 
 
 
-
-
-
-
-
 CHANGES TO NOTES;
 Remove [CowTag]
 Drop [SSMA timestamp]
 Add EntityType/ID as lookup
 
 
-ALTER TABLE [dbo].[Notes]
-DROP COLUMN SSMA_TimeStamp;
-
--- Add new columns
-ALTER TABLE [dbo].[Notes]
-ADD EntityType nvarchar(100) NULL,
-    EntityID nvarchar(100) NULL;
-
--- Migrate existing CowTag data
-UPDATE [dbo].[Notes]
-SET EntityType = 'CowTable',
-    EntityID = CowTag
-WHERE CowTag IS NOT NULL;
-
--- Add composite index
-CREATE INDEX IX_Notes_EntityType_EntityID
-ON [dbo].[Notes] (EntityType, EntityID);
-
--- Drop old column
-ALTER TABLE [dbo].[Notes]
-DROP COLUMN CowTag;
 
 
 
