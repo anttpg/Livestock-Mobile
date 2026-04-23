@@ -6,7 +6,7 @@ import ColorTable from './colorTable';
 import AnimalPhotoViewer from './animalPhotoViewer';
 import Popup from './popup';
 import AutoCombobox from './autoCombobox';
-import AddAnimal from './addAnimal';
+import AnimalForm from './animalForm';
 
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ function ParentLink({ label, tag, tagExists, onNavigate, onFix }) {
 // ---------------------------------------------------------------------------
 // FixParentPopup
 // Lets the user reassign a broken dam/sire tag.
-// Footer has "+ Don't see the animal? Create one!" which opens AddAnimal.
+// Footer has "+ Don't see the animal? Create one!" which opens AnimalForm.
 // ---------------------------------------------------------------------------
 function FixParentPopup({ isOpen, onClose, brokenTag, field, cowTag, cowOptions, onFixed }) {
   const [selectedTag, setSelectedTag] = useState(brokenTag || '');
@@ -253,7 +253,7 @@ function FixParentPopup({ isOpen, onClose, brokenTag, field, cowTag, cowOptions,
         </div>
       </Popup>
 
-      {/* AddAnimal popup — rendered on top of FixParentPopup */}
+      {/* AnimalForm popup — rendered on top of FixParentPopup */}
       {showAddAnimal && (
         <Popup
           isOpen={showAddAnimal}
@@ -261,10 +261,10 @@ function FixParentPopup({ isOpen, onClose, brokenTag, field, cowTag, cowOptions,
           title="Add New Animal"
           width="900px"
         >
-          <AddAnimal
+          <AnimalForm
             // Lock in the tag that was in the broken field so the user can
             // immediately create the missing animal with the correct tag.
-            // AddAnimal accepts cowTag as a locked prop only via motherTag/fatherTag
+            // AnimalForm accepts cowTag as a locked prop only via motherTag/fatherTag
             // patterns; since there's no direct "lockedTag" prop we pass the
             // tag through via a wrapper that pre-fills and disables cowTag.
             // We achieve this by passing a custom initialTag prop handled below.

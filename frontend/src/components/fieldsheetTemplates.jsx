@@ -3,7 +3,7 @@ import SheetTemplate from './sheetTemplate';
 import SheetTemplateEditor from './sheetTemplateEditor';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
-import '../screenSizing.css';
+
 
 function FieldsheetTemplates({ filterSheets = null }) {
   const [sheets, setSheets] = useState([]);

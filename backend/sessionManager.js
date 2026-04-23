@@ -437,6 +437,7 @@ app.get('/api/cows/invalid-tag-chars',
 
 
 
+
 // Add observation
 app.post('/api/add-note',
     requireAuth(),
@@ -1258,7 +1259,9 @@ app.get('/api/notes/*',
     requireAuth(),
     createValidationMiddleware('', true),
     async (req, res) => {
-        req.params.cowTag = req.params[0];
+        const [entityType, ...rest] = req.params[0].split('/');
+        req.params.entityType = entityType;
+        req.params.entityId = rest.join('/');
         return apiWrapper.getNotes(req, res);
     }
 );

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import '../screenSizing.css';
+
 
 function SheetImporter({ onClose, onImportComplete }) {
   const [dragActive, setDragActive] = useState(false);

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import '../screenSizing.css';
+
 import { addDays } from '../utils/dateUtils';
 import { useUser } from '../UserContext';
-import Popup from './Popup';
+import Popup from './popup';
 import PopupConfirm from './popupConfirm';
 export { addDays };
 

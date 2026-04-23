@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form, { fmtDate } from './forms';
 import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
-import '../screenSizing.css';
+
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
 

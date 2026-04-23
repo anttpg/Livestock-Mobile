@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Form, { fmtDate, addDays } from './forms';
 import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
-import AddAnimal from './addAnimal';
+import AnimalForm from './animalForm';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
 import AnimalFolder from './animalFolder';
 import AnimalCombobox from './animalCombobox';
-import '../screenSizing.css';
+
 
 const DEFAULT_GESTATION_DAYS = 283;
 
@@ -585,7 +585,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 maxWidth="800px"
                 maxHeight="100vh"
             >
-                <AddAnimal
+                <AnimalForm
                     motherTag={selectedMother}
                     fatherTag={selectedFather}
                     showTwinsOption={true}

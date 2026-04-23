@@ -6,7 +6,7 @@ import General from './general';
 import Medical from './medical';
 import BreedingFitness from './breedingFitness';
 import Sales from './sales';
-import AddAnimal from './addAnimal';
+import AnimalForm from './animalForm';
 import Popup from './popup';
 
 function AnimalFolder() {
@@ -106,7 +106,7 @@ function AnimalFolder() {
                 onClose={() => setAddAnimalOpen(false)} 
                 fullscreen={true}
             >
-                <AddAnimal onClose={() => setAddAnimalOpen(false)} onSuccess={() => setAddAnimalOpen(false)}/>
+                <AnimalForm onClose={() => setAddAnimalOpen(false)} onSuccess={() => setAddAnimalOpen(false)}/>
             </Popup>
 
             <Folder

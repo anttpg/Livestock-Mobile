@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SheetImporter from './sheetImporter';
 import Popup from './popup';
 import ExcelJS from 'exceljs';
-import '../screenSizing.css';
+
 import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 
 //  Cell renderers 

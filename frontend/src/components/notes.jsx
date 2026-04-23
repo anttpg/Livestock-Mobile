@@ -46,7 +46,7 @@ function Notes({ cowTag, currentUser }) {
 
             setIsLoading(true);
             try {
-                const response = await fetch(`/api/notes/${cowTag}`, {
+                const response = await fetch(`/api/notes/CowTable/${cowTag}`, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -94,7 +94,8 @@ function Notes({ cowTag, currentUser }) {
             DateOfEntry: dateOfNote,
             DateOfLastUpdate: dateOfNote,
             Username: currentUser || 'Unknown',
-            CowTag: cowTag,
+            EntityType: 'CowTable',
+            EntityID: cowTag,
             Archive: false
         };
 
@@ -112,7 +113,8 @@ function Notes({ cowTag, currentUser }) {
                 body: JSON.stringify({
                     note: noteText,
                     dateOfEntry: dateOfNote,
-                    cowTag: cowTag,
+                    entityType: 'CowTable',
+                    entityId: cowTag,
                     username: currentUser
                 })
             });

@@ -347,7 +347,8 @@ class APIWrapper {
 
     async getNotes(req, res) {
         return this.executeDBOperation(req, res, 'getNotes', (req) => ({
-            cowTag: req.params.cowTag
+            entityType: req.params.entityType,
+            entityId: req.params.entityId
         }));
     }
 

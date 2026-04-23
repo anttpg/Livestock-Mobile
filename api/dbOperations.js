@@ -32,43 +32,93 @@ class DatabaseOperations {
 
 
     /**
-     * Get dropdown options for forms
+     * Returns all form dropdown options, keyed by name.
+     * Also returns _meta.editable indicating which keys support addFormDropdownData().
+     * @returns {Promise<{ [key: string]: string[] | { id: number, name: string }[], _meta: { editable: { [key: string]: boolean } } }>}
      */
     async getFormDropdownData() {
         await this.ensureConnection();
 
         try {
-            const queries = {
-                breeds: `SELECT Breed FROM Breed ORDER BY Breed`,
-                sexes: `SELECT Sex FROM Sex ORDER BY Sex`,
-                animalClasses: `SELECT AnimalClass FROM AnimalClass ORDER BY AnimalClass`,
-                goatTypes: `SELECT Type FROM GoatTypes ORDER BY Type`,
+            const stringQueries = [
+                ['breeds', `SELECT Breed FROM Breed ORDER BY Breed`],
+                ['sexes', `SELECT Sex FROM Sex ORDER BY Sex`],
+                ['animalClasses', `SELECT AnimalClass FROM AnimalClass ORDER BY AnimalClass`],
+                ['goatTypes', `SELECT Type FROM GoatTypes ORDER BY Type`],
+                ['temperaments', `SELECT Temperament FROM Temperament ORDER BY Temperament`],
+                ['statuses', `SELECT Status FROM Status ORDER BY Status`],
+                ['regCerts', `SELECT RegCertStatus FROM RegCert ORDER BY RegCertStatus`],
+                ['herds', `SELECT HerdName FROM Herds WHERE Active = 1 ORDER BY HerdName`],
+                ['pastureFeedOptions', `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`],
+                ['pastureFeedUnits', `SELECT FeedUnit FROM FeedUnits ORDER BY FeedUnit`],
+                ['dewormerClasses', `SELECT DewormerClass FROM DewormerClass ORDER BY DewormerClass`],
+                ['medicineClasses', `SELECT MedicineClass FROM MedicineClass ORDER BY MedicineClass`],
+                ['MedicineApplicationMethods', `SELECT MedicineApplicationMethod FROM MedicineApplicationMethods ORDER BY MedicineApplicationMethod`],
+                ['medicines', `SELECT BrandName FROM Medicines ORDER BY BrandName`],
+                ['breedingStatus', `SELECT BreedingStatus FROM BreedingStatus ORDER BY BreedingStatus`],
+                ['pregTestResults', `SELECT Result FROM PregTestResult ORDER BY Result`],
+                ['pregTestTypes', `SELECT TestType FROM PregnancyTestTypes ORDER BY TestType`],
+                ['paymentMethods', `SELECT PaymentMethod FROM PaymentMethods ORDER BY PaymentMethod`],
 
-                temperaments: `SELECT Temperament FROM Temperament ORDER BY Temperament`,
-                statuses: `SELECT Status FROM Status ORDER BY Status`,
-                regCerts: `SELECT RegCertStatus FROM RegCert ORDER BY RegCertStatus`,
+                // equipment
+                ['equipmentTypes', `SELECT EquipmentType FROM EquipmentTypes ORDER BY EquipmentType`],
+                ['equipmentStatuses', `SELECT EquipmentStatus FROM EquipmentStatus ORDER BY EquipmentStatus`],
+                ['serviceTypes', `SELECT ServiceType FROM ServiceTypes ORDER BY ServiceType`],
+                ['meterUnits', `SELECT Unit FROM MeterUnits ORDER BY Unit`],
 
-                herds: `SELECT HerdName FROM Herds WHERE Active = 1 ORDER BY HerdName`,
-                pastureFeedOptions: `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`,
-                pastureFeedUnits: `SELECT FeedUnit FROM FeedUnits ORDER BY FeedUnit`,
+                // pasture
+                ['pastureTypes', `SELECT PastureType FROM PastureTypes ORDER BY PastureType`],
+                ['pastureActivityTypes', `SELECT PastureActivityType FROM PastureActivityTypes ORDER BY PastureActivityType`],
+                ['vegetationTypes', `SELECT VegetationType FROM VegetationTypes ORDER BY VegetationType`],
+                ['landUnits', `SELECT LandUnit FROM LandUnits ORDER BY LandUnit`],
+                ['hayUnitTypes', `SELECT HayUnitType FROM HayUnitTypes ORDER BY HayUnitType`],
 
-                dewormerClasses: `SELECT DewormerClass FROM DewormerClass ORDER BY DewormerClass`,
-                medicineClasses: `SELECT MedicineClass FROM MedicineClass ORDER BY MedicineClass`,
-                MedicineApplicationMethods: `SELECT MedicineApplicationMethod FROM MedicineApplicationMethods ORDER BY MedicineApplicationMethod`,
-                medicines: `SELECT BrandName FROM Medicines ORDER BY BrandName`,
-
-                breedingStatus: `SELECT BreedingStatus FROM BreedingStatus ORDER BY BreedingStatus`,
-                pregTestResults: `SELECT Result FROM PregTestResult ORDER BY Result`,
-                pregTestTypes: `SELECT TestType FROM PregnancyTestTypes ORDER BY TestType`,
-
-                paymentMethods: `SELECT PaymentMethod FROM PaymentMethods ORDER BY PaymentMethod`,
-            };
+                // read-only convenience
+                ['pastures', `SELECT PastureName FROM Pastures ORDER BY PastureName`],
+                ['users', `SELECT Username FROM Users WHERE Blocked = 0 ORDER BY Username`],
+                //['pastureChemicals', `SELECT ChemicalName FROM PastureChemicals ORDER BY ChemicalName`],
+            ];
 
             const results = {};
-            for (const [key, query] of Object.entries(queries)) {
+
+            for (const [key, query] of stringQueries) {
                 const result = await this.pool.request().query(query);
                 results[key] = result.recordset.map(r => Object.values(r)[0]);
             }
+
+            // Consumers use loc.id as the FK value and loc.name as display text.
+            const locResult = await this.pool.request().query(
+                `SELECT ID AS id, LocationName AS name FROM Locations ORDER BY LocationName`
+            );
+            results.locations = locResult.recordset;
+
+            const eqResult = await this.pool.request().query(
+                `SELECT ID AS id, Name AS name FROM Equipment ORDER BY Name`
+            );
+            results.equipment = eqResult.recordset;
+
+            // Keys absent from this map (or set to false) are read-only.
+            results._meta = {
+                editable: {
+                    breeds:                     true,
+                    animalClasses:              true,
+                    goatTypes:                  true,
+                    temperaments:               true,
+                    pastureFeedOptions:         true,
+                    pastureFeedUnits:           true,
+                    dewormerClasses:            true,
+                    medicineClasses:            true,
+                    MedicineApplicationMethods: true,
+                    equipmentTypes:             true,
+                    serviceTypes:               true,
+                    pastureTypes:               true,
+                    pastureActivityTypes:       true,
+                    vegetationTypes:            true,
+                    landUnits:                  true,
+                    hayUnitTypes:               true,
+                    //pastureChemicals:           true,
+                }
+            };
 
             return results;
         } catch (error) {
@@ -77,29 +127,53 @@ class DatabaseOperations {
         }
     }
 
+
     /**
-     * Add a new option to a dropdown option
+     * Adds a new option to a user-editable dropdown table.
+     * Throws if the table is not in the allowed list or the value is empty.
+     * @param {Object} params
+     * @param {string} params.table
+     * @param {string} params.value
+     * @returns {Promise<{ success: boolean, message: string }>}
      */
     async addFormDropdownData(params) {
         await this.ensureConnection();
 
         const { table, value } = params;
 
+        // Map of tableName -> columnName for every user-editable lookup table.
         const allowedTables = {
-            Breed: 'Breed',
-            AnimalClass: 'AnimalClass',
-            GoatTypes: 'Type',
-            Temperament: 'Temperament',
-            PastureFeedOptions: 'Feed',
-            FeedUnits: 'FeedUnit',
-            DewormerClass: 'DewormerClass',
-            MedicineClass: 'MedicineClass',
-            MedicineApplicationMethods: 'MedicineApplicationMethod'
+            Breed:                      'Breed',
+            AnimalClass:                'AnimalClass',
+            GoatTypes:                  'Type',
+            Temperament:                'Temperament',
+
+            DewormerClass:              'DewormerClass',
+            MedicineClass:              'MedicineClass',
+            MedicineApplicationMethods: 'MedicineApplicationMethod',
+
+            // equipment
+            EquipmentTypes:             'EquipmentType',
+            ServiceTypes:               'ServiceType',
+
+            // pasture
+            PastureFeedOptions:         'Feed',
+            FeedUnits:                  'FeedUnit',
+
+            PastureTypes:               'PastureType',
+            PastureActivityTypes:       'PastureActivityType',
+            VegetationTypes:            'VegetationType',
+            LandUnits:                  'LandUnit',
+            HayUnitTypes:               'HayUnitType',
+            //PastureChemicals:           'ChemicalName',
+            
         };
 
-        // Validate table
         if (!allowedTables[table]) {
-            throw new Error(`Invalid table specified: Tried to add "${value}" to table "${table}". Allowed tables: ${Object.keys(allowedTables).join(', ')}`);
+            throw new Error(
+                `Invalid table: tried to add "${value}" to "${table}". ` +
+                `Allowed tables: ${Object.keys(allowedTables).join(', ')}`
+            );
         }
 
         if (!value || value.trim() === '') {
@@ -109,18 +183,19 @@ class DatabaseOperations {
         const column = allowedTables[table];
 
         try {
-            // Insert new value (Fails if already exists)
-            const insertQuery = `INSERT INTO ${table} (${column}) VALUES (@value)`;
             await this.pool.request()
                 .input('value', value.trim())
-                .query(insertQuery);
+                .query(`INSERT INTO ${table} (${column}) VALUES (@value)`);
 
             return { success: true, message: `Successfully added "${value}" to ${table}` };
         } catch (error) {
             console.error('Error adding dropdown data:', error);
-            throw new Error(`Failed to add dropdown data to table "${table}" with value "${value}": ${error.message}`);
+            throw new Error(
+                `Failed to add "${value}" to table "${table}": ${error.message}`
+            );
         }
     }
+
 
 
 
@@ -429,35 +504,35 @@ class DatabaseOperations {
 
 
 
-
     /**
-     * Get notes for a cow
-     * @param {string} cowTag - The cow's tag identifier
+     * Get notes for an entity.
+     * @param {Object} params
+     * @param {string} params.entityType
+     * @param {string} params.entityId
      * @returns {Promise<Array>}
      */
-    async getNotes(params) {
-        const { cowTag } = params;
+    async getNotes({ entityType, entityId }) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
-            request.input('cowTag', sql.NVarChar(sql.MAX), cowTag);
+            request.input('entityType', sql.NVarChar(100), entityType);
+            request.input('entityId', sql.NVarChar(100), entityId);
 
             const query = `
-                SELECT 
+                SELECT
                     NoteID,
                     DateOfEntry,
                     Username,
-                    CowTag,
+                    EntityType,
+                    EntityID,
                     Note,
                     DateOfLastUpdate,
                     NeedsFollowUp,
-                    Archive,
-                    SSMA_TimeStamp
-                FROM 
-                    Notes 
-                WHERE 
-                    CowTag = @cowTag
+                    Archive
+                FROM Notes
+                WHERE EntityType = @entityType
+                AND EntityID = @entityId
                 ORDER BY DateOfEntry DESC`;
 
             const result = await request.query(query);
@@ -468,40 +543,45 @@ class DatabaseOperations {
         }
     }
 
-
     /**
-     * Add a new note
-     * @param {Object} params - { cowTag, note, dateOfEntry (optional) }
-     * @returns {Promise<{success: boolean, noteId: number}>}
+     * Add a new note.
+     * @param {Object} params
+     * @param {string} params.entityType
+     * @param {string} params.entityId
+     * @param {string} params.note
+     * @param {string} params.dateOfEntry
+     * @param {string} params.username
+     * @returns {Promise<{ success: boolean, noteId: number }>}
      */
-    async addNote(params) {
-        const { cowTag, note, dateOfEntry, username } = params;
+    async addNote({ entityType, entityId, note, dateOfEntry, username }) {
         await this.ensureConnection();
 
         try {
             const request = this.pool.request();
+            request.input('entityType', sql.NVarChar(100), entityType);
+            request.input('entityId', sql.NVarChar(100), entityId);
             request.input('note', sql.NVarChar(sql.MAX), note);
             request.input('dateOfEntry', sql.DateTime, dateOfEntry);
-            request.input('cowTag', sql.NVarChar(sql.MAX), cowTag);
-            request.input('username', sql.NVarChar(sql.MAX), username)
+            request.input('username', sql.NVarChar(sql.MAX), username);
 
             const query = `
-                INSERT INTO Notes (Note, DateOfEntry, CowTag, Username)
+                INSERT INTO Notes (EntityType, EntityID, Note, DateOfEntry, Username)
                 OUTPUT INSERTED.NoteID
-                VALUES (@note, @dateOfEntry, @cowTag, @username)`;
+                VALUES (@entityType, @entityId, @note, @dateOfEntry, @username)`;
 
             const result = await request.query(query);
             return {
                 success: true,
                 rowsAffected: result.rowsAffected[0],
                 noteId: result.recordset[0].NoteID,
-                message: 'Observation added successfully'
+                message: 'Note added successfully'
             };
         } catch (error) {
-            console.error('Error adding observation:', error);
-            throw new Error(`Failed to add observation: ${error.message}`);
+            console.error('Error adding note:', error);
+            throw new Error(`Failed to add note: ${error.message}`);
         }
     }
+
 
     /**
      * Update an existing note

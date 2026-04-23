@@ -313,7 +313,8 @@ function Popup({
                             style={{
                                 touchAction: 'manipulation', // Allow button tap
                                 position: 'relative',
-                                zIndex: 2
+                                zIndex: 2,
+                                marginLeft: 'auto'
                             }}
                         >
                             <span className="material-symbols-outlined">close</span>

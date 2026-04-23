@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Form from './forms';
 import { toUTC, toLocalDisplay } from '../utils/dateUtils';
-import '../screenSizing.css';
+
 
 // ─── Style constants (mirror pregCheck) ──────────────────────────────────────
 

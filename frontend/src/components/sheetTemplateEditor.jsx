@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import Popup from './popup';
 import ConfirmPopup from './popupConfirm';
 import SelectMedicine from './selectMedicine';
-import '../screenSizing.css';
+
 
 //  Visual meta for each source (purely cosmetic, no logic lives here)
 

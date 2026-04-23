@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import '../screenSizing.css';
+
 
 function TagGenerator({ 
   baseTag = '', 
