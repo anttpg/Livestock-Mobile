@@ -518,70 +518,6 @@ app.put('/api/medical/medicines/:ID',
 
 
 
-// Medical images
-app.post('/api/medical/:recordId/images',
-  upload.single('image'),
-  createValidationMiddleware('', true), async (req, res) => {
-    return apiWrapper.uploadMedicalImage(req, res);
-  }
-);
-
-app.get('/api/medical/:recordId/image/:imageType/:n?',
-  createValidationMiddleware('', true), async (req, res) => {
-    return apiWrapper.getMedicalImage(req, res);
-  }
-);
-
-app.get('/api/medical/:recordId/image-count',
-  createValidationMiddleware('', true), async (req, res) => {
-    return apiWrapper.getMedicalImageCount(req, res);
-  }
-);
-
-app.delete('/api/medical/:recordId/images/:filename',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.deleteMedicalImage(req, res);
-  }
-);
-
-
-
-const uploadAny = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024, files: 1 }
-    // No fileFilter, accepts any file type
-});
-
-// Medical file uploads
-app.post('/api/medical/:recordId/files',
-  uploadAny.single('file'),
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.saveMedicalUpload(req, res);
-  }
-);
-
-app.get('/api/medical/:recordId/files/:filename',
-  createValidationMiddleware('', true), async (req, res) => {
-    return apiWrapper.getMedicalUpload(req, res);
-  }
-);
-
-app.delete('/api/medical/:recordId/files/:filename',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.deleteMedicalUpload(req, res);
-  }
-);
-
-
-app.get('/api/medical/:recordId/files',
-  createValidationMiddleware('', true), async (req, res) => {
-    return apiWrapper.listMedicalUploads(req, res);
-  }
-);
-
 
 
 // Get all medical data for a cow
@@ -1107,6 +1043,103 @@ app.post('/api/pastures/maintenance',
 
 
 
+
+// Equipment
+app.get('/api/equipment',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentRecords(req, res)
+);
+app.post('/api/equipment',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createEquipment(req, res)
+);
+app.get('/api/equipment/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentRecord(req, res)
+);
+app.put('/api/equipment/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateEquipment(req, res)
+);
+app.delete('/api/equipment/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteEquipment(req, res)
+);
+
+// Equipment Maintenance
+app.get('/api/equipment-maintenance',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentMaintenanceRecords(req, res)
+);
+app.post('/api/equipment-maintenance',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createEquipmentMaintenanceRecord(req, res)
+);
+app.get('/api/equipment-maintenance/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentMaintenanceRecord(req, res)
+);
+app.put('/api/equipment-maintenance/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateEquipmentMaintenanceRecord(req, res)
+);
+app.delete('/api/equipment-maintenance/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteEquipmentMaintenanceRecord(req, res)
+);
+
+// Equipment Parts
+app.get('/api/equipment-parts',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentParts(req, res)
+);
+app.post('/api/equipment-parts',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createEquipmentPart(req, res)
+);
+app.get('/api/equipment-parts/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getEquipmentPart(req, res)
+);
+app.put('/api/equipment-parts/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updateEquipmentPart(req, res)
+);
+app.delete('/api/equipment-parts/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteEquipmentPart(req, res)
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // User preferences
 app.get('/api/users/:username/preferences',
   createValidationMiddleware('', true),
@@ -1152,62 +1185,6 @@ app.patch('/api/goats/herd',
   createValidationMiddleware('setGoatsHerd'),
   async (req, res) => {
     return apiWrapper.setGoatsHerd(req, res);
-  }
-);
-
-
-// Get cow image count
-app.get('/api/cow/*/image-count',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.getCowImageCount(req, res);
-  }
-);
-
-// Upload cow image (headshot or body only)
-app.post('/api/cow/*/upload-image',
-  upload.single('image'),
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.saveCowImage(req, res);
-  }
-);
-
-// Get cow image (headshot or body) - returns most recent
-app.get('/api/cow/*/image/:imageType',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.getCowImage(req, res);
-  }
-);
-
-// Get nth cow image (headshot or body) - returns specific image by position
-app.get('/api/cow/*/image/:imageType/:n',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.getNthCowImage(req, res);
-  }
-);
-
-// Get all cow images (list all headshots and bodyshots)
-app.get('/api/cow/*/images',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.getAllCowImages(req, res);
-  }
-);
-
-// Delete a cow's image (headshot or body only)
-app.delete('/api/cow/*/images/:filename',
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    req.params.tag = req.params[0];
-    return apiWrapper.deleteCowImage(req, res);
   }
 );
 
@@ -1302,38 +1279,81 @@ app.get('/api/map', async (req, res) => {
   return apiWrapper.getMap(req, res);
 });
 
-app.put('/api/map',
-  upload.single('image'),
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.uploadMap(req, res);
-  }
+
+
+
+
+// Generic image operations, add new domains via IMAGE_DOMAIN_CONFIG in APIWrapper
+
+// List filenames in a domain/record directory
+app.get('/api/images/:domain/:recordId/files',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.listImages(req, res)
+);
+
+// Serve a specific file by name
+app.get('/api/images/:domain/:recordId/file/:filename',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getImageByName(req, res)
+);
+
+app.post('/api/images/:domain/:recordId',
+    upload.single('image'),
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.uploadImage(req, res)
+);
+
+app.get('/api/images/:domain/:recordId/count',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getImageCount(req, res)
+);
+
+app.get('/api/images/:domain/:recordId/photo/:n?',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getImage(req, res)
+);
+
+app.delete('/api/images/:domain/:recordId/:filename',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteImage(req, res)
 );
 
 
 
 
-// Get minimap for specific field
-app.get('/api/minimap/:fieldName',
-  createValidationMiddleware('getMinimap'),
-  async (req, res) => {
-    return apiWrapper.getMinimap(req, res);
-  }
-);
+// Generic file upload operations
 
-// Get list of available minimap fields
-app.get('/api/minimaps', async (req, res) => {
-  return apiWrapper.getAvailableMinimaps(req, res);
+const uploadAny = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024, files: 1 }
+    // No fileFilter, accepts any file type
 });
 
-
-app.put('/api/minimap/:fieldName',
-  upload.single('image'),
-  createValidationMiddleware('', true),
-  async (req, res) => {
-    return apiWrapper.uploadMinimap(req, res);
-  }
+// Generic file operations
+app.post('/api/files/:domain/:recordId',
+    uploadAny.single('file'),
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.uploadFile(req, res)
 );
+
+app.get('/api/files/:domain/:recordId',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.listDomainFiles(req, res)
+);
+
+app.get('/api/files/:domain/:recordId/:filename',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getFile(req, res)
+);
+
+app.delete('/api/files/:domain/:recordId/:filename',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deleteDomainFile(req, res)
+);
+
+
+
+
 
 
 
@@ -1382,6 +1402,15 @@ app.delete('/api/sheets/delete/:sheetId',
         return apiWrapper.deleteSheetTemplate(req, res);
     }
 );
+
+
+
+
+
+
+
+
+
 
 
 // SHEET INSTANCE ROUTES

@@ -1,16 +1,29 @@
 
-FUTURE DBOPERATION OPTIMIZATIONS
 
-
-
-CHANGES MADE TO DB, TABLES 
-
-todo;
--Run Notes sql on primary and prod dbs.
--Update notes db ops & route calls
+TODO;
 -Decide how to handle customers table
 -Seperate out Bull Performance data (The stuff they added to medical records...)
 -Fix handling of multiple calves in calving record linker
+
+-Make 'unexpected calf' solution better (Make not have to transmit ALL preg checks...)
+
+
+CHANGES TO MAKE TO DB AT A LATER DATE...
+
+[PastureSprayApplications]
+  AcresSprayed decimal
+  //Area decimal TODO MAKE THESE CHANGES LATER DATE
+  //AreaUnit nvarchar FK -> LandUnits
+
+[PastureHayProduction]
+  AcresCut decimal
+  //Area decimal
+  //AreaUnit nvarchar FK -> LandUnits
+
+[CowTable] & Others
+Fix CowTag lookup, cascade update on change, by making FK for each reference 
+
+
 
 
 -- LOOKUP TABLES
@@ -155,7 +168,11 @@ PastureSprayApplications         -- legally required pesticide records
   ChemicalName nvarchar NOT NULL FK -> PastureChemicals TODO determine if seperate table...
   Rate decimal
   RateUnit nvarchar              -- 'oz/acre', 'pt/acre', 'lb/acre', etc.
+  
   AcresSprayed decimal
+  //Area decimal TODO MAKE THESE CHANGES LATER DATE
+  //AreaUnit nvarchar FK -> LandUnits
+
   WindSpeed decimal
   WindDirection nvarchar
   Temperature decimal
@@ -188,6 +205,8 @@ PastureHayProduction
   DateBaled  datetime2
 
   AcresCut decimal
+  //Area decimal
+  //AreaUnit nvarchar FK -> LandUnits
 
   VegetationType nvarchar FK -> VegetationTypes.VegetationType
 
@@ -209,19 +228,7 @@ TaskReferences                   -- links any task to any entity,
 
 
 
-CHANGES TO NOTES;
-Remove [CowTag]
-Drop [SSMA timestamp]
-Add EntityType/ID as lookup
 
-
-
-
-
-=== SQL UPDATE CMD === 
-
-
-=== END OF SQL UPDATE CMD === 
 
 
 

@@ -28,6 +28,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
   });
   const [quickTreatmentSaving, setQuickTreatmentSaving] = useState(false);
   const [quickTreatmentError, setQuickTreatmentError] = useState(null);
+  const [fileUploadWarning, setFileUploadWarning] = useState(null);
 
   // Handle screen resize for responsive behavior
   useEffect(() => {
@@ -190,7 +191,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
     return Object.values(grouped);
   };
 
-  const saveMedicalRecord = useCallback(async (recordData) => {
+  const saveMedicalRecord = useCallback(async (recordData, fileViewerRef) => {
     try {
       const response = await fetch('/api/medical/record', {
         method: 'POST',
@@ -199,30 +200,39 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
         },
         body: JSON.stringify({
           cowTag: cowTag,
-          recordType: 'issue', // Default to issue, could be dynamic
+          recordType: 'issue',
           ...recordData
         })
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to save medical record');
       }
-      
+
       const result = await response.json();
-      console.log('Medical record saved:', result);
-      
-      // Refresh cow data
-      if (onRefresh) {
-        await onRefresh();
+
+      if (result?.recordId && fileViewerRef?.current) {
+        const { failed } = await fileViewerRef.current.flushPending(result.recordId);
+        if (failed > 0) {
+          setFileUploadWarning(
+            `The record was saved successfully, but ${failed} file${failed > 1 ? 's' : ''} failed to upload. ` +
+            `You can try uploading them again by reopening the issue.`
+          );
+        }
       }
-      
+
+      // Refresh the table so the new record appears immediately
+      if (onRefresh) await onRefresh();
+
       return result;
+
     } catch (error) {
       console.error('Error saving medical record:', error);
       throw error;
     }
   }, [cowTag, onRefresh]);
+
 
   const updateMedicalRecord = useCallback(async (recordID, updateData) => {
     try {
@@ -715,6 +725,46 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           Click "View All Medicines" to see the complete medicine database and add or edit medications.
         </div>
       </div>
+
+      {/* File Upload Warning Popup */}
+      <Popup
+        isOpen={!!fileUploadWarning}
+        onClose={() => setFileUploadWarning(null)}
+        title="File Upload Issue"
+        width="420px"
+      >
+        <div style={{ padding: '24px 20px' }}>
+          <div style={{
+            padding: '12px 16px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px',
+            color: '#856404',
+            fontSize: '14px',
+            marginBottom: '20px',
+            lineHeight: '1.5'
+          }}>
+            {fileUploadWarning}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => setFileUploadWarning(null)}
+              style={{
+                padding: '10px 24px',
+                backgroundColor: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </Popup>
 
       {/* Issue Details Popup */}
       <Popup

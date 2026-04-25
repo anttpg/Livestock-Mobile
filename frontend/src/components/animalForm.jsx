@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FormField, useFormSubmit} from './formKit';
-import FormSelect from './formSelect';
+import { FormSelect } from './formControls';
 import TagGenerator from './tagGenerator';
 import AnimalCombobox from './animalCombobox';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
@@ -414,7 +414,7 @@ function AnimalForm({
         },
         submit: async () => {
             if (isEditing) {
-                await submitAnimalRecord(formData, { method: 'PUT', url: `/api/cows/${encodeURIComponent(initialData.cowTag)}` });
+                await submitAnimalRecord(formData, { method: 'PUT', url: `/api/cow/${encodeURIComponent(initialData.cowTag)}` });
             } else {
                 await submitAnimalRecord(formData, { calvingRecordID });
                 for (const twin of twins) await submitAnimalRecord(twin.data, { calvingRecordID });
@@ -446,6 +446,29 @@ function AnimalForm({
                     )}
                 </div>
 
+                {!isEditing && showTwinsOption && (
+                    <>
+                        {twins.map((twin, index) => (
+                            <TwinCard
+                                key={index}
+                                index={index}
+                                twin={twin.data}
+                                twinErrors={twinErrors[index] || {}}
+                                onChange={(field, value) => setTwinField(index, field, value)}
+                                onRemove={() => removeTwin(index)}
+                                onClearTwinError={(field) => clearTwinError(index, field)}
+                                dropdownData={dropdownData}
+                                animalOptions={animalOptions}
+                            />
+                        ))}
+                        <div className="form-add-twin-row">
+                            <button type="button" className="button button--secondary" onClick={addTwin} disabled={submitting}>
+                                + Add Twin / Additional Calf
+                            </button>
+                        </div>
+                    </>
+                )}
+
                 <div className="form-actions">
                     <button type="button" className="button button--secondary" onClick={onClose} disabled={submitting}>Cancel</button>
                     <button type="submit" className="button" disabled={submitting}>
@@ -454,28 +477,7 @@ function AnimalForm({
                 </div>
             </form>
 
-            {!isEditing && showTwinsOption && (
-                <>
-                    {twins.map((twin, index) => (
-                        <TwinCard
-                            key={index}
-                            index={index}
-                            twin={twin.data}
-                            twinErrors={twinErrors[index] || {}}
-                            onChange={(field, value) => setTwinField(index, field, value)}
-                            onRemove={() => removeTwin(index)}
-                            onClearTwinError={(field) => clearTwinError(index, field)}
-                            dropdownData={dropdownData}
-                            animalOptions={animalOptions}
-                        />
-                    ))}
-                    <div className="form-add-twin-row">
-                        <button type="button" className="button button--secondary" onClick={addTwin} disabled={submitting}>
-                            + Add Twin / Additional Calf
-                        </button>
-                    </div>
-                </>
-            )}
+
 
             {showTagGenerator && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>

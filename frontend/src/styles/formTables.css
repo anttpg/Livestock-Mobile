@@ -1,0 +1,44 @@
+
+.form-table {
+    margin-top: 20px;
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 400px;
+}
+
+
+
+.form-table-th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    white-space: nowrap;
+    font-size: 12px;
+    letter-spacing: 0.2px;
+}
+
+/* Required columns use pink background/border */
+.form-table-th-required {
+    background-color: #FCE4EC;
+    border-bottom: 2px solid #F48FB1;
+}
+
+.form-table-td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #e9ecef;
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+.form-table-input {
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    background-color: white;
+}

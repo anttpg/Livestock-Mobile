@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useFormSubmit, FormField } from './formKit';
-import FormSelect from './formSelect';
+import { FormSelect } from './formControls';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';
 
@@ -99,9 +99,10 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let purchaseRecordID = initialData?.purchaseRecordID || null;
             if (purchaseData.purchaseDate || purchaseData.purchasePrice) {
                 const res = await fetch(
-                    purchaseRecordID ? `/api/purchase-records/${purchaseRecordID}` : '/api/purchase-records',
-                    { method: purchaseRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-                      body: JSON.stringify({ ...purchaseData, purchaseDate: purchaseData.purchaseDate ? toUTC(purchaseData.purchaseDate) : null }) }
+                    purchaseRecordID ? `/api/purchases/${purchaseRecordID}` : '/api/purchases',
+                    {
+                        method: purchaseRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+                        body: JSON.stringify({ ...purchaseData, purchaseDate: purchaseData.purchaseDate ? toUTC(purchaseData.purchaseDate) : null }) }
                 );
                 if (!res.ok) throw new Error((await res.json()).error || 'Failed to save purchase record');
                 purchaseRecordID = (await res.json()).id ?? purchaseRecordID;
@@ -110,19 +111,34 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let saleRecordID = initialData?.saleRecordID || null;
             if (isSold && (saleData.saleDate || saleData.salePrice)) {
                 const res = await fetch(
-                    saleRecordID ? `/api/sale-records/${saleRecordID}` : '/api/sale-records',
-                    { method: saleRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-                      body: JSON.stringify({ ...saleData, saleDate: saleData.saleDate ? toUTC(saleData.saleDate) : null }) }
+                    saleRecordID ? `/api/sales/${saleRecordID}` : '/api/sales',
+                    {
+                        method: saleRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+                        body: JSON.stringify({ ...saleData, saleDate: saleData.saleDate ? toUTC(saleData.saleDate) : null })
+                    }
                 );
                 if (!res.ok) throw new Error((await res.json()).error || 'Failed to save sale record');
                 saleRecordID = (await res.json()).id ?? saleRecordID;
             }
 
+            const { id, purchaseRecord, saleRecord, ...equipmentFields } = formData;
+
             const res = await fetch(
                 isEditing ? `/api/equipment/${initialData.id}` : '/api/equipment',
-                { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-                  body: JSON.stringify({ ...formData, registrationExpiry: formData.registrationExpiry ? toUTC(formData.registrationExpiry) : null, warrantyExpiry: formData.warrantyExpiry ? toUTC(formData.warrantyExpiry) : null, purchaseRecordID, saleRecordID: isSold ? saleRecordID : null }) }
+                {
+                    method:  isEditing ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        ...equipmentFields,
+                        registrationExpiry: formData.registrationExpiry ? toUTC(formData.registrationExpiry) : null,
+                        warrantyExpiry:     formData.warrantyExpiry     ? toUTC(formData.warrantyExpiry)     : null,
+                        purchaseRecordID,
+                        saleRecordID: isSold ? saleRecordID : null,
+                    }),
+                }
             );
+
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save equipment');
         },
         onSuccess

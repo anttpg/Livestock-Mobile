@@ -2,9 +2,11 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Overview from './components/overview';
 import Herds from './components/herds';
+import Equipment from './components/equipment';
 import Fieldsheets from './components/fieldsheets';
 import Login from './components/login';
 import Register from './components/registerUser';
+import Playhouse from './components/playhouse';
 import DevMenu from './components/devMenu';
 import SetPassword from './components/setPassword';
 import BreedingPlan from './components/breedingPlan'; 
@@ -132,6 +134,14 @@ function AppContent() {
             }
           />
           <Route
+            path="/equipment"
+            element={
+              <Layout>
+                <Equipment />
+              </Layout>
+            }
+          />
+          <Route
             path="/herds"
             element={
               <Layout>
@@ -174,7 +184,13 @@ function AppContent() {
           <Route
             path="/playhouse"
             element={
-              <div></div>
+              user?.permissions?.includes('dev') ? (
+                <Layout>
+                  <Playhouse />
+                </Layout>
+              ) : (
+                <Navigate to="/animal" replace />
+              )
             }
           />
           <Route path="/" element={<Navigate to="/animal" replace />} />

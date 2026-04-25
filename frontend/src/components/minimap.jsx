@@ -35,7 +35,7 @@ function Minimap({ pastureName, minimapSrc }) {
   // Determine minimap source with fallback logic
   const getMinimapSrc = () => {
     if (minimapSrc) return minimapSrc;
-    if (pastureName) return `/api/minimap/${encodeURIComponent(pastureName)}`;
+    if (pastureName) return `/api/images/minimap/${encodeURIComponent(pastureName)}/photo/1`;
     return '/images/NoMinimap.png';
   };
 
@@ -179,7 +179,7 @@ function MapViewer({ pastureName, preloadedData }) {
 
   // Get the appropriate map URL based on toggle state
   const mapType = showFields ? 'map' : 'MapCombined';
-  const mapUrl = `/api/map?image=${mapType}`;
+  const mapUrl = `/api/images/map/${mapType}/photo/1`;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '500px' }}>
@@ -335,14 +335,13 @@ function UploadMapForm({ onClose }) {
 
       let endpoint;
       if (mapType === 'minimap') {
-        endpoint = `/api/minimap/${encodeURIComponent(minimapName.trim())}`;
+        endpoint = `/api/images/minimap/${encodeURIComponent(minimapName.trim())}`;
       } else {
-        formData.append('mapType', mapType);
-        endpoint = '/api/map';
+        endpoint = `/api/images/map/${mapType}`;
       }
 
       const response = await fetch(endpoint, {
-        method: 'PUT',
+        method: 'POST',
         credentials: 'include',
         body: formData
       });

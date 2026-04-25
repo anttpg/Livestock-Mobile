@@ -1,5 +1,7 @@
 import React from 'react';
 import { useState, useRef } from 'react';
+import { useUser } from '../UserContext';
+import { toUTC } from '../utils/dateUtils';
 
 /**
  * Handles the repetitive submit lifecycle shared across all forms:
@@ -51,6 +53,25 @@ export function useFormSubmit({ validate, submit, onSuccess }) {
     };
 
     return { handleSubmit, errors, setErrors, submitting, topRef };
+}
+
+
+
+/**
+ * Returns record metadata pre-populated for the current user and date.
+ * Spread recordMeta into your submit payload — no UI needed.
+ *
+ * @returns {{ recordMeta: { dateRecorded: string, recordedByUsername: string } }}
+ */
+export function useRecordMeta() {
+    const { user } = useUser();
+
+    const recordMeta = {
+        dateRecorded:        toUTC(new Date().toISOString()),
+        recordedByUsername:  user?.username ?? '',
+    };
+
+    return { recordMeta };
 }
 
 

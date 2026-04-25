@@ -1,22 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import Form, { fmtDate, addDays } from './forms';
-import { toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
+import TableForm from './tableForm';
+import TableViewer from './tableViewer';
+import PopupConfirm from './popupConfirm';
+import { useTableEdit } from './useTableEdit';
+import { addDays, formatDateDisplay, toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
 import AnimalForm from './animalForm';
 import Popup from './popup';
-import PopupConfirm from './popupConfirm';
 import AnimalFolder from './animalFolder';
 import AnimalCombobox from './animalCombobox';
 
 
 const DEFAULT_GESTATION_DAYS = 283;
-
-const TH = {
-    padding: '8px 10px', textAlign: 'left', fontWeight: '600',
-    color: '#495057', backgroundColor: '#f8f9fa',
-    borderBottom: '2px solid #dee2e6', whiteSpace: 'nowrap', fontSize: '12px',
-};
-const TD = { padding: '7px 10px', borderBottom: '1px solid #dee2e6', fontSize: '13px' };
 
 function outcomeLabel(r) {
     if (r.EmbryoAborted)   return { text: 'Aborted',       bg: '#fff3e0', color: '#e65100' };
@@ -26,14 +21,17 @@ function outcomeLabel(r) {
     return                        { text: 'Calf Recorded', bg: '#e8f5e9', color: '#2e7d32' };
 }
 
-// ─── CalvingHistoricalTable ───────────────────────────────────────────────────
-// Uses Form with onDelete so all delete state, confirm popup, and delete-mode
-// toggle are handled by the shared Form infrastructure.
+
+// ─── Historical records table ─────────────────────────────────────────────────
 
 function CalvingHistoricalTable({ planId }) {
-    const [records, setRecords] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState(null);
+    const [records,  setRecords]  = useState([]);
+    const [loading,  setLoading]  = useState(true);
+    const [error,    setError]    = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const { editTarget, setEditTarget, handleSuccess, handleError, errorNotify } =
+        useTableEdit(records, setRecords, { label: 'DamTag' });
 
     useEffect(() => {
         if (!planId) return;
@@ -46,35 +44,30 @@ function CalvingHistoricalTable({ planId }) {
             .finally(() => setLoading(false));
     }, [planId]);
 
-    const handleDelete = async (row) => {
-        await fetch(`/api/calving-records/${row.ID}`, {
-            method:      'DELETE',
-            credentials: 'include',
-        });
-        setRecords(prev => prev.filter(r => r.ID !== row.ID));
+    const handleDeleteConfirm = async () => {
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/calving-records/${editTarget.ID}`, {
+                method: 'DELETE', credentials: 'include',
+            });
+            if (!res.ok) throw new Error(await res.text());
+            handleSuccess(null);
+        } catch (e) {
+            handleError(e.message);
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const columns = [
-        {
-            key:     'DamTag',
-            label:   'Dam',
-            display: 'bold',
-        },
-        {
-            key:    'CalfTag',
-            label:  'Calf Tag',
-            render: row => row.CalfTag || '—',
-        },
+        { key: 'DamTag',  label: 'Dam',       display: 'bold' },
+        { key: 'CalfTag', label: 'Calf Tag',  render: row => row.CalfTag || '' },
         {
             key:    'BirthDate',
             label:  'Birth Date',
-            render: row => row.BirthDate ? toLocalDisplay(row.BirthDate) : '—',
+            render: row => row.BirthDate ? toLocalDisplay(row.BirthDate) : '',
         },
-        {
-            key:    'CalfSex',
-            label:  'Sex',
-            render: row => row.CalfSex || '—',
-        },
+        { key: 'CalfSex', label: 'Sex', render: row => row.CalfSex || '' },
         {
             key:    'outcome',
             label:  'Outcome',
@@ -91,32 +84,43 @@ function CalvingHistoricalTable({ planId }) {
                 );
             },
         },
-        {
-            key:     'CalvingNotes',
-            label:   'Notes',
-            tdStyle: { color: '#6c757d', maxWidth: '220px' },
-        },
+        { key: 'CalvingNotes', label: 'Notes', tdStyle: { color: '#6c757d', maxWidth: '220px' } },
     ];
 
     return (
-        <Form
-            title={`Plan Records (${records.length})`}
-            rows={records}
-            columns={columns}
-            loading={loading}
-            error={error}
-            onDelete={handleDelete}
-        />
+        <>
+            <TableViewer
+                title={`Plan Records (${records.length})`}
+                rows={records}
+                columns={columns}
+                loading={loading}
+                error={error}
+                onEdit={setEditTarget}
+            />
+
+            <PopupConfirm
+                isOpen={editTarget !== null}
+                onClose={() => setEditTarget(null)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Record"
+                message={`Delete the calving record for <strong>${editTarget?.DamTag ?? ''}</strong>? This cannot be undone.`}
+                confirmText={deleting ? 'Deleting...' : 'Delete'}
+            />
+
+            {errorNotify}
+        </>
     );
 }
 
-// ─── LinkExistingCalfPopup ────────────────────────────────────────────────────
+
 
 function LinkExistingCalfPopup({ row, breedingPlanId, onClose, onSuccess }) {
-    const [calfTag,  setCalfTag]  = useState('');
-    const [animals,  setAnimals]  = useState([]);
-    const [saving,   setSaving]   = useState(false);
-    const [error,    setError]    = useState(null);
+    const [animals, setAnimals]   = useState([]);
+    const [saving,  setSaving]    = useState(false);
+    const [error,   setError]     = useState(null);
+
+    // Each entry: { tag: '' }
+    const [calves, setCalves] = useState([{ tag: '' }]);
 
     useEffect(() => {
         fetch('/api/animals', { credentials: 'include' })
@@ -131,35 +135,50 @@ function LinkExistingCalfPopup({ row, breedingPlanId, onClose, onSuccess }) {
         status: a.Status || '',
     }));
 
+    const updateTag = (index, value) => {
+        setCalves(prev => prev.map((c, i) => i === index ? { ...c, tag: value.toUpperCase() } : c));
+    };
+
+    const addCalf = () => {
+        setCalves(prev => [...prev, { tag: '' }]);
+    };
+
+    const removeCalf = (index) => {
+        setCalves(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleConfirm = async () => {
-        const tag = calfTag.trim().toUpperCase();
-        if (!tag) return;
+        const tags = calves.map(c => c.tag.trim().toUpperCase()).filter(Boolean);
+        if (!tags.length) return;
         setSaving(true);
         setError(null);
         try {
-            const animal    = animals.find(a => a.CowTag === tag);
-            const birthDate = animal?.DateOfBirth
-                ? toUTC(toLocalInput(animal.DateOfBirth))
-                : null;
+            for (const tag of tags) {
+                const animal    = animals.find(a => a.CowTag === tag);
+                const birthDate = animal?.DateOfBirth
+                    ? toUTC(toLocalInput(animal.DateOfBirth))
+                    : null;
 
-            await fetch('/api/calving-records', {
-                method:      'POST',
-                headers:     { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    planID:           breedingPlanId ?? row.PlanID ?? null,
-                    breedingRecordId: row.ID         ?? null,
-                    damTag:           row.CowTag,
-                    isTagged:         true,
-                    calfTag:          tag,
-                    birthDate,
-                    calfSex:          animal?.Sex ?? null,
-                    calfDiedAtBirth:  false,
-                    damDiedAtBirth:   false,
-                    embryoAborted:    false,
-                    notes:            'Linked existing calf',
-                }),
-            });
+                await fetch('/api/calving-records', {
+                    method:      'POST',
+                    headers:     { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        planID:           breedingPlanId ?? row.PlanID ?? null,
+                        breedingRecordId: row.ID         ?? null,
+                        damTag:           row.CowTag,
+                        isTagged:         true,
+                        calfTag:          tag,
+                        birthDate,
+                        calfSex:          animal?.Sex ?? null,
+                        calfDiedAtBirth:  false,
+                        damDiedAtBirth:   false,
+                        embryoAborted:    false,
+                        notes:            tags.length > 1 ? `Linked existing calf (${tags.length > 2 ? 'triplet' : 'twin'})` : 'Linked existing calf',
+                    }),
+                });
+            }
+
             if (row.ID) {
                 await fetch(`/api/breeding-records/${row.ID}`, {
                     method:      'PUT',
@@ -176,42 +195,88 @@ function LinkExistingCalfPopup({ row, breedingPlanId, onClose, onSuccess }) {
         }
     };
 
+    const LABELS = ['Calf', 'Twin', 'Triplet'];
+    const ADD_LABELS = ['Add twin born at same time', 'Add triplet born at same time'];
+    const anyTagFilled = calves.some(c => c.tag.trim());
+
     return (
-        <div style={{ padding: '16px', minWidth: '320px' }}>
+        <div style={{ padding: '16px', minHeight: '200px' }}>
             <p style={{ marginTop: 0, fontSize: '14px' }}>
-                Select the existing calf to link to <strong>{row?.CowTag}</strong>:
+                Select the existing calf(ves) to link to <strong>{row?.CowTag}</strong>:
             </p>
-            <AnimalCombobox
-                options={comboOptions}
-                value={calfTag}
-                onChange={v => setCalfTag(v.toUpperCase())}
-                onSelect={v => { if (v) setCalfTag(v.toUpperCase()); }}
-                placeholder="Search calf tag..."
-                allowCustomValue={true}
-            />
+
+            {calves.map((calf, index) => (
+                <div key={index} style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '4px' }}>
+                        {LABELS[index] ?? `Calf ${index + 1}`}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                            <AnimalCombobox
+                                options={comboOptions}
+                                value={calf.tag}
+                                onChange={v => updateTag(index, v)}
+                                onSelect={v => { if (v) updateTag(index, v); }}
+                                placeholder="Search calf tag..."
+                                allowCustomValue={true}
+                            />
+                        </div>
+                        {index > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => removeCalf(index)}
+                                title="Remove"
+                                style={{
+                                    padding: '4px 8px', cursor: 'pointer',
+                                    border: '1px solid #ccc', borderRadius: '3px',
+                                    background: 'white', color: '#666', fontSize: '13px',
+                                }}
+                            >
+                                Remove
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Show "Add twin / triplet" checkbox immediately below the current last calf, up to 3 total */}
+                    {index === calves.length - 1 && calves.length < 5 && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '13px', cursor: 'pointer', color: '#444' }}>
+                            <input
+                                type="checkbox"
+                                checked={false}
+                                onChange={e => { if (e.target.checked) addCalf(); }}
+                                style={{ cursor: 'pointer' }}
+                            />
+                            {ADD_LABELS[index] ?? 'Add another calf'}
+                        </label>
+                    )}
+                </div>
+            ))}
+
             {error && <div style={{ color: '#dc3545', fontSize: '13px', marginTop: '8px' }}>{error}</div>}
+
             <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={onClose} style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'white' }}>
+                <button type="button" onClick={onClose}
+                    style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'grey' }}>
                     Cancel
                 </button>
                 <button
                     type="button"
                     onClick={handleConfirm}
-                    disabled={!calfTag.trim() || saving}
+                    disabled={!anyTagFilled || saving}
                     style={{
                         padding: '7px 16px', border: 'none', borderRadius: '3px', cursor: 'pointer',
-                        backgroundColor: calfTag.trim() && !saving ? '#1976d2' : '#aaa',
+                        backgroundColor: anyTagFilled && !saving ? '#1976d2' : '#aaa',
                         color: 'white', fontWeight: 'bold',
                     }}
                 >
-                    {saving ? 'Saving...' : 'Link Calf'}
+                    {saving ? 'Saving...' : `Link ${calves.length > 1 ? `${calves.length} Calves` : 'Calf'}`}
                 </button>
             </div>
         </div>
     );
 }
 
-// ─── UnexpectedEntryPopup ─────────────────────────────────────────────────────
+
 
 function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
     const [checks,       setChecks]       = useState([]);
@@ -222,13 +287,12 @@ function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
 
     useEffect(() => {
         const url = breedingPlanId
-            ? `/api/pregnancy-checks?planId=${breedingPlanId}`
-            : `/api/pregnancy-checks`;
+            ? `/api/pregnancy-checks?planId=${breedingPlanId}&testResults=Pregnant`
+            : `/api/pregnancy-checks?testResults=Pregnant`;
         fetch(url, { credentials: 'include' })
             .then(r => r.ok ? r.json() : { records: [] })
             .then(d => {
-                const nonPregnant = (d.records || []).filter(r => r.TestResults !== 'Pregnant');
-                // Dedupe by CowTag, keep most recent per cow
+                const nonPregnant = (d.records || []);
                 const seen = new Set();
                 const unique = nonPregnant.filter(r => {
                     if (seen.has(r.CowTag)) return false;
@@ -274,7 +338,6 @@ function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
                     }),
                 })
             ));
-            // Build synthetic rows so they appear in the table immediately
             const newRows = selected.map(pc => ({
                 CowTag:            pc.CowTag,
                 PlanID:            breedingPlanId ?? pc.PlanID ?? null,
@@ -328,7 +391,8 @@ function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
             )}
             {error && <div style={{ color: '#dc3545', fontSize: '13px', marginTop: '8px' }}>{error}</div>}
             <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                <button onClick={onClose} style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'white' }}>
+                <button onClick={onClose}
+                    style={{ padding: '7px 16px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '3px', background: 'grey' }}>
                     Cancel
                 </button>
                 <button
@@ -347,20 +411,23 @@ function UnexpectedEntryPopup({ breedingPlanId, onClose, onSuccess }) {
     );
 }
 
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 function CalvingTracker({ breedingPlanId, breedingYear }) {
-    const [rows,              setRows]              = useState([]);
-    const [loading,           setLoading]           = useState(true);
-    const [error,             setError]             = useState(null);
-    const [showAddAnimal,     setShowAddAnimal]     = useState(false);
-    const [showAnimalPopup,   setShowAnimalPopup]   = useState(false);
-    const [showNoCalfConfirm, setShowNoCalfConfirm] = useState(false);
-    const [selectedMother,    setSelectedMother]    = useState(null);
-    const [selectedFather,    setSelectedFather]    = useState(null);
-    const [selectedAnimalTag, setSelectedAnimalTag] = useState(null);
-    const [noCalfRow,         setNoCalfRow]         = useState(null);
-    const [noCalfSaving,      setNoCalfSaving]      = useState(false);
-    const [showLinkPopup,     setShowLinkPopup]     = useState(false);
-    const [linkRow,           setLinkRow]           = useState(null);
+    const [rows,                setRows]                = useState([]);
+    const [loading,             setLoading]             = useState(true);
+    const [error,               setError]               = useState(null);
+    const [showAddAnimal,       setShowAddAnimal]       = useState(false);
+    const [showAnimalPopup,     setShowAnimalPopup]     = useState(false);
+    const [showNoCalfConfirm,   setShowNoCalfConfirm]   = useState(false);
+    const [selectedMother,      setSelectedMother]      = useState(null);
+    const [selectedFather,      setSelectedFather]      = useState(null);
+    const [selectedAnimalTag,   setSelectedAnimalTag]   = useState(null);
+    const [noCalfRow,           setNoCalfRow]           = useState(null);
+    const [noCalfSaving,        setNoCalfSaving]        = useState(false);
+    const [showLinkPopup,       setShowLinkPopup]       = useState(false);
+    const [linkRow,             setLinkRow]             = useState(null);
     const [showUnexpectedPopup, setShowUnexpectedPopup] = useState(false);
     const [, setSearchParams] = useSearchParams();
 
@@ -368,17 +435,13 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
         setLoading(true);
         setError(null);
         try {
-            let url;
-            if (breedingPlanId) {
-                url = `/api/breeding-records?planId=${breedingPlanId}&breedingStatus=Pregnant`;
-            } else {
-                url = `/api/breeding-records?breedingStatus=Pregnant&newestOnly=true`;
-            }
+            const url = breedingPlanId
+                ? `/api/breeding-records?planId=${breedingPlanId}&breedingStatus=Pregnant`
+                : `/api/breeding-records?breedingStatus=Pregnant&newestOnly=true`;
             const res = await fetch(url, { credentials: 'include' });
             if (!res.ok) throw new Error(`${res.status}`);
             const data = await res.json();
 
-            // Attach calculated due date to each record
             const withDue = (data.records || []).map(r => ({
                 ...r,
                 dueDate: r.ExposureStartDate
@@ -395,27 +458,10 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
 
     useEffect(() => { fetchRows(); }, [fetchRows]);
 
-    const handleAddCalf = (row) => {
-        setSelectedMother(row.CowTag);
-        setSelectedFather((row.PrimaryBulls || [])[0]?.tag || '');
-        setShowAddAnimal(true);
-    };
-
-    const handleViewAnimal = (calfTag) => {
-        setSelectedAnimalTag(calfTag);
-        setSearchParams({ search: calfTag, tab: 'general' });
-        setShowAnimalPopup(true);
-    };
-
-    const handleNoCalfClick = (row) => {
-        setNoCalfRow(row);
-        setShowNoCalfConfirm(true);
-    };
-
-    const handleLinkCalfClick = (row) => {
-        setLinkRow(row);
-        setShowLinkPopup(true);
-    };
+    const handleAddCalf       = (row) => { setSelectedMother(row.CowTag); setSelectedFather((row.PrimaryBulls || [])[0]?.tag || ''); setShowAddAnimal(true); };
+    const handleViewAnimal    = (tag) => { setSelectedAnimalTag(tag); setSearchParams({ search: tag, tab: 'general' }); setShowAnimalPopup(true); };
+    const handleNoCalfClick   = (row) => { setNoCalfRow(row);  setShowNoCalfConfirm(true); };
+    const handleLinkCalfClick = (row) => { setLinkRow(row);    setShowLinkPopup(true); };
 
     const handleUnexpectedAdded = (newRows) => {
         setRows(prev => [...prev, ...newRows]);
@@ -443,7 +489,6 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                     notes:            'No calf — recorded via calving tracker',
                 }),
             });
-
             if (noCalfRow.ID) {
                 await fetch(`/api/breeding-records/${noCalfRow.ID}`, {
                     method:      'PUT',
@@ -452,7 +497,6 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                     body:        JSON.stringify({ BreedingStatus: 'Calved' }),
                 });
             }
-
             setShowNoCalfConfirm(false);
             setNoCalfRow(null);
             fetchRows();
@@ -469,16 +513,12 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
         {
             key:    'dueDate',
             label:  'Due Date',
-            render: row => (
-                <span style={{ whiteSpace: 'nowrap' }}>
-                    {row.dueDate ? fmtDate(row.dueDate) : '—'}
-                </span>
-            ),
+            render: row => <span style={{ whiteSpace: 'nowrap' }}>{row.dueDate ? formatDateDisplay(row.dueDate) : ''}</span>,
         },
         {
             key:    'Exposure',
             label:  'Exposure',
-            render: row => (row.PrimaryBulls || []).map(b => b.tag).join(', ') || '—',
+            render: row => (row.PrimaryBulls || []).map(b => b.tag).join(', ') || '',
         },
         {
             key:    '_actions',
@@ -489,40 +529,19 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                     <div style={{ display: 'flex', gap: '6px', whiteSpace: 'nowrap' }}>
                         <button
                             onClick={() => calfTag.trim() ? handleViewAnimal(calfTag) : handleAddCalf(row)}
-                            style={{
-                                padding: '5px 10px',
-                                backgroundColor: calfTag.trim() ? '#3bb558' : '#007bff',
-                                color: 'white', border: 'none', borderRadius: '4px',
-                                cursor: 'pointer', fontSize: '12px', fontWeight: '500',
-                            }}
+                            style={{ padding: '5px 10px', backgroundColor: calfTag.trim() ? '#3bb558' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
                         >
                             {calfTag.trim() ? `View ${calfTag}` : '+ Add Calf'}
                         </button>
-
                         {!calfTag.trim() && (
-                            <button
-                                onClick={() => handleLinkCalfClick(row)}
-                                style={{
-                                    padding: '5px 10px',
-                                    backgroundColor: '#6c757d',
-                                    color: 'white', border: 'none', borderRadius: '4px',
-                                    cursor: 'pointer', fontSize: '12px', fontWeight: '500',
-                                }}
-                            >
+                            <button onClick={() => handleLinkCalfClick(row)}
+                                style={{ padding: '5px 10px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
                                 Link Existing
                             </button>
                         )}
-
                         {!calfTag.trim() && (
-                            <button
-                                onClick={() => handleNoCalfClick(row)}
-                                style={{
-                                    padding: '5px 10px',
-                                    backgroundColor: '#dc3545',
-                                    color: 'white', border: 'none', borderRadius: '4px',
-                                    cursor: 'pointer', fontSize: '12px', fontWeight: '500',
-                                }}
-                            >
+                            <button onClick={() => handleNoCalfClick(row)}
+                                style={{ padding: '5px 10px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
                                 No Calf
                             </button>
                         )}
@@ -541,95 +560,52 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
         </div>
     );
 
-    const refresh = () => {
-        setShowAddAnimal(false);
-        setSelectedMother(null);
-        setSelectedFather(null);
-        fetchRows();
-    };
+    const refresh = () => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); fetchRows(); };
 
     return (
         <>
-            <Form
-                title="Calving Tracker"
-                headerContent={headerContent}
-                rows={rows}
-                columns={columns}
-                loading={loading}
-                error={error}
-                onRetry={fetchRows}
-                showImportButton={true}
-            >
-                <div style={{ marginTop: '12px', borderTop: '1px solid #e9ecef', paddingTop: '12px' }}>
-                    <button
-                        onClick={() => setShowUnexpectedPopup(true)}
-                        style={{
-                            padding: '6px 14px', fontSize: '13px', cursor: 'pointer',
-                            border: '1px solid #6c757d', borderRadius: '4px',
-                            background: 'white', color: '#495057',
-                        }}
+            <div className="multibubble-page" style={{ gap: '50px' }}>
+                <div className="bubble-container">
+                    <TableForm
+                        title="Calving Tracker"
+                        headerContent={headerContent}
+                        rows={rows}
+                        columns={columns}
+                        loading={loading}
+                        error={error}
+                        onRetry={fetchRows}
+                        showImportButton={true}
                     >
-                        + Add Unexpected Entry
-                    </button>
+                        <div style={{ marginTop: '12px', borderTop: '1px solid #e9ecef', paddingTop: '12px' }}>
+                            <button
+                                onClick={() => setShowUnexpectedPopup(true)}
+                                style={{ padding: '6px 14px', fontSize: '13px', cursor: 'pointer', border: '1px solid #6c757d', borderRadius: '4px', background: 'white', color: '#495057' }}
+                            >
+                                + Add Unexpected Entry
+                            </button>
+                        </div>
+                    </TableForm>
                 </div>
-            </Form>
 
-            {breedingPlanId && (
-                <CalvingHistoricalTable planId={breedingPlanId} />
-            )}
+                <div className="bubble-container">
+                    {breedingPlanId && <CalvingHistoricalTable planId={breedingPlanId} />}
+                </div>
+            </div>
 
-            <Popup
-                isOpen={showAddAnimal}
-                onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }}
-                title="Add Calf"
-                maxWidth="800px"
-                maxHeight="100vh"
-            >
-                <AnimalForm
-                    motherTag={selectedMother}
-                    fatherTag={selectedFather}
-                    showTwinsOption={true}
-                    onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }}
-                    onSuccess={refresh}
-                    createCalvingRecord={true}
-                    breedingYear={breedingYear}
-                />
+            <Popup isOpen={showAddAnimal} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }} title="Add Calf" maxWidth="800px" maxHeight="100vh">
+                <AnimalForm motherTag={selectedMother} fatherTag={selectedFather} showTwinsOption={true} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }} onSuccess={refresh} createCalvingRecord={true} breedingYear={breedingYear} />
             </Popup>
 
-            <Popup
-                isOpen={showAnimalPopup}
-                onClose={() => setShowAnimalPopup(false)}
-                title={`Animal Details — ${selectedAnimalTag}`}
-                fullscreen={true}
-            >
+            <Popup isOpen={showAnimalPopup} onClose={() => setShowAnimalPopup(false)} title={`Animal Details — ${selectedAnimalTag}`} fullscreen={true}>
                 <AnimalFolder />
             </Popup>
 
-            <Popup
-                isOpen={showLinkPopup}
-                onClose={() => { setShowLinkPopup(false); setLinkRow(null); }}
-                title={`Link Existing Calf — ${linkRow?.CowTag}`}
-            >
-                {linkRow && (
-                    <LinkExistingCalfPopup
-                        row={linkRow}
-                        breedingPlanId={breedingPlanId}
-                        onClose={() => { setShowLinkPopup(false); setLinkRow(null); }}
-                        onSuccess={() => { setShowLinkPopup(false); setLinkRow(null); fetchRows(); }}
-                    />
-                )}
+            <Popup isOpen={showLinkPopup} onClose={() => { setShowLinkPopup(false); setLinkRow(null); }} title={`Link Existing Calf — ${linkRow?.CowTag}`}>
+                {linkRow && <LinkExistingCalfPopup row={linkRow} breedingPlanId={breedingPlanId} onClose={() => { setShowLinkPopup(false); setLinkRow(null); }} onSuccess={() => { setShowLinkPopup(false); setLinkRow(null); fetchRows(); }} />}
             </Popup>
 
-            <Popup
-                isOpen={showUnexpectedPopup}
-                onClose={() => setShowUnexpectedPopup(false)}
-                title="Add Unexpected Calving Entry"
-            >
-                <UnexpectedEntryPopup
-                    breedingPlanId={breedingPlanId}
-                    onClose={() => setShowUnexpectedPopup(false)}
-                    onSuccess={handleUnexpectedAdded}
-                />
+            <Popup isOpen={showUnexpectedPopup} onClose={() => setShowUnexpectedPopup(false)} title="Add Unexpected Calving Entry">
+                <UnexpectedEntryPopup breedingPlanId={breedingPlanId} onClose={() => setShowUnexpectedPopup(false)} onSuccess={handleUnexpectedAdded} />
             </Popup>
 
             <PopupConfirm

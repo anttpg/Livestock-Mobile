@@ -11,15 +11,55 @@ require('dotenv').config();
  */
 class LocalFileOperations {
     constructor() {
-        this.basePath = process.env.LOCAL_PATH || './files';
         this.imageFormats = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+        this.basePath = process.env.LOCAL_PATH || './files';
+
         this.cowPhotosDir = path.join(this.basePath, 'Cow Photos');
         this.medicalDir = path.join(this.basePath, 'Medical');
+        this.equipmentDir = path.join(this.basePath, 'Equipment');
+        this.equipmentMaintenanceDir = path.join(this.basePath, 'EquipmentMaintenance');
+
         this.mapDataDir = path.join(this.basePath, 'MapData');
         this.minimapsDir = path.join(this.mapDataDir, 'minimaps');
+
         this.usersFile = path.join(this.basePath, 'users.csv');
         // this.backups = path.join(this.basePath, 'backups');
         this.SALT_ROUNDS = 10;
+
+        this.IMAGE_DOMAIN_CONFIG = {
+            medical: {
+                getDirectory: (id) => path.join(this.medicalDir, `Record_${id}`),
+                getBaseFilename: (id, filter) => `Record_${id}_${filter}_${this.formatDateForFilename()}`,
+            },
+            cow: {
+                getDirectory: (id) => path.join(this.cowPhotosDir, this.remCowtagSlash(id)),
+                getBaseFilename: (id, filter) => `${this.remCowtagSlash(id)} ${filter} ${this.formatDateForFilename()}`,
+            },
+            equipment: {
+                getDirectory: (id) => path.join(this.equipmentDir, `Item_${id}`),
+                getBaseFilename: (id, _filter) => `Item_${id}_${this.formatDateForFilename()}`,
+            },
+            equipmentMaintenance: {
+                getDirectory: (id) => path.join(this.equipmentMaintenanceDir, `Record_${id}`),
+                getBaseFilename: (id, _filter) => `Record_${id}_${this.formatDateForFilename()}`,
+            },
+            map: {
+                getDirectory: (_id) => this.mapDataDir,
+                getBaseFilename: (id, _filter) => id,
+            },
+            minimap: {
+                getDirectory: (_id) => this.minimapsDir,
+                getBaseFilename: (id, _filter) => `${id}_minimap`,
+            },
+        };
+
+
+        this.FILE_DOMAIN_CONFIG = {
+            medicalUpload: {
+                getDirectory: (id) => path.join(this.medicalDir, `Record_${id}`, 'Uploads'),
+            },
+        };
     }
 
     /**
@@ -67,11 +107,15 @@ class LocalFileOperations {
     getMimeType(filename) {
         const ext = path.extname(filename).toLowerCase();
         const mimeTypes = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.gif': 'image/gif',
-            '.webp': 'image/webp'
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+            '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.txt': 'text/plain',
+            '.csv': 'text/csv',
         };
         return mimeTypes[ext] || 'application/octet-stream';
     }
@@ -560,223 +604,125 @@ class LocalFileOperations {
 
 
 
-    /**
-     * Save a cow image. Never overwrites — appends a counter if filename already exists.
-     * @param {Object} params
-     * @param {string} params.cowTag           - Cow tag identifier
-     * @param {string} params.imageType        - "headshot" or "body"
-     * @param {Buffer} params.fileBuffer       - File contents
-     * @param {string} params.originalFilename - Original filename, used for extension and format validation
-     * @returns {Object} { success, relativePath, absolutePath, filename, message }
-     */
-    async saveCowImage({ cowTag, imageType, fileBuffer, originalFilename }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const bodyType = imageType === 'headshot' ? 'HEAD' : 'BODY';
-        const directory = path.join(this.cowPhotosDir, safeTag);
-        const baseFilename = `${safeTag} ${bodyType} ${this.formatDateForFilename()}`;
 
-        const filePath = await this.resolveUniquePath(directory, baseFilename, path.extname(originalFilename));
-        return this.writeFile(filePath, fileBuffer, originalFilename, this.imageFormats);
-    }
 
-    /**
-     * Get the nth most recent cow image of a given type, sorted by EXIF date.
-     * @param {Object} params
-     * @param {string} params.cowTag      - Cow tag identifier
-     * @param {string} params.imageType   - "headshot" or "body"
-     * @param {number} [params.n=1]       - 1 = most recent
-     * @returns {Object} { success, fileBuffer, filename, size, modified, dateTaken, mimeType }
-     */
-    async getCowImage({ cowTag, imageType, n = 1 }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const directory = path.join(this.cowPhotosDir, safeTag);
-        const filterKeyword = imageType === 'headshot' ? ' HEAD ' : ' BODY ';
-        return this.readFile(directory, filterKeyword, n, false);
-    }
 
-    /**
-     * Get all headshot and bodyshot filenames for a cow.
-     * @param {Object} params
-     * @param {string} params.cowTag - Cow tag identifier
-     * @returns {Object} { success, images: { headshots, bodyshots }, totalImages }
-     */
-    async getAllCowImages({ cowTag }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const directory = path.join(this.cowPhotosDir, safeTag);
 
-        const headshots = await this.listFiles(directory, ' HEAD ');
-        const bodyshots = await this.listFiles(directory, ' BODY ');
 
+
+
+
+
+
+
+    _resolveImageDomain(domain, id) {
+        const config = this.IMAGE_DOMAIN_CONFIG[domain];
+        if (!config) throw new Error(`Unknown image domain: ${domain}`);
         return {
-            success: true,
-            images: { headshots, bodyshots },
-            totalImages: headshots.length + bodyshots.length
+            directory: config.getDirectory(id),
+            baseFilename: (filter) => config.getBaseFilename(id, filter),
         };
     }
 
+        
     /**
-     * Delete a specific cow image by filename.
+     * Save an image for a domain record. Never overwrites — appends a counter if filename already exists.
      * @param {Object} params
-     * @param {string} params.cowTag  - Cow tag identifier
-     * @param {string} params.filename - Exact filename to delete
-     * @returns {Object} { success, message }
+     * @param {string} params.domain           - Image domain key (e.g. 'medical', 'cow')
+     * @param {string|number} params.recordId  - Record ID or cow tag
+     * @param {string} params.filter           - Keyword embedded in filename (e.g. 'ISSUE', 'HEAD', 'BODY')
+     * @param {Buffer} params.fileBuffer       - File contents
+     * @param {string} params.originalFilename - Used for extension and format validation
+     * @returns {Object} { success, relativePath, absolutePath, filename, message }
      */
-    async deleteCowImage({ cowTag, filename }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const filePath = path.join(this.cowPhotosDir, safeTag, filename);
-        return this.deleteFile(filePath);
-    }
+    async saveImage({ domain, recordId, filter, fileBuffer, originalFilename, failIfExists = false }) {
+        const { directory, baseFilename } = this._resolveImageDomain(domain, recordId);
+        const ext = path.extname(originalFilename);
 
-
-    /**
-     * Delete a cow image by its recency index.
-     * Resolves the nth most recent image of the given type and deletes it by filename.
-     * @param {Object} params
-     * @param {string} params.cowTag    - Cow tag identifier
-     * @param {string} params.imageType - Image type keyword filter (e.g. 'headshot', 'bodyshot')
-     * @param {number} params.n         - 1-based index (1 = most recent)
-     * @returns {Object} { success, message }
-     */
-    async deleteCowImageByIndex({ cowTag, imageType, n }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const directory = path.join(this.cowPhotosDir, safeTag);
-        const filterKeyword = imageType === 'headshot' ? ' HEAD ' : ' BODY ';
-        const found = await this.readFile(directory, filterKeyword, n, false);
-        if (!found.success) return found;
-        return this.deleteCowImage({ cowTag, filename: found.filename });
-    }
-
-
-    /**
-     * Get the nth most recent image of a given type for a cow.
-     * Pass type 'both' to retrieve the nth headshot and bodyshot together.
-     * @param {Object} params
-     * @param {string} params.cowTag    - Cow tag identifier
-     * @param {string} params.type      - 'headshot', 'body', or 'both'
-     * @param {number} [params.n=1]     - 1 = most recent
-     * @returns {Object} Single image result, or { success, headshot, bodyshot } for 'both'
-     */
-    async getNthCowImage({ cowTag, type, n = 1 }) {
-        if (type !== 'both') {
-            return this.getCowImage({ cowTag, imageType: type, n });
+        if (failIfExists) {
+            const filename = `${baseFilename(filter)}${ext}`;
+            return this.saveFileStrict(directory, filename, fileBuffer, this.imageFormats);
         }
 
-        const [headshot, bodyshot] = await Promise.all([
-            this.getCowImage({ cowTag, imageType: 'headshot', n }),
-            this.getCowImage({ cowTag, imageType: 'body', n })
-        ]);
-
-        return { success: true, headshot, bodyshot };
-    }
-
-    /**
-     * Get count of headshot and bodyshot images for a cow.
-     * @param {Object} params
-     * @param {string} params.cowTag - Cow tag identifier
-     * @returns {Object} { success, headshots, bodyshots, total }
-     */
-    async numCowImages({ cowTag }) {
-        const safeTag = this.remCowtagSlash(cowTag);
-        const directory = path.join(this.cowPhotosDir, safeTag);
-
-        const [headshots, bodyshots] = await Promise.all([
-            this.listFiles(directory, ' HEAD '),
-            this.listFiles(directory, ' BODY ')
-        ]);
-
-        return {
-            success: true,
-            headshots: headshots.length,
-            bodyshots: bodyshots.length,
-            total: headshots.length + bodyshots.length
-        };
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-    /**
-     * Save a medical issue image for a record. Never overwrites — appends a counter if filename already exists.
-     * @param {Object} params
-     * @param {string} params.recordId         - Medical record ID
-     * @param {Buffer} params.fileBuffer       - File contents
-     * @param {string} params.originalFilename - Original filename, used for extension and format validation
-     * @returns {Object} { success, relativePath, absolutePath, filename, message }
-     */
-    async saveMedicalImage({ recordId, fileBuffer, originalFilename }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`);
-        const baseFilename = `Record_${recordId}_ISSUE_${this.formatDateForFilename()}`;
-
-        const filePath = await this.resolveUniquePath(directory, baseFilename, path.extname(originalFilename));
+        const filePath = await this.resolveUniquePath(directory, baseFilename(filter), ext);
         return this.writeFile(filePath, fileBuffer, originalFilename, this.imageFormats);
     }
 
+
     /**
-     * Get the nth most recent medical issue image for a record, sorted by filename date.
+     * Get the nth most recent image for a domain record, optionally filtered by keyword.
      * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
-     * @param {number} [params.n=1]    - 1 = most recent
+     * @param {string} params.domain          - Image domain key
+     * @param {string|number} params.recordId - Record ID or cow tag
+     * @param {string} [params.filter]        - Optional case-insensitive filename substring filter
+     * @param {number} [params.n=1]           - 1 = most recent
      * @returns {Object} { success, fileBuffer, filename, size, modified, dateTaken, mimeType }
      */
-    async getMedicalImage({ recordId, n = 1 }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`);
-        return this.readFile(directory, 'ISSUE', n, false);
+    async getImage({ domain, recordId, filter, n = 1 }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        return this.readFile(directory, filter, n, false);
     }
 
+
     /**
-     * Get the count of medical issue images for a record.
+     * Get the count of images for a domain record, optionally filtered by keyword.
      * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
-     * @returns {Object} { success, issues, total }
+     * @param {string} params.domain          - Image domain key
+     * @param {string|number} params.recordId - Record ID or cow tag
+     * @param {string} [params.filter]        - Optional filename substring filter
+     * @returns {Object} { success, total }
      */
-    async getMedicalImageCount({ recordId }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`);
-        const issues = await this.listFiles(directory, 'ISSUE');
-
-        return {
-            success: true,
-            issues: issues.length,
-            total: issues.length
-        };
+    async getImageCount({ domain, recordId, filter }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        const files = await this.listFiles(directory, filter);
+        return { success: true, total: files.length };
     }
 
+
     /**
-     * Delete a specific medical issue image by filename.
+     * Delete a specific image by filename for a domain record.
      * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
-     * @param {string} params.filename - Exact filename to delete
+     * @param {string} params.domain          - Image domain key
+     * @param {string|number} params.recordId - Record ID or cow tag
+     * @param {string} params.filename        - Exact filename to delete
      * @returns {Object} { success, message }
      */
-    async deleteMedicalImage({ recordId, filename }) {
-        const filePath = path.join(this.medicalDir, `Record_${recordId}`, filename);
-        return this.deleteFile(filePath);
+    async deleteImage({ domain, recordId, filename }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        return this.deleteFile(path.join(directory, filename));
+    }
+
+
+    /**
+     * List image filenames for a domain record, optionally filtered by keyword.
+     * @param {Object} params
+     * @param {string} params.domain          - Image domain key
+     * @param {string|number} params.recordId - Record ID or cow tag
+     * @param {string} [params.filter]        - Optional filename substring filter
+     * @returns {Object} { success, files }
+     */
+    async listImages({ domain, recordId, filter }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        const files = await this.listFiles(directory, filter);
+        return { success: true, files };
+    }
+
+
+    /**
+     * Get a specific image by exact filename for a domain record.
+     * @param {Object} params
+     * @param {string} params.domain          - Image domain key
+     * @param {string|number} params.recordId - Record ID or cow tag
+     * @param {string} params.filename        - Exact filename to retrieve
+     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
+     */
+    async getImageByName({ domain, recordId, filename }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        return this.readFileByPath(path.join(directory, filename));
     }
 
 
 
-    // /**
-    //  * Delete a medical issue image by its recency index.
-    //  * Resolves the nth most recent ISSUE image and deletes it by filename.
-    //  * @param {Object} params
-    //  * @param {string} params.recordId - Medical record ID
-    //  * @param {number} params.n        - 1-based index (1 = most recent)
-    //  * @returns {Object} { success, message }
-    //  */
-    // async deleteMedicalImageByIndex({ recordId, n }) {
-    //     const directory = path.join(this.medicalDir, `Record_${recordId}`);
-    //     const found = await this.readFile(directory, 'ISSUE', n, false);
-    //     if (!found.success) return found;
-    //     return this.deleteMedicalImage({ recordId, filename: found.filename });
-    // }
 
 
 
@@ -788,68 +734,62 @@ class LocalFileOperations {
 
 
 
-    
+    _resolveFileDomain(domain, id) {
+        const config = this.FILE_DOMAIN_CONFIG[domain];
+        if (!config) throw new Error(`Unknown file domain: ${domain}`);
+        return { directory: config.getDirectory(id) };
+    }
+
     /**
-     * Save a generic file to a medical record's Uploads folder.
-     * File must be pre-named. Fails if a file with the same name already exists.
+     * Save a file for a domain record. Always fails if filename already exists.
      * @param {Object} params
-     * @param {string} params.recordId   - Medical record ID
+     * @param {string} params.domain    - File domain key (e.g. 'medicalUpload')
+     * @param {string} params.recordId  - Record ID
+     * @param {string} params.filename  - Exact filename to save as
      * @param {Buffer} params.fileBuffer - File contents
-     * @param {string} params.filename   - Exact filename to save as
      * @returns {Object} { success, relativePath, absolutePath, filename, message }
      */
-    async saveMedicalUpload({ recordId, fileBuffer, filename }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`, 'Uploads');
+    async saveFile({ domain, recordId, filename, fileBuffer }) {
+        const { directory } = this._resolveFileDomain(domain, recordId);
         return this.saveFileStrict(directory, filename, fileBuffer);
     }
 
-
     /**
-     * Get a specific upload file from a medical record by filename.
+     * Get a specific file by filename for a domain record.
      * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
+     * @param {string} params.domain   - File domain key
+     * @param {string} params.recordId - Record ID
      * @param {string} params.filename - Exact filename to retrieve
      * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
      */
-    async getMedicalUpload({ recordId, filename }) {
-        const fs = require('fs').promises;
-        const directory = path.join(this.medicalDir, `Record_${recordId}`, 'Uploads');
-        const filePath = path.join(directory, filename);
-
-        try {
-            await fs.access(filePath);
-        } catch {
-            return { success: false, message: `File '${filename}' not found for record ${recordId}.` };
-        }
-
-        const fileBuffer = await fs.readFile(filePath);
-        const stats = await fs.stat(filePath);
-
-        return {
-            success: true,
-            fileBuffer,
-            filename,
-            size: stats.size,
-            modified: stats.mtime,
-            mimeType: this.getMimeType(filename)
-        };
+    async getFile({ domain, recordId, filename }) {
+        const { directory } = this._resolveFileDomain(domain, recordId);
+        return this.readFileByPath(path.join(directory, filename));
     }
 
     /**
-     * Delete a specific upload file from a medical record by filename.
+     * Delete a specific file by filename for a domain record.
      * @param {Object} params
-     * @param {string} params.recordId - Medical record ID
+     * @param {string} params.domain   - File domain key
+     * @param {string} params.recordId - Record ID
      * @param {string} params.filename - Exact filename to delete
      * @returns {Object} { success, message }
      */
-    async deleteMedicalUpload({ recordId, filename }) {
-        const filePath = path.join(this.medicalDir, `Record_${recordId}`, 'Uploads', filename);
-        return this.deleteFile(filePath);
+    async deleteDomainFile({ domain, recordId, filename }) {
+        const { directory } = this._resolveFileDomain(domain, recordId);
+        return this.deleteFile(path.join(directory, filename));
     }
 
-    async listMedicalUploads({ recordId }) {
-        const directory = path.join(this.medicalDir, `Record_${recordId}`, 'Uploads');
+    /**
+     * List all files for a domain record.
+     * @param {Object} params
+     * @param {string} params.domain   - File domain key
+     * @param {string} params.recordId - Record ID
+     * @returns {Object} { success, files }
+     */
+    async listDomainFiles({ domain, recordId }) {
         const fs = require('fs').promises;
+        const { directory } = this._resolveFileDomain(domain, recordId);
         try {
             await fs.access(directory);
             const files = await fs.readdir(directory);
@@ -860,18 +800,36 @@ class LocalFileOperations {
     }
 
 
-
-
     
 
 
 
 
 
-    // Medical upload wrappers
 
 
-    // Map wrappers
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /**
      * Get map data and available map image URLs, optionally with coordinates for a specific pasture.
@@ -940,120 +898,6 @@ class LocalFileOperations {
 
 
 
-
-    /**
-     * Get a main map image by type.
-     * @param {string} mapType - Map name without extension, e.g. 'map' or 'MapCombined'
-     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
-     */
-    async getMapImage(mapType) {
-        const filePath = path.join(this.mapDataDir, `${mapType}.png`);
-        return this.readFileByPath(filePath);
-    }
-
-    /**
-     * Upload a main map image. Fails if map of that type already exists.
-     * @param {Object} params
-     * @param {string} params.mapType    - 'map' or 'MapCombined'
-     * @param {Buffer} params.fileBuffer - File contents
-     * @param {string} params.filename   - Original filename, used for extension
-     * @returns {Object} { success, relativePath, absolutePath, filename, message }
-     */
-    async uploadMap({ mapType, fileBuffer, filename }) {
-        const validMapTypes = ['map', 'MapCombined'];
-        if (!validMapTypes.includes(mapType)) {
-            return { success: false, message: `Invalid map type. Allowed: ${validMapTypes.join(', ')}` };
-        }
-
-        const ext = path.extname(filename);
-        const mapFilename = `${mapType}${ext}`;
-        return this.saveFileStrict(this.mapDataDir, mapFilename, fileBuffer, this.imageFormats);
-    }
-
-    /**
-     * Get a minimap for a specific field. Falls back to a partial name match if exact not found.
-     * @param {Object} params
-     * @param {string} params.fieldName - Field name to look up
-     * @returns {Object} { success, fileBuffer, filename, fieldName, size, modified, mimeType }
-     */
-    async getMinimap({ fieldName }) {
-        const exactPath = path.join(this.minimapsDir, `${fieldName}_minimap.png`);
-        const exact = await this.readFileByPath(exactPath);
-
-        if (exact.success) return { ...exact, fieldName };
-
-        // Fuzzy fallback
-        const all = await this.listFiles(this.minimapsDir, fieldName);
-        const match = all.find(f => f.toLowerCase().includes('minimap'));
-
-        if (!match) {
-            return {
-                success: false,
-                message: `No minimap found for field "${fieldName}"`,
-                availableFields: await this.getAvailableMinimaps()
-            };
-        }
-
-        const result = await this.readFileByPath(path.join(this.minimapsDir, match));
-        return { ...result, fieldName };
-    }
-
-    /**
-     * Upload a minimap for a field. Fails if one already exists.
-     * @param {Object} params
-     * @param {string} params.fieldName  - Field name
-     * @param {Buffer} params.fileBuffer - File contents
-     * @param {string} params.filename   - Original filename, used for extension
-     * @returns {Object} { success, relativePath, absolutePath, filename, message }
-     */
-    async uploadMinimap({ fieldName, fileBuffer, filename }) {
-        const ext = path.extname(filename);
-        const minimapFilename = `${fieldName}_minimap${ext}`;
-        return this.saveFileStrict(this.minimapsDir, minimapFilename, fileBuffer, this.imageFormats);
-    }
-
-    /**
-     * Get list of field names that have minimaps available.
-     * @returns {string[]} Field names
-     */
-    async getAvailableMinimaps() {
-        const files = await this.listFiles(this.minimapsDir, 'minimap');
-        return files.map(f => f.replace(/_minimap\.(png|jpg|jpeg|gif|webp)$/i, ''));
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     // USER MANAGEMENT 
 
 
@@ -1085,18 +929,7 @@ class LocalFileOperations {
         return users;
     }
 
-    /**
-     * Convert users array to CSV content
-     */
-    usersToCSV(users) {
-        const headers = 'id,username,email,passwordHash,permissions,blocked';
-        const rows = users.map(user => {
-            const permissions = user.permissions.join('|');
-            return `${user.id},${user.username},${user.email},${user.passwordHash},${permissions},${user.blocked}`;
-        });
 
-        return [headers, ...rows].join('\n');
-    }
 
     /**
      * Checks the users file is valid, creates it if file does not exist.
@@ -1138,593 +971,6 @@ class LocalFileOperations {
             } else {
                 throw error;
             }
-        }
-    }
-
-    /**
-     * Gets a list of all users (excluding password hashes)
-     */
-    async getAllUsers() {
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Return users without password hashes
-            return {
-                success: true,
-                users: users.map(user => ({
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    permissions: user.permissions,
-                    blocked: user.blocked,
-                    hasPassword: !!user.passwordHash && user.passwordHash !== ''
-                }))
-            };
-        } catch (error) {
-            console.error('Error getting all users:', error);
-            return {
-                success: false,
-                message: `Failed to get users: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Given an email, return the user info (if it exists)
-     */
-    async lookupUser(params) {
-        const { email } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-            if (!user) {
-                return {
-                    success: false,
-                    exists: false,
-                    message: 'User not found'
-                };
-            }
-
-            return {
-                success: true,
-                exists: true,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    permissions: user.permissions,
-                    blocked: user.blocked,
-                    hasPassword: !!user.passwordHash && user.passwordHash !== '',
-                    isAdmin: user.permissions.includes('admin')
-                }
-            };
-        } catch (error) {
-            console.error('Error looking up user:', error);
-            return {
-                success: false,
-                message: `Failed to lookup user: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Called to initialize user on first login or registration
-     */
-    async setupUser(params) {
-        const { username, email, password } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Validate username is not reserved
-            if (username.toUpperCase() === 'PREREGISTERED') {
-                return {
-                    success: false,
-                    message: 'Username "PREREGISTERED" is reserved. Please choose a different username.'
-                };
-            }
-
-            // Check if user already exists
-            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-            if (existingUser) {
-                // User exists (pre-registered) - update their username and password
-                if (existingUser.username !== 'PREREGISTERED') {
-                    return {
-                        success: false,
-                        message: 'User already has a username set'
-                    };
-                }
-
-                // Hash password
-                const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
-
-                // Update user
-                const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-                users[userIndex].username = username;
-                users[userIndex].passwordHash = passwordHash;
-
-                // Save to file
-                const csvContent = this.usersToCSV(users);
-                await fs.writeFile(this.usersFile, csvContent);
-
-                return {
-                    success: true,
-                    user: {
-                        id: users[userIndex].id,
-                        username: users[userIndex].username,
-                        email: users[userIndex].email,
-                        permissions: users[userIndex].permissions
-                    },
-                    wasPreregistered: true
-                };
-            }
-
-            // New user - create fresh account
-            // Generate new user ID
-            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
-            const newId = maxId + 1;
-
-            // Hash password
-            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
-
-            // Determine permissions - first user gets all permissions including admin
-            let permissions = ['view'];
-            if (users.length === 0) {
-                permissions = ['view', 'add', 'admin', 'dev'];
-                console.log('First user created - granted all permissions including admin');
-            }
-
-            // Create new user
-            const newUser = {
-                id: newId,
-                username,
-                email,
-                passwordHash,
-                permissions,
-                blocked: false
-            };
-
-            users.push(newUser);
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                user: {
-                    id: newUser.id,
-                    username: newUser.username,
-                    email: newUser.email,
-                    permissions: newUser.permissions,
-                    isFirstUser: users.length === 1
-                }
-            };
-        } catch (error) {
-            console.error('Error setting up user:', error);
-            return {
-                success: false,
-                message: `Failed to setup user: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Checks if the password for given user email matches their expected hash
-     */
-    async validatePassword(params) {
-        const { email, password } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-            if (!user) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            if (user.blocked) {
-                return {
-                    success: false,
-                    blocked: true,
-                    message: 'User account is blocked'
-                };
-            }
-
-            if (!user.passwordHash || user.passwordHash === '') {
-                return {
-                    success: false,
-                    needsPasswordSetup: true,
-                    message: 'Password needs to be set'
-                };
-            }
-
-            const isValid = await bcrypt.compare(password, user.passwordHash);
-
-            if (isValid) {
-                return {
-                    success: true,
-                    user: {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        permissions: user.permissions
-                    }
-                };
-            } else {
-                return {
-                    success: false,
-                    message: 'Invalid password'
-                };
-            }
-        } catch (error) {
-            console.error('Error validating password:', error);
-            return {
-                success: false,
-                message: `Failed to validate password: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Reset the user password, clearing hash to prompt new password on next login
-     */
-    async resetUserPassword(params) {
-        const { email, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can reset passwords'
-                };
-            }
-
-            // Find target user
-            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-            if (userIndex === -1) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            // Clear password hash
-            users[userIndex].passwordHash = '';
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                message: `Password reset for ${email}. User will be prompted to set new password on next login.`
-            };
-        } catch (error) {
-            console.error('Error resetting password:', error);
-            return {
-                success: false,
-                message: `Failed to reset password: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Set a new password for user (used when user needs to create/reset password)
-     */
-    async setUserPassword(params) {
-        const { email, password } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-            if (userIndex === -1) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            if (users[userIndex].blocked) {
-                return {
-                    success: false,
-                    message: 'Cannot set password for blocked user'
-                };
-            }
-
-            // Hash and set new password
-            const passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
-            users[userIndex].passwordHash = passwordHash;
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                user: {
-                    id: users[userIndex].id,
-                    username: users[userIndex].username,
-                    email: users[userIndex].email,
-                    permissions: users[userIndex].permissions
-                }
-            };
-        } catch (error) {
-            console.error('Error setting password:', error);
-            return {
-                success: false,
-                message: `Failed to set password: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Update user permissions
-     */
-    async updateUserPermissions(params) {
-        const { email, permissions, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can update permissions'
-                };
-            }
-
-            // Find target user
-            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-            if (userIndex === -1) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            // Check if removing admin would leave zero admins
-            const wasAdmin = users[userIndex].permissions.includes('admin');
-            const willBeAdmin = permissions.includes('admin');
-
-            if (wasAdmin && !willBeAdmin) {
-                const activeAdmins = users.filter(u =>
-                    !u.blocked &&
-                    u.permissions.includes('admin') &&
-                    u.email.toLowerCase() !== email.toLowerCase()
-                );
-
-                if (activeAdmins.length === 0) {
-                    return {
-                        success: false,
-                        message: 'Cannot remove admin permission - at least one admin must remain'
-                    };
-                }
-            }
-
-            // Update permissions
-            users[userIndex].permissions = permissions;
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                user: {
-                    id: users[userIndex].id,
-                    username: users[userIndex].username,
-                    email: users[userIndex].email,
-                    permissions: users[userIndex].permissions
-                }
-            };
-        } catch (error) {
-            console.error('Error updating permissions:', error);
-            return {
-                success: false,
-                message: `Failed to update permissions: ${error.message}`
-            };
-        }
-    }
-
-
-    /**
-     * Block a user account
-     */
-    async blockUser(params) {
-        const { email, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can block users'
-                };
-            }
-
-            // Find target user
-            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-            if (userIndex === -1) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            // Prevent blocking if it would leave zero admins
-            if (users[userIndex].permissions.includes('admin')) {
-                const activeAdmins = users.filter(u =>
-                    !u.blocked &&
-                    u.permissions.includes('admin') &&
-                    u.email.toLowerCase() !== email.toLowerCase()
-                );
-
-                if (activeAdmins.length === 0) {
-                    return {
-                        success: false,
-                        message: 'Cannot block user - at least one active admin must remain'
-                    };
-                }
-            }
-
-            // Block user
-            users[userIndex].blocked = true;
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                message: `User ${email} has been blocked`
-            };
-        } catch (error) {
-            console.error('Error blocking user:', error);
-            return {
-                success: false,
-                message: `Failed to block user: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Unblock a user account
-     */
-    async unblockUser(params) {
-        const { email, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can unblock users'
-                };
-            }
-
-            // Find target user
-            const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-            if (userIndex === -1) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
-            }
-
-            // Unblock user
-            users[userIndex].blocked = false;
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                message: `User ${email} has been unblocked`
-            };
-        } catch (error) {
-            console.error('Error unblocking user:', error);
-            return {
-                success: false,
-                message: `Failed to unblock user: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Pre-register a user with email and permissions (no password yet)
-     */
-    async preRegisterUser(params) {
-        const { email, permissions, adminEmail } = params;
-
-        try {
-            const content = await fs.readFile(this.usersFile, 'utf8');
-            const users = this.parseUsersCSV(content);
-
-            // Verify admin has permission
-            const admin = users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
-            if (!admin || !admin.permissions.includes('admin')) {
-                return {
-                    success: false,
-                    message: 'Only admins can pre-register users'
-                };
-            }
-
-            // Check if user already exists
-            const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-            if (existingUser) {
-                return {
-                    success: false,
-                    message: 'User already exists'
-                };
-            }
-
-            // Generate new user ID
-            const maxId = users.length > 0 ? Math.max(...users.map(u => u.id)) : 0;
-            const newId = maxId + 1;
-
-            // Create new user with PREREGISTERED username and no password
-            const newUser = {
-                id: newId,
-                username: 'PREREGISTERED',  // Changed: Use reserved name
-                email,
-                passwordHash: '', // Empty - user will set on first login
-                permissions,
-                blocked: false
-            };
-
-            users.push(newUser);
-
-            // Save to file
-            const csvContent = this.usersToCSV(users);
-            await fs.writeFile(this.usersFile, csvContent);
-
-            return {
-                success: true,
-                user: {
-                    id: newUser.id,
-                    username: newUser.username,
-                    email: newUser.email,
-                    permissions: newUser.permissions
-                }
-            };
-        } catch (error) {
-            console.error('Error pre-registering user:', error);
-            return {
-                success: false,
-                message: `Failed to pre-register user: ${error.message}`
-            };
         }
     }
 
@@ -2509,51 +1755,26 @@ module.exports = {
     remCowtagSlash: (cowTag) => localOps.remCowtagSlash(cowTag),
     repCowtagSlash: (fileSystemCowTag) => localOps.repCowtagSlash(fileSystemCowTag),
 
-    // Cow images
-    saveCowImage: (params) => localOps.saveCowImage(params),
-    getCowImage: (params) => localOps.getCowImage(params),
-    getNthCowImage: (params) => localOps.getNthCowImage(params),
-    getAllCowImages: (params) => localOps.getAllCowImages(params),
-    numCowImages: (params) => localOps.numCowImages(params),
-    deleteCowImage: (params) => localOps.deleteCowImage(params),
-    // deleteCowImageByIndex: (params) => localOps.deleteCowImageByIndex(params),
+    // image operations
+    saveImage: (params) => localOps.saveImage(params),
+    getImage: (params) => localOps.getImage(params),
+    getImageCount: (params) => localOps.getImageCount(params),
+    deleteImage: (params) => localOps.deleteImage(params),
+    listImages: (params) => localOps.listImages(params),
+    getImageByName: (params) => localOps.getImageByName(params),
 
-    // Medical images
-    saveMedicalImage: (params) => localOps.saveMedicalImage(params),
-    getMedicalImage: (params) => localOps.getMedicalImage(params),
-    getMedicalImageCount: (params) => localOps.getMedicalImageCount(params),
-    deleteMedicalImage: (params) => localOps.deleteMedicalImage(params),
-    // deleteMedicalImageByIndex: (params) => localOps.deleteMedicalImageByIndex(params),
-
-
-    // Medical uploads
-    saveMedicalUpload: (params) => localOps.saveMedicalUpload(params),
-    getMedicalUpload: (params) => localOps.getMedicalUpload(params),
-    deleteMedicalUpload: (params) => localOps.deleteMedicalUpload(params),
-    listMedicalUploads: (params) => localOps.listMedicalUploads(params),
+    // file save/load operations
+    saveFile: (params) => localOps.saveFile(params),
+    getFile: (params) => localOps.getFile(params),
+    deleteDomainFile: (params) => localOps.deleteDomainFile(params),
+    listDomainFiles: (params) => localOps.listDomainFiles(params),
 
 
     // Maps
     getMap: (params) => localOps.getMap(params),
-    getMapImage: (mapType) => localOps.getMapImage(mapType),
-    uploadMap: (params) => localOps.uploadMap(params),
-    getMinimap: (params) => localOps.getMinimap(params),
-    getAvailableMinimaps: () => localOps.getAvailableMinimaps(),
-    uploadMinimap: (params) => localOps.uploadMinimap(params),
-
 
     // User management
     checkUsers: () => localOps.checkUsers(),
-    getAllUsers: () => localOps.getAllUsers(),
-    lookupUser: (params) => localOps.lookupUser(params),
-    setupUser: (params) => localOps.setupUser(params),
-    validatePassword: (params) => localOps.validatePassword(params),
-    setUserPassword: (params) => localOps.setUserPassword(params),
-    resetUserPassword: (params) => localOps.resetUserPassword(params),
-    updateUserPermissions: (params) => localOps.updateUserPermissions(params),
-    blockUser: (params) => localOps.blockUser(params),
-    unblockUser: (params) => localOps.unblockUser(params),
-    preRegisterUser: (params) => localOps.preRegisterUser(params),
     readoutUsersJSON: () => localOps.readoutUsersJSON(),
 
 

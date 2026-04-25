@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toLocalDisplay, toAge, toLocalMonthYear } from '../utils/dateUtils';
 
 import ColorTable from './colorTable';
-import AnimalPhotoViewer from './animalPhotoViewer';
+import PhotoViewer from './photoViewer';
 import Popup from './popup';
 import AutoCombobox from './autoCombobox';
 import AnimalForm from './animalForm';
@@ -571,14 +571,7 @@ function BreedingFitness({
               onFix={(tag) => openFixPopup('dam', tag)}
             />
             <div style={{ width: 'var(--image-size)', height: 'var(--image-size)' }}>
-              <AnimalPhotoViewer
-                cowTag={damTag}
-                imageType="body"
-                style={{
-                  width: '100%', height: '100%', borderRadius: '5px',
-                  border: damTag ? 'none' : '2px dashed #ccc'
-                }}
-              />
+              <PhotoViewer domain="cow" recordId={damTag} filter="BODY" defaultImage="/images/NoBody.png" style={{ width: '100%', height: '100%', borderRadius: '5px', border: damTag ? 'none' : '2px dashed #ccc' }} />
             </div>
           </div>
 
@@ -592,15 +585,7 @@ function BreedingFitness({
               onFix={(tag) => openFixPopup('sire', tag)}
             />
             <div style={{ width: 'var(--image-size)', height: 'var(--image-size)' }}>
-              <AnimalPhotoViewer
-                cowTag={sireTag}
-                imageType="body"
-                alternateDefaultPhoto={!sireTag}
-                style={{
-                  width: '100%', height: '100%', borderRadius: '5px',
-                  border: sireTag ? 'none' : '2px dashed #ccc'
-                }}
-              />
+              <PhotoViewer domain="cow" recordId={sireTag} filter="BODY" defaultImage={!sireTag ? '/images/NoPhoto.png' : '/images/NoBody.png'} style={{ width: '100%', height: '100%', borderRadius: '5px', border: sireTag ? 'none' : '2px dashed #ccc' }} />
             </div>
           </div>
         </div>
@@ -619,11 +604,7 @@ function BreedingFitness({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 'var(--multibubble-gap)' }}>
           <h4 style={{ margin: '0 0 10px 0' }}>Current Animal: {cowTag}</h4>
           <div style={{ width: 'calc(var(--image-size) * 1.33)', height: 'calc(var(--image-size) * 1.33)' }}>
-            <AnimalPhotoViewer
-              cowTag={cowTag}
-              imageType="body"
-              style={{ width: '100%', height: '100%', borderRadius: '5px', border: '3px solid #007bff' }}
-            />
+            <PhotoViewer domain="cow" recordId={cowTag} filter="BODY" defaultImage="/images/NoBody.png" style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }} />
           </div>
         </div>
       </div>

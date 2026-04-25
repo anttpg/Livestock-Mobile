@@ -108,7 +108,7 @@ function BreedingPlan() {
                     fontSize: '16px', minWidth: '200px', backgroundColor: 'white'
                 }}
             >
-                <option value={CURRENT_MODE_VALUE}>Current Animals</option>
+                <option value={CURRENT_MODE_VALUE}>All Animals</option>
                 {breedingPlans.map(plan => (
                     <option key={plan.ID} value={plan.ID}>
                         {plan.PlanYear} — {plan.PlanName}

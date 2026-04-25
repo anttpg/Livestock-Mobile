@@ -1,20 +1,58 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
 
+// XHR-based upload for real progress events
+function xhrUpload(url, formData, onProgress) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    });
+
+    xhr.addEventListener('load', async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({ success: true });
+      } else {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve({ success: false, error: data.error });
+        } catch {
+          resolve({ success: false, error: `Server error ${xhr.status}` });
+        }
+      }
+    });
+
+    xhr.addEventListener('error', () => resolve({ success: false, error: 'Network error' }));
+
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.send(formData);
+  });
+}
+
+function buildQuery(filter, cacheKey) {
+  const params = new URLSearchParams();
+  if (filter) params.set('filter', filter);
+  if (cacheKey) params.set('v', cacheKey);
+  const str = params.toString();
+  return str ? `?${str}` : '';
+}
+
 function PhotoViewer({
-  fetchCount,       // async () => number
-  getImageUrl,      // (n: number) => string
-  uploadFn,         // async (blob, onProgress: (0-100) => void) => { success, error }
-  deleteFn,         // optional: async (n: number) => { success, error }
-  defaultImage,     // string — shown when count is 0
+  domain,                            // e.g. 'cow', 'medical', 'equipment'
+  recordId,                          // cow tag, record ID, etc.
+  filter,                            // optional keyword: 'HEAD', 'BODY', 'ISSUE', etc.
+  defaultImage = '/images/NoPhoto.png',
   style = {}
 }) {
+  const [cacheKey, setCacheKey] = useState(() => Date.now());
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageCount, setImageCount] = useState(0);
   const [loadedImages, setLoadedImages] = useState(new Map());
-  const [uploadProgress, setUploadProgress] = useState(null); // null = not uploading, 0-100 = uploading
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [initialImage, setInitialImage] = useState('/images/loading.png');
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -25,6 +63,58 @@ function PhotoViewer({
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const encodedId = recordId ? encodeURIComponent(recordId) : null;
+  const base = domain && encodedId ? `/api/images/${domain}/${encodedId}` : null;
+
+  const getImageUrl = useMemo(() => {
+    if (!base) return () => defaultImage;
+    return (n) => `${base}/photo/${n}${buildQuery(filter, cacheKey)}`;
+  }, [base, filter, cacheKey]);
+
+  const fetchCount = useMemo(() => {
+    if (!base) return null;
+    return async () => {
+      const res = await fetch(`${base}/count${buildQuery(filter)}`, { credentials: 'include' });
+      if (!res.ok) return 0;
+      const data = await res.json();
+      return data.total ?? 0;
+    };
+  }, [base, filter]);
+
+  const uploadFn = useMemo(() => {
+    if (!base) return null;
+    return async (blob, onProgress) => {
+      const fd = new FormData();
+      fd.append('image', blob, `upload_${Date.now()}.jpg`);
+      const result = await xhrUpload(`${base}${buildQuery(filter)}`, fd, onProgress);
+      if (result.success) setCacheKey(Date.now());
+      return result;
+    };
+  }, [base, filter]);
+
+  const deleteFn = useMemo(() => {
+    if (!base) return null;
+    return async (n) => {
+      const headRes = await fetch(`${base}/photo/${n}${buildQuery(filter, cacheKey)}`, {
+        method: 'HEAD',
+        credentials: 'include'
+      });
+      const filename = headRes.headers.get('X-Filename');
+      if (!filename) return { success: false, error: 'Could not resolve filename' };
+
+      const res = await fetch(`${base}/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        setCacheKey(Date.now());
+        return { success: true };
+      }
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || `Server error ${res.status}` };
+    };
+  }, [base, filter, cacheKey]);
 
   useEffect(() => {
     if (!fetchCount) return;
@@ -66,7 +156,6 @@ function PhotoViewer({
 
   const handleExpand = () => {
     setIsExpanded(true);
-
     if (imageCount > 1 && !loadedImages.has(2)) {
       loadNextImage(2);
       for (let i = 3; i <= imageCount; i++) {
@@ -77,11 +166,8 @@ function PhotoViewer({
 
   const handleImageClick = () => {
     if (isLoadingInitial || uploadProgress !== null) return;
-    if (imageCount === 0) {
-      triggerFileUpload();
-    } else {
-      handleExpand();
-    }
+    if (imageCount === 0) triggerFileUpload();
+    else handleExpand();
   };
 
   const openCamera = async () => {
@@ -90,22 +176,16 @@ function PhotoViewer({
         alert('Camera access requires HTTPS connection on mobile devices');
         return;
       }
-
       if (!navigator.mediaDevices?.getUserMedia) {
         alert('Camera not supported on this device/browser');
         return;
       }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
-
       streamRef.current = stream;
       setShowCamera(true);
-
-      setTimeout(() => {
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      }, 100);
+      setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, 100);
     } catch (error) {
       const messages = {
         NotAllowedError: 'Camera permission denied. Please enable camera access in your browser settings.',
@@ -119,36 +199,20 @@ function PhotoViewer({
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
-
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0);
-
-    canvas.toBlob(async (blob) => {
-      if (blob) await doUpload(blob);
-    }, 'image/jpeg', 0.8);
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(async (blob) => { if (blob) await doUpload(blob); }, 'image/jpeg', 0.8);
   };
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size too large. Please select an image smaller than 10MB');
-      return;
-    }
-
+    if (!file.type.startsWith('image/')) { alert('Please select a valid image file'); return; }
+    if (file.size > 10 * 1024 * 1024) { alert('File size too large. Please select an image smaller than 10MB'); return; }
     doUpload(file);
-
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -158,9 +222,7 @@ function PhotoViewer({
     try {
       setUploadProgress(0);
       closeCamera();
-
       const result = await uploadFn(blob, (pct) => setUploadProgress(pct));
-
       if (result.success) {
         setUploadProgress(null);
         setIsLoadingInitial(true);
@@ -184,16 +246,12 @@ function PhotoViewer({
     setShowCamera(false);
   };
 
-  const getCurrentImageUrl = (index) => {
-    const n = index + 1;
-    return loadedImages.get(n) ?? '/images/loading.png';
-  };
+  const getCurrentImageUrl = (index) => loadedImages.get(index + 1) ?? '/images/loading.png';
 
   const confirmDelete = async () => {
     setShowDeleteConfirm(false);
-    const n = currentIndex + 1;
     try {
-      const result = await deleteFn(n);
+      const result = await deleteFn(currentIndex + 1);
       if (result.success) {
         setIsExpanded(false);
         setCurrentIndex(0);
@@ -212,8 +270,15 @@ function PhotoViewer({
 
   const isUploading = uploadProgress !== null;
   const isInteractive = !isLoadingInitial && !isUploading;
-
   const cameraIcon = (!dataLoaded || imageCount === 0) ? 'photo_camera' : 'expand_content';
+
+  if (!domain || !recordId) {
+    return (
+      <div style={{ ...style, borderRadius: '5px', overflow: 'hidden' }}>
+        <img src={defaultImage} alt="no photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -230,44 +295,18 @@ function PhotoViewer({
         onMouseEnter={(e) => { if (isInteractive) e.currentTarget.style.filter = 'brightness(0.9)'; }}
         onMouseLeave={(e) => { if (isInteractive) e.currentTarget.style.filter = 'brightness(1)'; }}
       >
-        {/* Upload progress overlay */}
         {isUploading && (
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10,
-            gap: '10px',
-            padding: '16px'
+            position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', zIndex: 10, gap: '10px', padding: '16px'
           }}>
-            <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '28px' }}>
-              cloud_upload
-            </span>
-            <span style={{ color: 'white', fontSize: '13px', fontWeight: 600, letterSpacing: '0.05em' }}>
-              UPLOADING
-            </span>
-            <div style={{
-              width: '80%',
-              height: '6px',
-              backgroundColor: 'rgba(255,255,255,0.25)',
-              borderRadius: '3px',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                height: '100%',
-                width: `${uploadProgress}%`,
-                backgroundColor: '#4CAF50',
-                borderRadius: '3px',
-                transition: 'width 0.15s ease'
-              }} />
+            <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '28px' }}>cloud_upload</span>
+            <span style={{ color: 'white', fontSize: '13px', fontWeight: 600, letterSpacing: '0.05em' }}>UPLOADING</span>
+            <div style={{ width: '80%', height: '6px', backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: '#4CAF50', borderRadius: '3px', transition: 'width 0.15s ease' }} />
             </div>
-            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>
-              {uploadProgress}%
-            </span>
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>{uploadProgress}%</span>
           </div>
         )}
 
@@ -275,38 +314,22 @@ function PhotoViewer({
           src={isLoadingInitial ? '/images/loading.png' : initialImage}
           alt="photo"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={(e) => {
-            if (!isLoadingInitial) e.target.src = defaultImage;
-          }}
+          onError={(e) => { if (!isLoadingInitial) e.target.src = defaultImage; }}
         />
 
         {isInteractive && (
           <div style={{
-            position: 'absolute',
-            bottom: '8px',
-            right: '8px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '50%',
-            padding: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+            position: 'absolute', bottom: '8px', right: '8px',
+            backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: '50%',
+            padding: '6px', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
           }}>
-            <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '18px' }}>
-              {cameraIcon}
-            </span>
+            <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '18px' }}>{cameraIcon}</span>
           </div>
         )}
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleFileUpload}
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
 
       <Popup isOpen={isExpanded} onClose={() => setIsExpanded(false)} title="Photos" height="90vh">
         {dataLoaded ? (
@@ -333,44 +356,15 @@ function PhotoViewer({
 
       <Popup isOpen={showCamera} onClose={closeCamera} title="Take Photo" width="80vw" height="80vh" maxWidth="600px" maxHeight="600px">
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '5px' }}
-          />
+          <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '5px' }} />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-          <div style={{
-            position: 'absolute',
-            bottom: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            gap: '15px',
-            alignItems: 'center'
-          }}>
+          <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '15px', alignItems: 'center' }}>
             {[
               { icon: 'photo_camera', color: '#4CAF50', action: capturePhoto },
               { icon: 'upload', color: '#2196F3', action: triggerFileUpload },
               { icon: 'close', color: '#f44336', action: closeCamera }
             ].map(({ icon, color, action }) => (
-              <button
-                key={icon}
-                onClick={action}
-                style={{
-                  backgroundColor: color,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '60px',
-                  height: '60px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
+              <button key={icon} onClick={action} style={{ backgroundColor: color, color: 'white', border: 'none', borderRadius: '50%', width: '60px', height: '60px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span className="material-symbols-outlined">{icon}</span>
               </button>
             ))}
@@ -391,19 +385,10 @@ function PhotoViewer({
   );
 }
 
-// PhotoGallery is unchanged in structure, just cleaned of route-specific props
+// PhotoGallery — unchanged
 function PhotoGallery({
-  imageCount,
-  currentIndex,
-  onIndexChange,
-  onAddPhoto,
-  onUploadPhoto,
-  onDelete,
-  onPrevious,
-  onNext,
-  getCurrentImageUrl,
-  isUploading,
-  uploadProgress
+  imageCount, currentIndex, onIndexChange, onAddPhoto, onUploadPhoto,
+  onDelete, onPrevious, onNext, getCurrentImageUrl, isUploading, uploadProgress
 }) {
   if (imageCount === 0) {
     return (
@@ -433,70 +418,24 @@ function PhotoGallery({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-
-      {/* Upload progress overlay */}
       {isUploading && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 20,
-          gap: '10px',
-          padding: '16px'
-        }}>
-          <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '36px' }}>
-            cloud_upload
-          </span>
-          <span style={{ color: 'white', fontSize: '14px', fontWeight: 600, letterSpacing: '0.05em' }}>
-            UPLOADING
-          </span>
-          <div style={{
-            width: '60%',
-            height: '6px',
-            backgroundColor: 'rgba(255,255,255,0.25)',
-            borderRadius: '3px',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${uploadProgress}%`,
-              backgroundColor: '#4CAF50',
-              borderRadius: '3px',
-              transition: 'width 0.15s ease'
-            }} />
+        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 20, gap: '10px', padding: '16px' }}>
+          <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '36px' }}>cloud_upload</span>
+          <span style={{ color: 'white', fontSize: '14px', fontWeight: 600, letterSpacing: '0.05em' }}>UPLOADING</span>
+          <div style={{ width: '60%', height: '6px', backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: '#4CAF50', borderRadius: '3px', transition: 'width 0.15s ease' }} />
           </div>
-          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>
-            {uploadProgress}%
-          </span>
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>{uploadProgress}%</span>
         </div>
       )}
-      
+
       <div style={{ position: 'absolute', top: '15px', left: '15px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 12px', borderRadius: '20px', fontSize: '16px', fontWeight: 'bold', zIndex: 10 }}>
         {currentIndex + 1}/{imageCount}
       </div>
 
       <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10, display: 'flex', gap: '10px' }}>
         {topRightButtons.map(({ icon, label, action, color }) => (
-          <button
-            key={label}
-            onClick={action}
-            style={{
-              backgroundColor: color ?? 'rgba(0,0,0,0.7)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '20px',
-              padding: '8px 12px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}
-          >
+          <button key={label} onClick={action} style={{ backgroundColor: color ?? 'rgba(0,0,0,0.7)', color: 'white', border: 'none', borderRadius: '20px', padding: '8px 12px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{icon}</span>
             {label}
           </button>
@@ -504,12 +443,7 @@ function PhotoGallery({
       </div>
 
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
-        <img
-          src={getCurrentImageUrl(currentIndex)}
-          alt={`photo ${currentIndex + 1}`}
-          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-          onError={(e) => { e.target.src = '/images/loading.png'; }}
-        />
+        <img src={getCurrentImageUrl(currentIndex)} alt={`photo ${currentIndex + 1}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} onError={(e) => { e.target.src = '/images/loading.png'; }} />
       </div>
 
       {imageCount > 1 && (

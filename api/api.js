@@ -2,6 +2,7 @@ const { validationResult } = require('express-validator');
 const { getUserEmail } = require('../backend/accessControl');
 const dbOperations = require('./dbOperations');
 const localFileOps = require('./local');
+const path = require('path');
 
 /**
  * Streamlined API wrapper that enforces validation and access control
@@ -186,13 +187,14 @@ class APIWrapper {
             // Get minimap if cow has a pasture
             let minimap = null;
             if (cowData?.PastureName) {
-                const minimapResult = await localFileOps.getMinimap({
-                    fieldName: cowData.PastureName
+                const countResult = await localFileOps.getImageCount({
+                    domain: 'minimap',
+                    recordId: cowData.PastureName,
                 });
-                if (minimapResult.success) {
+                if (countResult.success && countResult.total > 0) {
                     minimap = {
                         pastureName: cowData.PastureName,
-                        path: `/api/minimap/${encodeURIComponent(cowData.PastureName)}`
+                        path: `/api/images/minimap/${encodeURIComponent(cowData.PastureName)}/photo/1`
                     };
                 }
             }
@@ -747,15 +749,16 @@ class APIWrapper {
 
     async getPregancyChecks(req, res) {
         return this.executeDBOperation(req, res, 'getPregancyChecks', (req) => {
-            const planId           = req.query.planId           ? parseInt(req.query.planId)           : null;
-            const cowTag           = req.query.cowTag           || null;
+            const planId = req.query.planId ? parseInt(req.query.planId) : null;
+            const cowTag = req.query.cowTag || null;
             const breedingRecordId = req.query.breedingRecordId ? parseInt(req.query.breedingRecordId) : null;
+            const testResults = req.query.testResults || null;
 
-            if (!planId && !cowTag && !breedingRecordId) {
-                throw new Error('At least one filter (planId, cowTag, or breedingRecordId) is required');
+            if (!planId && !cowTag && !breedingRecordId && !testResults) {
+                throw new Error('At least one filter (planId, cowTag, breedingRecordId, or testResults) is required');
             }
 
-            return { planId, cowTag, breedingRecordId };
+            return { planId, cowTag, breedingRecordId, testResults};
         });
     }
 
@@ -1274,52 +1277,6 @@ class APIWrapper {
 
 
 
-    
-
-    /**
-     * Get all available pastures
-     */
-    async getAllPastures(req, res) {
-        return this.executeDBOperation(req, res, 'getAllPastures', (req) => ({}));
-    }
-
-    async getPastureMaintenanceEvents(req, res) {
-        return this.executeDBOperation(req, res, 'getPastureMaintenanceEvents', (req) => ({
-            pastureName: req.params.pastureName
-        }));
-    }
-
-    async addPastureMaintenanceEvent(req, res) {
-        return this.executeDBOperation(req, res, 'addPastureMaintenanceEvent', (req) => ({
-            pastureName: req.body.pastureName,
-            targetOfMaintenance: req.body.targetOfMaintenance,
-            actionPerformed: req.body.actionPerformed,
-            needsFollowUp: req.body.needsFollowUp || false,
-            username: req.body.username || req.session?.user?.username || 'Unknown'
-        }));
-    }
-
-
-
-
-
-    async getUserPreferences(req, res) {
-        return this.executeDBOperation(req, res, 'getUserPreferences', (req) => ({
-            username: req.params.username
-        }));
-    }
-
-    async updateUserPreferences(req, res) {
-        return this.executeDBOperation(req, res, 'updateUserPreferences', (req) => ({
-            username: req.params.username,
-            preferences: req.body.preferences
-        }));
-    }
-
-
-
-
-
 
     
     /**
@@ -1499,6 +1456,277 @@ class APIWrapper {
 
 
 
+    /**
+     * Get map data 
+     */
+    async getMap(req, res) {
+        return this.executeFileOperation(req, res, 'getMap', (req) => ({
+            pastureName: req.query.pasture || null,
+        }));
+    }
+
+
+    /**
+     * Get all available pastures
+     */
+    async getAllPastures(req, res) {
+        return this.executeDBOperation(req, res, 'getAllPastures', (req) => ({}));
+    }
+
+    async getPastureMaintenanceEvents(req, res) {
+        return this.executeDBOperation(req, res, 'getPastureMaintenanceEvents', (req) => ({
+            pastureName: req.params.pastureName
+        }));
+    }
+
+    async addPastureMaintenanceEvent(req, res) {
+        return this.executeDBOperation(req, res, 'addPastureMaintenanceEvent', (req) => ({
+            pastureName: req.body.pastureName,
+            targetOfMaintenance: req.body.targetOfMaintenance,
+            actionPerformed: req.body.actionPerformed,
+            needsFollowUp: req.body.needsFollowUp || false,
+            username: req.body.username || req.session?.user?.username || 'Unknown'
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Equipment /////////////////////
+    async getEquipmentRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentRecords', (req) => ({
+            status: req.query.status || null,
+        }));
+    }
+
+    async getEquipmentRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentRecord', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async createEquipment(req, res) {
+        return this.executeDBOperation(req, res, 'createEquipment', (req) => ({
+            name:               req.body.name               || null,
+            description:        req.body.description        || null,
+            pastureName:        req.body.pastureName        || null,
+            locationID:         req.body.locationID         ? parseInt(req.body.locationID) : null,
+            isVehicle:          req.body.isVehicle          ?? false,
+            equipmentStatus:    req.body.equipmentStatus    || null,
+            equipmentType:      req.body.equipmentType      || null,
+            make:               req.body.make               || null,
+            model:              req.body.model              || null,
+            year:               req.body.year               ? parseInt(req.body.year) : null,
+            serialNumber:       req.body.serialNumber       || null,
+            registration:       req.body.registration       || null,
+            registrationExpiry: req.body.registrationExpiry || null,
+            grossWeightRating:  req.body.grossWeightRating  || null,
+            warrantyExpiry:     req.body.warrantyExpiry     || null,
+            warrantyNotes:      req.body.warrantyNotes      || null,
+            notes:              req.body.notes              || null,
+            purchaseRecordID:   req.body.purchaseRecordID   ? parseInt(req.body.purchaseRecordID) : null,
+            saleRecordID:       req.body.saleRecordID       ? parseInt(req.body.saleRecordID)     : null,
+        }));
+    }
+
+    async updateEquipment(req, res) {
+        return this.executeDBOperation(req, res, 'updateEquipment', (req) => ({
+            id:      parseInt(req.params.id),
+            updates: req.body,
+        }));
+    }
+
+    async deleteEquipment(req, res) {
+        return this.executeDBOperation(req, res, 'deleteEquipment', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async getEquipmentMaintenanceRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentMaintenanceRecords', (req) => {
+            if (!req.query.equipmentId) throw new Error('equipmentId query parameter is required');
+            return { equipmentId: parseInt(req.query.equipmentId) };
+        });
+    }
+
+    async getEquipmentMaintenanceRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentMaintenanceRecord', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async createEquipmentMaintenanceRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createEquipmentMaintenanceRecord', (req) => ({
+            equipmentID:           req.body.equipmentID           ? parseInt(req.body.equipmentID) : null,
+            dateRecorded:          req.body.dateRecorded          || null,
+            recordedByUsername:    req.body.recordedByUsername    || null,
+            datePerformed:         req.body.datePerformed         || null,
+            performedByUsername:   req.body.performedByUsername   || null,
+            title:                 req.body.title                 || null,
+            description:           req.body.description           || null,
+            serviceType:           req.body.serviceType           || null,
+            meterReadingAtService: req.body.meterReadingAtService != null ? parseFloat(req.body.meterReadingAtService) : null,
+            meterUnit:             req.body.meterUnit             || null,
+            nextServiceDue:        req.body.nextServiceDue        != null ? parseFloat(req.body.nextServiceDue)        : null,
+            nextServiceUnits:      req.body.nextServiceUnits      || null,
+        }));
+    }
+
+    async updateEquipmentMaintenanceRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updateEquipmentMaintenanceRecord', (req) => ({
+            id:      parseInt(req.params.id),
+            updates: req.body,
+        }));
+    }
+
+    async deleteEquipmentMaintenanceRecord(req, res) {
+        return this.executeDBOperation(req, res, 'deleteEquipmentMaintenanceRecord', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async getEquipmentParts(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentParts', (req) => {
+            if (!req.query.equipmentId) throw new Error('equipmentId query parameter is required');
+            return { equipmentId: parseInt(req.query.equipmentId) };
+        });
+    }
+
+    async getEquipmentPart(req, res) {
+        return this.executeDBOperation(req, res, 'getEquipmentPart', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async createEquipmentPart(req, res) {
+        return this.executeDBOperation(req, res, 'createEquipmentPart', (req) => ({
+            equipmentID:  req.body.equipmentID ? parseInt(req.body.equipmentID) : null,
+            partType:     req.body.partType     || null,
+            partNumber:   req.body.partNumber   || null,
+            manufacturer: req.body.manufacturer || null,
+            notes:        req.body.notes        || null,
+            visible:      req.body.visible      ?? true,
+        }));
+    }
+
+    async updateEquipmentPart(req, res) {
+        return this.executeDBOperation(req, res, 'updateEquipmentPart', (req) => ({
+            id:      parseInt(req.params.id),
+            updates: req.body,
+        }));
+    }
+
+    async deleteEquipmentPart(req, res) {
+        return this.executeDBOperation(req, res, 'deleteEquipmentPart', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    async getUserPreferences(req, res) {
+        return this.executeDBOperation(req, res, 'getUserPreferences', (req) => ({
+            username: req.params.username
+        }));
+    }
+
+    async updateUserPreferences(req, res) {
+        return this.executeDBOperation(req, res, 'updateUserPreferences', (req) => ({
+            username: req.params.username,
+            preferences: req.body.preferences
+        }));
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     async getUserEmail(req, res) {
         try {
@@ -1616,268 +1844,55 @@ class APIWrapper {
 
 
 
-    // Local functions 
+    // Generic file upload/download operations
 
-
-    // Binary response — cannot use executeFileOperation
-    async getCowImage(req, res) {
-        const result = await localFileOps.getCowImage({
-            cowTag: req.params.tag,
-            imageType: req.params.imageType,
-            n: 1
-        });
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Content-Disposition': `inline; filename="${result.filename}"`,
-                'X-Filename': result.filename,
-                'Cache-Control': 'public, max-age=31536000'
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({ error: result.message });
-    }
-
-    // Binary response — cannot use executeFileOperation
-    async getNthCowImage(req, res) {
-        const result = await localFileOps.getCowImage({
-            cowTag: req.params.tag,
-            imageType: req.params.imageType,
-            n: parseInt(req.params.n) || 1
-        });
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Content-Disposition': `inline; filename="${result.filename}"`,
-                'X-Filename': result.filename,
-               'Cache-Control': 'public, max-age=31536000'
-
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({ error: result.message });
-    }
-
-    async saveCowImage(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'saveCowImage', (req) => ({
-            cowTag: req.params.tag,
-            imageType: req.body.imageType,
+    async uploadFile(req, res) {
+        if (!req.file) return res.status(400).json({ error: 'No file provided' });
+        return this.executeFileOperation(req, res, 'saveFile', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filename: req.file.originalname,
             fileBuffer: req.file.buffer,
-            originalFilename: req.file.originalname
         }));
     }
 
-    async getAllCowImages(req, res) {
-        return this.executeFileOperation(req, res, 'getAllCowImages', (req) => ({
-            cowTag: req.params.tag
-        }));
-    }
-
-    async getCowImageCount(req, res) {
-        return this.executeFileOperation(req, res, 'numCowImages', (req) => ({
-            cowTag: req.params.tag
-        }));
-    }
-
-    async deleteCowImage(req, res) {
-        return this.executeFileOperation(req, res, 'deleteCowImage', (req) => ({
-            cowTag: req.params.tag,
-            filename: req.params.filename
-        }));
-    }
-
-
-
-
-
-    // Binary response — cannot use executeFileOperation
-    async getMedicalImage(req, res) {
-        const result = await localFileOps.getMedicalImage({
-            recordId: parseInt(req.params.recordId),
-            n: parseInt(req.params.n) || 1,
-        });
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Last-Modified': result.modified.toUTCString(),
-                'Cache-Control': 'public, max-age=31536000',
-                'X-Filename': result.filename
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({ error: result.message });
-    }
-
-    async uploadMedicalImage(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'saveMedicalImage', (req) => ({
-            recordId: parseInt(req.params.recordId),
-            fileBuffer: req.file.buffer,
-            originalFilename: req.file.originalname
-        }));
-    }
-
-    async getMedicalImageCount(req, res) {
-        return this.executeFileOperation(req, res, 'getMedicalImageCount', (req) => ({
-            recordId: parseInt(req.params.recordId)
-        }));
-    }
-
-    async deleteMedicalImage(req, res) {
-        return this.executeFileOperation(req, res, 'deleteMedicalImage', (req) => ({
-            recordId: parseInt(req.params.recordId),
-            filename: req.params.filename
-        }));
-    }
-
-
-
-
-
-
-    async saveMedicalUpload(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'saveMedicalUpload', (req) => ({
-            recordId: parseInt(req.params.recordId),
-            fileBuffer: req.file.buffer,
-            filename: req.file.originalname
-        }));
-    }
-
-    // Binary response — cannot use executeFileOperation
-    async getMedicalUpload(req, res) {
-        const result = await localFileOps.getMedicalUpload({
-            recordId: parseInt(req.params.recordId),
-            filename: req.params.filename
-        });
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Last-Modified': result.modified.toUTCString(),
-                'Content-Disposition': `inline; filename="${result.filename}"`
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({ error: result.message });
-    }
-
-    async deleteMedicalUpload(req, res) {
-        return this.executeFileOperation(req, res, 'deleteMedicalUpload', (req) => ({
-            recordId: parseInt(req.params.recordId),
-            filename: req.params.filename
-        }));
-    }
-
-    async listMedicalUploads(req, res) {
-        return this.executeFileOperation(req, res, 'listMedicalUploads', (req) => ({
-            recordId: parseInt(req.params.recordId)
-        }));
-    }
-
-
-    async getMap(req, res) {
-        return this.executeFileOperation(req, res, 'getMap', (req) => ({
-            pastureName: req.query.pasture
-        }));
-    }
-
-    // Binary response — cannot use executeFileOperation
-    async getMapImage(req, res) {
-        const { image } = req.query;
-        const allowedTypes = ['map', 'MapCombined'];
-
-        if (!allowedTypes.includes(image)) {
-            return res.status(400).json({ error: 'Invalid map type' });
-        }
-
-        const result = await localFileOps.getMapImage(image);
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Content-Disposition': `inline; filename="${result.filename}"`
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({ error: result.message });
-    }
-
-    async uploadMap(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'uploadMap', (req) => ({
-            mapType: req.body.mapType,
-            fileBuffer: req.file.buffer,
-            filename: req.file.originalname
-        }));
-    }
-
-    // Binary response — cannot use executeFileOperation
-    async getMinimap(req, res) {
-        const result = await localFileOps.getMinimap({
-            fieldName: decodeURIComponent(req.params.fieldName)
-        });
-
-        if (result.success) {
-            res.set({
-                'Content-Type': result.mimeType,
-                'Content-Length': result.size,
-                'Content-Disposition': `inline; filename="${result.filename}"`
-            });
-            return res.send(result.fileBuffer);
-        }
-        return res.status(404).json({
-            error: result.message,
-            availableFields: result.availableFields
-        });
-    }
-
-    async uploadMinimap(req, res) {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file provided' });
-        }
-
-        return this.executeFileOperation(req, res, 'uploadMinimap', (req) => ({
-            fieldName: req.params.fieldName,
-            fileBuffer: req.file.buffer,
-            filename: req.file.originalname
-        }));
-    }
-
-
-    async getAvailableMinimaps(req, res) {
+    // Binary — cannot use executeFileOperation
+    async getFile(req, res) {
         try {
-            const availableFields = await localFileOps.getAvailableMinimaps();
-            return res.status(200).json({
-                success: true,
-                fields: availableFields,
-                count: availableFields.length
+            const result = await localFileOps.getFile({
+                domain: req.params.domain,
+                recordId: req.params.recordId,
+                filename: req.params.filename,
             });
-        } catch (error) {
-            console.error('Available minimaps error:', error);
-            return res.status(500).json({ error: error.message });
+            if (result.success) {
+                res.set({
+                    'Content-Type': result.mimeType,
+                    'Content-Length': result.size,
+                    'Last-Modified': result.modified.toUTCString(),
+                    'Content-Disposition': `inline; filename="${result.filename}"`,
+                });
+                return res.send(result.fileBuffer);
+            }
+            return res.status(404).json({ error: result.message });
+        } catch (err) {
+            console.error('getFile error:', err);
+            return res.status(500).json({ error: err.message });
         }
+    }
+
+    async deleteDomainFile(req, res) {
+        return this.executeFileOperation(req, res, 'deleteDomainFile', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filename: req.params.filename,
+        }));
+    }
+
+    async listDomainFiles(req, res) {
+        return this.executeFileOperation(req, res, 'listDomainFiles', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+        }));
     }
 
 
@@ -1894,11 +1909,95 @@ class APIWrapper {
 
 
 
+    // NEW IMAGE ROUTES
+    async uploadImage(req, res) {
+        if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+
+        return this.executeFileOperation(req, res, 'saveImage', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filter: req.query.filter,
+            fileBuffer: req.file.buffer,
+            originalFilename: req.file.originalname,
+            failIfExists: req.params.domain === 'map' || req.params.domain === 'minimap',
+        }));
+    }
 
 
+    async getImageCount(req, res) {
+        return this.executeFileOperation(req, res, 'getImageCount', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filter: req.query.filter,
+        }));
+    }
 
+    async deleteImage(req, res) {
+        return this.executeFileOperation(req, res, 'deleteImage', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filename: req.params.filename,
+        }));
+    }
 
+    async listImages(req, res) {
+        return this.executeFileOperation(req, res, 'listImages', (req) => ({
+            domain: req.params.domain,
+            recordId: req.params.recordId,
+            filter: req.query.filter,
+        }));
+    }
 
+    // Binary — cannot use executeFileOperation
+    async getImage(req, res) {
+        try {
+            const result = await localFileOps.getImage({
+                domain: req.params.domain,
+                recordId: req.params.recordId,
+                filter: req.query.filter,
+                n: parseInt(req.params.n) || 1,
+            });
+            if (result.success) {
+                res.set({
+                    'Content-Type': result.mimeType,
+                    'Content-Length': result.size,
+                    'Last-Modified': result.modified.toUTCString(),
+                    'Cache-Control': 'public, max-age=31536000',
+                    'X-Filename': result.filename,
+                });
+                return res.send(result.fileBuffer);
+            }
+            return res.status(404).json({ error: result.message });
+        } catch (err) {
+            console.error('getImage error:', err);
+            return res.status(500).json({ error: err.message });
+        }
+    }
+
+    // Binary — cannot use executeFileOperation
+    async getImageByName(req, res) {
+        try {
+            const result = await localFileOps.getImageByName({
+                domain: req.params.domain,
+                recordId: req.params.recordId,
+                filename: req.params.filename,
+            });
+            if (result.success) {
+                res.set({
+                    'Content-Type': result.mimeType,
+                    'Content-Length': result.size,
+                    'Last-Modified': result.modified.toUTCString(),
+                    'Cache-Control': 'public, max-age=31536000',
+                    'X-Filename': result.filename,
+                });
+                return res.send(result.fileBuffer);
+            }
+            return res.status(404).json({ error: result.message });
+        } catch (err) {
+            console.error('getImageByName error:', err);
+            return res.status(500).json({ error: err.message });
+        }
+    }
 
 
 

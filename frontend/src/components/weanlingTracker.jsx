@@ -1,31 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Form from './forms';
-import { toUTC, toLocalDisplay } from '../utils/dateUtils';
+import TableForm from './tableForm';
+import TableViewer from './tableViewer';
+import PopupConfirm from './popupConfirm';
+import { useTableEdit } from './useTableEdit';
+import { toUTC, toLocalDisplay, toAge } from '../utils/dateUtils';
 
 
-// ─── Style constants (mirror pregCheck) ──────────────────────────────────────
-
-const TH = {
-    padding: '8px 10px', textAlign: 'left', fontWeight: '600',
-    color: '#495057', backgroundColor: '#f8f9fa',
-    borderBottom: '2px solid #dee2e6', whiteSpace: 'nowrap', fontSize: '12px',
-};
-const TD = { padding: '7px 10px', borderBottom: '1px solid #dee2e6', fontSize: '13px' };
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function calcAge(birthDate) {
-    if (!birthDate) return '—';
-    const days = Math.floor((Date.now() - new Date(birthDate)) / 86_400_000);
-    return `${days}d`;
-}
-
-// ─── Historical records table (plan-scoped, mirrors PregCheckHistoricalTable) ─
+// ─── Historical records table ─────────────────────────────────────────────────
 
 function WeaningHistoricalTable({ planId }) {
-    const [records, setRecords] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState(null);
+    const [records,  setRecords]  = useState([]);
+    const [loading,  setLoading]  = useState(true);
+    const [error,    setError]    = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const { editTarget, setEditTarget, handleSuccess, handleError, errorNotify } =
+        useTableEdit(records, setRecords);
 
     useEffect(() => {
         if (!planId) return;
@@ -38,70 +28,62 @@ function WeaningHistoricalTable({ planId }) {
             .finally(() => setLoading(false));
     }, [planId]);
 
-    if (loading) return <div style={{ padding: '12px 0', color: '#888', fontSize: '13px' }}>Loading records...</div>;
-    if (error)   return <div style={{ padding: '12px 0', color: '#dc3545', fontSize: '13px' }}>Failed to load records: {error}</div>;
+    const handleDeleteConfirm = async () => {
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/weaning-records/${editTarget.ID}`, {
+                method: 'DELETE', credentials: 'include',
+            });
+            if (!res.ok) throw new Error(await res.text());
+            handleSuccess(null);
+        } catch (e) {
+            handleError(e.message);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const columns = [
+        { key: 'CowTag',        label: 'Calf',         display: 'bold' },
+        { key: 'WeaningDate',   label: 'Weaning Date', render: row => row.WeaningDate ? toLocalDisplay(row.WeaningDate) : '' },
+        { key: 'WeaningWeight', label: 'Weight (lbs)', render: row => row.WeaningWeight != null ? row.WeaningWeight : '' },
+        { key: 'Notes',         label: 'Notes',        tdStyle: { color: '#6c757d', maxWidth: '200px' } },
+    ];
 
     return (
-        <div className="bubble-container" style={{ marginTop: '16px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '600' }}>
-                Plan Weaning Records
-                <span style={{ marginLeft: '8px', fontSize: '13px', fontWeight: 'normal', color: '#888' }}>
-                    ({records.length})
-                </span>
-            </h3>
+        <>
+            <TableViewer
+                title={`Plan Weaning Records (${records.length})`}
+                rows={records}
+                columns={columns}
+                loading={loading}
+                error={error}
+                onEdit={setEditTarget}
+            />
 
-            {records.length === 0 ? (
-                <div style={{ padding: '12px 0', color: '#888', fontStyle: 'italic', fontSize: '13px' }}>
-                    No weaning records for this plan yet.
-                </div>
-            ) : (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr>
-                                {['Calf', 'Weaning Date', 'Weight (lbs)', 'Notes'].map(h => (
-                                    <th key={h} style={TH}>{h}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {records.map((r, i) => (
-                                <tr key={r.ID} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
-                                    <td style={{ ...TD, fontWeight: '600' }}>{r.CowTag}</td>
-                                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.WeaningDate ? toLocalDisplay(r.WeaningDate) : '—'}</td>
-                                    <td style={TD}>{r.WeaningWeight != null ? r.WeaningWeight : '—'}</td>
-                                    <td style={{ ...TD, color: '#6c757d', maxWidth: '200px' }}>{r.Notes || '—'}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
+            <PopupConfirm
+                isOpen={editTarget !== null}
+                onClose={() => setEditTarget(null)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Record"
+                message={`Delete the weaning record for <strong>${editTarget?.CowTag ?? ''}</strong>? This cannot be undone.`}
+                confirmText={deleting ? 'Deleting...' : 'Delete'}
+            />
+
+            {errorNotify}
+        </>
     );
 }
+
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 /*
  * Depends on:
- *   GET /api/unweaned-calves?planId=X
- *       Joins CalvingRecords + BreedingRecords, left-joins WeaningRecords,
- *       returns calves where no WeaningRecord exists yet.
- *       Response: { records: [{
- *           ID,           -- CalvingRecords.ID (used as rowKey)
- *           PlanID,
- *           CalfTag,
- *           CalfSex,
- *           BirthDate,    -- 'yyyy-MM-dd'
- *           DamTag,
- *           IsAI,         -- bool
- *           Sire,         -- string, from BreedingRecords.PrimaryBulls (first bull tag)
- *           Pasture,      -- from BreedingRecords.Pasture
- *       }] }
- *
- *   POST /api/weaning-records   -- batch array, handled by createWeaningRecord
- *   GET  /api/weaning-records?planId=X  -- for the historical table
+ *   GET    /api/unweaned-calves?planId=X
+ *   POST   /api/weaning-records
+ *   GET    /api/weaning-records?planId=X
+ *   DELETE /api/weaning-records/:id
  */
 
 function WeanlingTracker({ breedingPlanId, breedingYear }) {
@@ -132,14 +114,8 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
 
     useEffect(() => { fetchRows(); }, [fetchRows]);
 
-    // ── Column definitions ──────────────────────────────────────────────────
-
     const columns = [
-        {
-            key:     'CalfTag',
-            label:   'Calf',
-            display: 'bold',
-        },
+        { key: 'CalfTag', label: 'Calf', display: 'bold' },
         {
             key:    'CalfSex',
             label:  'Sex',
@@ -155,66 +131,21 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
             render: row => (
                 <span style={{ fontSize: '12px', color: '#555', whiteSpace: 'nowrap' }}>
                     {toLocalDisplay(row.BirthDate)}
-                    <span style={{ color: '#aaa', marginLeft: '6px' }}>{calcAge(row.BirthDate)}</span>
+                    <span style={{ color: '#aaa', marginLeft: '6px' }}>{toAge(row.BirthDate)}</span>
                 </span>
             ),
         },
-        {
-            key:    'IsAI',
-            label:  'Conc.',
-            render: row => (
-                <span style={{ fontSize: '12px', color: '#555' }}>
-                    {row.IsAI ? 'AI' : 'NS'}
-                </span>
-            ),
-        },
-        {
-            key:    'DamTag',
-            label:  'Dam',
-            render: row => <span style={{ fontSize: '12px' }}>{row.DamTag || '—'}</span>,
-        },
-        {
-            key:    'Sire',
-            label:  'Sire',
-            render: row => <span style={{ fontSize: '12px' }}>{row.Sire || '—'}</span>,
-        },
-        {
-            key:    'Pasture',
-            label:  'Pasture',
-            render: row => <span style={{ fontSize: '12px' }}>{row.Pasture || '—'}</span>,
-        },
-        {
-            key:      'weaningDate',
-            label:    'Date *',
-            type:     'date',
-            minWidth: '118px',
-        },
-        {
-            key:         'weaningWeight',
-            label:       'Weight (lbs)',
-            type:        'number',
-            width:       '75px',
-            step:        '1',
-            min:         '0',
-            placeholder: 'lbs',
-        },
-        {
-            key:         'notes',
-            label:       'Notes',
-            type:        'text',
-            maxLength:   256,
-            placeholder: 'Notes...',
-            minWidth:    '140px',
-        },
+        { key: 'DamTag',  label: 'Dam',     render: row => <span style={{ fontSize: '12px' }}>{row.DamTag  || ''}</span> },
+        { key: 'Sire',    label: 'Sire',    render: row => <span style={{ fontSize: '12px' }}>{row.Sire    || ''}</span> },
+        { key: 'Pasture', label: 'Pasture', render: row => <span style={{ fontSize: '12px' }}>{row.Pasture || ''}</span> },
+        { key: 'weaningDate',   label: 'Date *',      type: 'date',   minWidth: '118px' },
+        { key: 'weaningWeight', label: 'Weight (lbs)', type: 'number', width: '75px', step: '1', min: '0', placeholder: 'lbs' },
+        { key: 'notes',         label: 'Notes',        type: 'text',   maxLength: 256, placeholder: 'Notes...', minWidth: '140px' },
     ];
-
-    // ── Prefill fields ──────────────────────────────────────────────────────
 
     const prefillFields = [
         { key: 'weaningDate', label: 'Weaning Date', type: 'date' },
     ];
-
-    // ── Submit ──────────────────────────────────────────────────────────────
 
     const handleSubmit = async (rows, rowData) => {
         const toSubmit = rows
@@ -257,8 +188,6 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
         }
     };
 
-    // ── Header ──────────────────────────────────────────────────────────────
-
     const headerContent = (
         <div style={{ fontSize: '14px', color: '#666', fontStyle: 'italic' }}>
             {breedingPlanId
@@ -268,30 +197,31 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
         </div>
     );
 
-    // ── Render ──────────────────────────────────────────────────────────────
-
     return (
         <>
-            <Form
-                title="Weanling Tracker"
-                headerContent={headerContent}
-                rows={rows}
-                columns={columns}
-                prefillFields={prefillFields}
-                onSubmit={handleSubmit}
-                submitLabel="Record Weanings"
-                submitting={submitting}
-                savedCount={savedCount}
-                submitError={submitError}
-                loading={loading}
-                error={error}
-                onRetry={fetchRows}
-                showImportButton={true}
-            />
-
-            {breedingPlanId && (
-                <WeaningHistoricalTable planId={breedingPlanId} />
-            )}
+            <div className='multibubble-page'>
+                <div className="bubble-container">
+                    <TableForm
+                        title="Weanling Tracker"
+                        headerContent={headerContent}
+                        rows={rows}
+                        columns={columns}
+                        prefillFields={prefillFields}
+                        onSubmit={handleSubmit}
+                        submitLabel="Record Weanings"
+                        submitting={submitting}
+                        savedCount={savedCount}
+                        submitError={submitError}
+                        loading={loading}
+                        error={error}
+                        onRetry={fetchRows}
+                        showImportButton={true}
+                    />
+                </div>
+                <div className="bubble-container">
+                    {breedingPlanId && <WeaningHistoricalTable planId={breedingPlanId} />}
+                </div>
+            </div>
         </>
     );
 }

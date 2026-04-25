@@ -1,51 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-
 import { addDays } from '../utils/dateUtils';
 import { useUser } from '../UserContext';
 import Popup from './popup';
-import PopupConfirm from './popupConfirm';
+import '../styles/formTables.css';
 export { addDays };
 
-export const TH_STYLE = {
-    padding: '8px 10px',
-    textAlign: 'left',
-    fontWeight: '600',
-    color: '#495057',
-    backgroundColor: '#f8f9fa',
-    borderBottom: '2px solid #dee2e6',
-    whiteSpace: 'nowrap',
-    fontSize: '12px',
-    letterSpacing: '0.2px',
-};
-
-// Applied to columns marked required: true
-const REQUIRED_TH_STYLE = {
-    ...TH_STYLE,
-    backgroundColor: '#FCE4EC',
-    borderBottom: '2px solid #F48FB1',
-};
-
-export const TD_STYLE = {
-    padding: '5px 8px',
-    borderBottom: '1px solid #e9ecef',
-    fontSize: '13px',
-    verticalAlign: 'middle',
-};
-
-export const INPUT_STYLE = {
-    padding: '4px 6px',
-    border: '1px solid #ccc',
-    borderRadius: '3px',
-    fontSize: '12px',
-    width: '100%',
-    boxSizing: 'border-box',
-    backgroundColor: 'white',
-};
-
-export function fmtDate(d) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-}
 
 const INPUT_TYPES = new Set(['date', 'select', 'number', 'checkbox', 'text']);
 
@@ -67,7 +26,7 @@ function PrefillPanel({ fields, onApply }) {
 
     return (
         <div style={{
-            backgroundColor: '#f8f9fa',
+            backgroundColor: '#ffffff',
             border: '1px solid #dee2e6',
             borderRadius: '6px',
             padding: '12px 16px',
@@ -97,7 +56,7 @@ function PrefillPanel({ fields, onApply }) {
                                 type="date"
                                 value={values[field.key]}
                                 onChange={e => set(field.key, e.target.value)}
-                                style={INPUT_STYLE}
+                                className="form-table-input"
                             />
                         )}
 
@@ -105,7 +64,7 @@ function PrefillPanel({ fields, onApply }) {
                             <select
                                 value={values[field.key]}
                                 onChange={e => set(field.key, e.target.value)}
-                                style={INPUT_STYLE}
+                                className="form-table-input"
                             >
                                 <option value=""></option>
                                 {(field.options || []).map(o => (
@@ -120,7 +79,7 @@ function PrefillPanel({ fields, onApply }) {
                                 value={values[field.key]}
                                 onChange={e => set(field.key, e.target.value)}
                                 placeholder={field.placeholder || ''}
-                                style={INPUT_STYLE}
+                                className="form-table-input"
                             />
                         )}
                     </div>
@@ -164,7 +123,8 @@ function InputCell({ column, value, onChange }) {
                 type="date"
                 value={value || ''}
                 onChange={e => onChange(e.target.value)}
-                style={{ ...INPUT_STYLE, minWidth: column.minWidth || '118px' }}
+                className="form-table-input"
+                style={{ minWidth: column.minWidth || '118px' }}
             />
         );
     }
@@ -174,7 +134,8 @@ function InputCell({ column, value, onChange }) {
             <select
                 value={value || ''}
                 onChange={e => onChange(e.target.value)}
-                style={{ ...INPUT_STYLE, minWidth: column.minWidth || '100px' }}
+                className="form-table-input"
+                style={{ minWidth: column.minWidth || '100px' }}
             >
                 <option value=""></option>
                 {(column.options || []).map(o => (
@@ -193,7 +154,8 @@ function InputCell({ column, value, onChange }) {
                 min={column.min}
                 step={column.step}
                 placeholder={column.placeholder || ''}
-                style={{ ...INPUT_STYLE, width: column.width || '70px' }}
+                className="form-table-input"
+                style={{ width: column.width || '70px' }}
             />
         );
     }
@@ -217,7 +179,8 @@ function InputCell({ column, value, onChange }) {
                 onChange={e => onChange(e.target.value)}
                 maxLength={column.maxLength}
                 placeholder={column.placeholder || ''}
-                style={{ ...INPUT_STYLE, minWidth: column.minWidth }}
+                className="form-table-input"
+                style={column.minWidth ? { minWidth: column.minWidth } : undefined}
             />
         );
     }
@@ -225,12 +188,12 @@ function InputCell({ column, value, onChange }) {
     return null;
 }
 
-// Form — generic table with optional prefill values, input columns, and submit.
+// TableForm — table-driven data entry form with optional prefill and submit.
 //
 // columns: Array of column descriptors:
 //   { key, label }                                      — display, renders row[key]
 //   { key, label, render: (row) => JSX }                — display, custom render
-//   { key, label, type: 'date'|'select'|..., options? } — input, Form manages state
+//   { key, label, type: 'date'|'select'|..., options? } — input, TableForm manages state
 //   { key, label, ..., required: true }                 — marks header with required styling
 //   { key, label, ..., hidable: true }                  — column can be toggled via column settings
 //
@@ -246,36 +209,32 @@ function InputCell({ column, value, onChange }) {
 //
 // rows, loading, error, onRetry: data lifecycle owned by parent.
 
-function Form({
+function TableForm({
     title,
-    headerContent    = null,
-    rows             = [],
-    columns          = [],
-    rowKey           = defaultRowKey,
-    prefillFields    = null,
-    onSubmit         = null,
-    submitLabel      = 'Save',
-    submitting       = false,
-    savedCount       = null,
-    submitError      = null,
-    loading          = false,
-    error            = null,
-    onRetry          = null,
-    showImportButton       = false,
-    formName               = null,
+    headerContent         = null,
+    rows                  = [],
+    columns               = [],
+    rowKey                = defaultRowKey,
+    prefillFields         = null,
+    onSubmit              = null,
+    submitLabel           = 'Save',
+    submitting            = false,
+    savedCount            = null,
+    submitError           = null,
+    loading               = false,
+    error                 = null,
+    onRetry               = null,
+    showImportButton      = false,
+    formName              = null,
     // Called whenever column visibility changes (initial load or toggle).
     // Use this to mirror visibility into sibling components.
-    onColVisibilityChange  = null,
-    // If provided, adds a delete (×) button on each row. Called with the row object.
-    onDelete               = null,
+    onColVisibilityChange = null,
     children,
 }) {
     const { user } = useUser();
     const [rowData,       setRowData]       = useState({});
     const [colVisibility, setColVisibility] = useState({});
     const [filterOpen,    setFilterOpen]    = useState(false);
-    const [deleteTarget,  setDeleteTarget]  = useState(null);
-    const [deleteMode,    setDeleteMode]    = useState(false);
     // Caches the full preferences object so saves never need a redundant GET.
     const cachedPrefs = useRef({});
 
@@ -383,7 +342,7 @@ function Form({
                             title="Column settings"
                             style={{
                                 display: 'flex', alignItems: 'center', gap: '4px',
-                                padding: '5px 10px', border: '1px solid #ccc', borderRadius: '4px',
+                                border: '1px solid #ccc', borderRadius: '4px',
                                 cursor: 'pointer', fontSize: '13px', background: 'white', color: '#333',
                             }}
                         >
@@ -393,7 +352,7 @@ function Form({
                     )}
                     {showImportButton && (
                         <button style={{
-                            padding: '5px 12px', border: '1px solid #ccc', borderRadius: '4px',
+                            border: '1px solid #ccc', borderRadius: '4px',
                             cursor: 'pointer', fontSize: '13px',
                         }}>
                             Import
@@ -407,7 +366,7 @@ function Form({
 
     if (loading) {
         return (
-            <div className="bubble-container">
+            <div>
                 {header}
                 <div style={{ padding: '24px', textAlign: 'center', color: '#888', fontSize: '14px' }}>
                     Loading...
@@ -418,7 +377,7 @@ function Form({
 
     if (error && rows.length === 0) {
         return (
-            <div className="bubble-container">
+            <div>
                 {header}
                 <div style={{ padding: '12px', color: '#dc3545', fontSize: '13px', display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <span>{error}</span>
@@ -433,7 +392,7 @@ function Form({
     }
 
     return (
-        <div className="bubble-container">
+        <div>
             {header}
 
             {prefillFields && (
@@ -460,48 +419,23 @@ function Form({
 
             {/* Table always renders so column headers are visible even with no rows */}
             <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '400px' }}>
+                <table className='form-table'>
                     <thead>
                         <tr>
                             {visibleColumns.map(col => (
                                 <th
                                     key={col.key}
-                                    style={{
-                                        ...(col.required ? REQUIRED_TH_STYLE : TH_STYLE),
-                                        ...(col.thStyle || {}),
-                                    }}
+                                    className={col.required ? 'form-table-th form-table-th-required' : 'form-table-th'}
+                                    style={col.thStyle || undefined}
                                 >
                                     {col.label}
                                 </th>
                             ))}
-                            {onDelete && (
-                                <th style={{ ...TH_STYLE, width: '32px', padding: '4px', textAlign: 'center' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setDeleteMode(m => !m)}
-                                        title={deleteMode ? 'Done' : 'Delete rows'}
-                                        style={{
-                                            display: 'inline-flex', alignItems: 'center',
-                                            background: deleteMode ? '#e3f2fd' : 'none',
-                                            border: deleteMode ? '1px solid #90caf9' : '1px solid transparent',
-                                            borderRadius: '4px', padding: '2px 4px',
-                                            cursor: 'pointer', color: deleteMode ? '#1976d2' : '#888',
-                                            transition: 'all 0.15s',
-                                        }}
-                                        onMouseEnter={e => { if (!deleteMode) { e.currentTarget.style.backgroundColor = '#f5f5f5'; e.currentTarget.style.color = '#333'; }}}
-                                        onMouseLeave={e => { if (!deleteMode) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#888'; }}}
-                                    >
-                                        <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>
-                                            {deleteMode ? 'check' : 'edit'}
-                                        </span>
-                                    </button>
-                                </th>
-                            )}
                         </tr>
                     </thead>
                     <tbody>
                         {rows.length === 0 ? (
-                            <tr>
+                            <tr style={{backgroundColor: 'white'}}>
                                 <td
                                     colSpan={visibleColumns.length}
                                     style={{ padding: '16px', color: '#888', fontStyle: 'italic', fontSize: '13px' }}
@@ -516,11 +450,9 @@ function Form({
                                 return (
                                     <tr key={k} style={{ backgroundColor: bg }}>
                                         {visibleColumns.map(col => {
-                                            const tdStyle = { ...TD_STYLE, ...(col.tdStyle || {}) };
-
                                             if (col.render) {
                                                 return (
-                                                    <td key={col.key} style={tdStyle}>
+                                                    <td key={col.key} className="form-table-td" style={col.tdStyle || undefined}>
                                                         {col.render(row)}
                                                     </td>
                                                 );
@@ -528,7 +460,7 @@ function Form({
 
                                             if (isInput(col.type)) {
                                                 return (
-                                                    <td key={col.key} style={tdStyle}>
+                                                    <td key={col.key} className="form-table-td" style={col.tdStyle || undefined}>
                                                         <InputCell
                                                             column={col}
                                                             value={(rowData[k] || {})[col.key]}
@@ -539,31 +471,15 @@ function Form({
                                             }
 
                                             return (
-                                                <td key={col.key} style={{ ...tdStyle, ...(col.display === 'bold' ? { fontWeight: '600' } : {}) }}>
-                                                    {row[col.key] ?? '—'}
+                                                <td
+                                                    key={col.key}
+                                                    className="form-table-td"
+                                                    style={{ ...(col.tdStyle || {}), ...(col.display === 'bold' ? { fontWeight: '600' } : {}) }}
+                                                >
+                                                    {row[col.key] ?? ''}
                                                 </td>
                                             );
                                         })}
-                                        {onDelete && (
-                                            <td style={{ ...TD_STYLE, width: '32px', padding: '4px', textAlign: 'center' }}>
-                                                {deleteMode && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setDeleteTarget(row)}
-                                                        title="Delete record"
-                                                        style={{
-                                                            background: 'none', border: 'none', padding: '2px 4px',
-                                                            cursor: 'pointer', color: '#dc3545',
-                                                            display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
-                                                        }}
-                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fde8ea'}
-                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                    >
-                                                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                                                    </button>
-                                                )}
-                                            </td>
-                                        )}
                                     </tr>
                                 );
                             })
@@ -573,36 +489,27 @@ function Form({
             </div>
 
             {rows.length > 0 && onSubmit && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
-                            <button
-                                onClick={() => onSubmit(rows, rowData)}
-                                disabled={submitting}
-                                style={{
-                                    padding: '9px 24px',
-                                    backgroundColor: submitting ? '#aaa' : '#28a745',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: submitting ? 'not-allowed' : 'pointer',
-                                    fontSize: '14px',
-                                    fontWeight: 'bold',
-                                }}
-                            >
-                                {submitting ? 'Saving...' : submitLabel}
-                            </button>
-                        </div>
-                    )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
+                    <button
+                        onClick={() => onSubmit(rows, rowData)}
+                        disabled={submitting}
+                        style={{
+                            padding: '9px 24px',
+                            backgroundColor: submitting ? '#aaa' : '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: submitting ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                        }}
+                    >
+                        {submitting ? 'Saving...' : submitLabel}
+                    </button>
+                </div>
+            )}
 
             {children}
-
-            <PopupConfirm
-                isOpen={deleteTarget !== null}
-                onClose={() => setDeleteTarget(null)}
-                onConfirm={async () => { await onDelete?.(deleteTarget); setDeleteTarget(null); }}
-                title="Delete Record"
-                message="Delete this record? This cannot be undone."
-                confirmText="Delete"
-            />
 
             {/* Column visibility settings popup */}
             <Popup
@@ -645,4 +552,4 @@ function Form({
     );
 }
 
-export default Form;
+export default TableForm;

@@ -183,12 +183,24 @@
 }
 
 .bubble-container {
-    border: 1px solid #ccc;
+    border: 1px solid #b7b7b7;
     border-radius: 5px;
     padding: var(--bubble-padding);
     gap: var(--bubble-padding);
     background-color: white;
 }
+
+
+
+.bubble-inner {
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    padding: var(--bubble-padding);
+    gap: var(--bubble-padding);
+    background-color: rgb(255, 255, 255);
+}
+
+
 
 body {
     margin: 0;
@@ -197,6 +209,10 @@ body {
     background-color: #f4f4f4;
     color: #333;
 }
+
+
+
+
 
 .multibubble-page {
     display: flex;
@@ -214,6 +230,10 @@ body {
     flex-direction: column;
     gap: var(--multibubble-gap);
 }
+
+
+
+
 
 .timeline-wrapper .vertical-timeline-element-icon {
     box-shadow: 0 0 0 4px var(--timeline-color), inset 0 2px 0 rgba(0, 0, 0, .15), 0 6px 0 4px rgba(0, 0, 0, .12) !important;
@@ -428,7 +448,6 @@ button:disabled {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 50px;
 }
 
 th,

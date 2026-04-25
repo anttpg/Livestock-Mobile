@@ -239,6 +239,17 @@ function Header() {  // Accept user prop
             </Link>
           </li>
           <li style={styles.menuItem}>
+            <Link
+              to="/equipment"
+              style={{ ...styles.menuLink, ...(hoveredItem === 'animal' ? styles.menuLinkHover : {}) }}
+              onMouseEnter={() => setHoveredItem('animal')}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={closeMenu}
+            >
+              Equipment
+            </Link>
+          </li>
+          <li style={styles.menuItem}>
             <a
               href="/fieldsheets"
               style={{

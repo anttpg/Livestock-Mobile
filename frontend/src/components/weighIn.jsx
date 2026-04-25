@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Form from './forms';
+import TableForm from './forms';
 import { toLocalInput } from '../utils/dateUtils';
 
 function WeighIn({ onClose }) {
@@ -43,7 +43,7 @@ function WeighIn({ onClose }) {
 
   return (
     <>
-      <Form
+      <TableForm
         title="Weight Check"
         headerContent={headerContent}
         sheetName="WeightCheck"

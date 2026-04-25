@@ -4,7 +4,7 @@ import SearchBar from './searchBar';
 import Notes from './notes';
 import Minimap from './minimap';
 import ColorTable from './colorTable';
-import AnimalPhotoViewer from './animalPhotoViewer';
+import PhotoViewer from './photoViewer';
 import HerdSplitter from './herdSplitter';
 import Popup from './popup';
 import PopupConfirm from './popupConfirm';
@@ -230,26 +230,8 @@ function General({ cowTag, cowData, onRefresh }) {
                             aspectRatio: '1 / 1',
                             width: '100%'
                         }}>
-                            <AnimalPhotoViewer
-                                cowTag={cowTag}
-                                imageType="headshot"
-                                style={{
-                                    flex: 1,
-                                    borderRadius: '5px',
-                                    minHeight: '0',
-                                    width: '100%'
-                                }}
-                            />
-                            <AnimalPhotoViewer
-                                cowTag={cowTag}
-                                imageType="body"
-                                style={{
-                                    flex: 1,
-                                    borderRadius: '5px',
-                                    minHeight: '0',
-                                    width: '100%'
-                                }}
-                            />
+                            <PhotoViewer domain="cow" recordId={cowTag} filter="HEAD" defaultImage="/images/NoHead.png" style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }} />
+                            <PhotoViewer domain="cow" recordId={cowTag} filter="BODY" defaultImage="/images/NoBody.png" style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }} />
                         </div>
 
                         {/* Right side - Minimap and Info (fixed width) */}
@@ -485,8 +467,8 @@ function General({ cowTag, cowData, onRefresh }) {
             {/* Notes */}
             <div className="bubble-container">
                 <Notes
-                    cowTag={cowTag}
-                    currentUser={currentUser}
+                    entityType="CowTable"
+                    entityId={cowTag}
                 />
             </div>
 

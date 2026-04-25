@@ -76,7 +76,7 @@ class DatabaseOperations {
                 // read-only convenience
                 ['pastures', `SELECT PastureName FROM Pastures ORDER BY PastureName`],
                 ['users', `SELECT Username FROM Users WHERE Blocked = 0 ORDER BY Username`],
-                //['pastureChemicals', `SELECT ChemicalName FROM PastureChemicals ORDER BY ChemicalName`],
+                ['pastureChemicals', `SELECT ChemicalName FROM PastureChemicals ORDER BY ChemicalName`],
             ];
 
             const results = {};
@@ -116,7 +116,7 @@ class DatabaseOperations {
                     vegetationTypes:            true,
                     landUnits:                  true,
                     hayUnitTypes:               true,
-                    //pastureChemicals:           true,
+                    pastureChemicals:           true,
                 }
             };
 
@@ -165,8 +165,7 @@ class DatabaseOperations {
             VegetationTypes:            'VegetationType',
             LandUnits:                  'LandUnit',
             HayUnitTypes:               'HayUnitType',
-            //PastureChemicals:           'ChemicalName',
-            
+            PastureChemicals:           'ChemicalName',
         };
 
         if (!allowedTables[table]) {
@@ -2576,258 +2575,6 @@ class DatabaseOperations {
 
 
 
-    // PASTURES //////////////////////////////////////////////////////////////////////////////////////////////////////////// 
-
-
-    /**
-     * Get all available pastures
-     */
-    async getAllPastures() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
-            const result = await this.pool.request().query(query);
-            return {
-                pastures: result.recordset.map(row => row.PastureName)
-            };
-        } catch (error) {
-            console.error('Error fetching pastures:', error);
-            throw new Error(`Failed to fetch pastures: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Get all available feed types from PastureFeedOptions
-     */
-    async getAllFeedTypes() {
-        await this.ensureConnection();
-
-        try {
-            const query = `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`;
-            const result = await this.pool.request().query(query);
-            return {
-                feedTypes: result.recordset.map(row => row.Feed)
-            };
-        } catch (error) {
-            console.error('Error fetching feed types:', error);
-            throw new Error(`Failed to fetch feed types: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Add new feed type to PastureFeedOptions
-     * @param {Object} params - { feedType }
-     */
-    async addFeedType(params) {
-        const { feedType } = params;
-        await this.ensureConnection();
-
-        try {
-            const request = this.pool.request();
-            request.input('feedType', sql.NVarChar, feedType);
-
-            const query = `INSERT INTO PastureFeedOptions (Feed) VALUES (@feedType)`;
-            const result = await request.query(query);
-
-            return {
-                success: true,
-                rowsAffected: result.rowsAffected[0],
-                message: 'Feed type added successfully'
-            };
-        } catch (error) {
-            console.error('Error adding feed type:', error);
-
-            // Handle duplicate key constraint violation
-            if (error.number === 2627) {
-                return {
-                    success: false,
-                    operationalError: true,
-                    message: `Feed type '${feedType}' already exists`
-                };
-            }
-
-            throw new Error(`Failed to add feed type: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Get feed status for a specific herd, optionally filtered by feed types
-     * @param {Object} params - { herdName, feeds? }
-     */
-    async getHerdFeedStatus(params) {
-        const { herdName, feeds } = params;
-        await this.ensureConnection();
-
-        try {
-            const herdID = await this._resolveHerdID(herdName);
-
-            const herdResult = await this.pool.request()
-                .input('herdID', sql.Int, herdID)
-                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
-
-            const pastureName = herdResult.recordset[0].CurrentPasture;
-            if (!pastureName) {
-                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
-            }
-
-            // Get all feed types (or filtered list)
-            let feedTypesResult;
-            if (feeds && feeds.length > 0) {
-                const feedTypesRequest = this.pool.request();
-                const feedPlaceholders = feeds.map((_, index) => `@feed${index}`).join(',');
-                feeds.forEach((feed, index) => {
-                    feedTypesRequest.input(`feed${index}`, sql.NVarChar, feed);
-                });
-                feedTypesResult = await feedTypesRequest.query(
-                    `SELECT Feed FROM PastureFeedOptions WHERE Feed IN (${feedPlaceholders}) ORDER BY Feed`
-                );
-            } else {
-                feedTypesResult = await this.pool.request()
-                    .query(`SELECT Feed FROM PastureFeedOptions ORDER BY Feed`);
-            }
-
-            const feedStatus = [];
-
-            for (const feedType of feedTypesResult.recordset) {
-                const feed = feedType.Feed;
-
-                const activityResult = await this.pool.request()
-                    .input('pasture', sql.NVarChar, pastureName)
-                    .input('feedType', sql.NVarChar, feed)
-                    .query(`
-                        SELECT TOP 1 DateCompleted, WasRefilled, WasEmpty
-                        FROM PastureFeedRecords
-                        WHERE Pasture = @pasture AND FeedType = @feedType
-                        ORDER BY DateCompleted DESC
-                    `);
-
-                let lastActivityDate = null;
-                let daysAgo = null;
-                let lastActivity = null;
-
-                if (activityResult.recordset.length > 0) {
-                    const record = activityResult.recordset[0];
-                    lastActivityDate = record.DateCompleted;
-                    daysAgo = Math.floor((new Date() - new Date(record.DateCompleted)) / (1000 * 60 * 60 * 24));
-
-                    if (record.WasRefilled) {
-                        lastActivity = "refilled";
-                    } else if (record.WasEmpty) {
-                        lastActivity = "checked_empty";
-                    } else {
-                        lastActivity = "checked_not_empty";
-                    }
-                }
-
-                feedStatus.push({
-                    feedType: feed,
-                    lastActivityDate,
-                    daysAgo,
-                    lastActivity,
-                    displayText: daysAgo !== null ? `${daysAgo} days ago` : "never"
-                });
-            }
-
-            return { pastureName, feedStatus };
-        } catch (error) {
-            console.error('Error fetching herd feed status:', error);
-            throw new Error(`Failed to fetch feed status: ${error.message}`);
-        }
-    }
-
-
-    /**
-     * Record feed activity for a pasture
-     * @param {Object} params - { herdName, feedType, activityType, wasEmpty?, username }
-     */
-    async recordFeedActivity(params) {
-        const { herdName, feedType, activityType, wasEmpty, levelAtRefill, username } = params;
-        await this.ensureConnection();
-
-        try {
-            const herdID = await this._resolveHerdID(herdName);
-
-            const herdResult = await this.pool.request()
-                .input('herdID', sql.Int, herdID)
-                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
-
-            const pastureName = herdResult.recordset[0].CurrentPasture;
-            if (!pastureName) {
-                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
-            }
-
-            const now = new Date();
-
-            const insertRecord = async (wasRefilled, isEmpty, level) => {
-                await this.pool.request()
-                    .input('pasture', sql.NVarChar, pastureName)
-                    .input('dateCompleted', sql.DateTime, now)
-                    .input('username', sql.NVarChar, username)
-                    .input('feedType', sql.NVarChar, feedType)
-                    .input('wasRefilled', sql.Bit, wasRefilled)
-                    .input('wasEmpty', sql.Bit, isEmpty)
-                    .input('levelAtRefill', sql.Int, level)
-                    .query(`
-                        INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
-                        VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)
-                    `);
-            };
-
-            if (activityType === "refilled") {
-                await insertRecord(false, wasEmpty, wasEmpty ? 0 : 100);
-                await insertRecord(true, false, 100);
-            } else if (activityType === "level_check") {
-                await insertRecord(false, levelAtRefill < 5, levelAtRefill);
-            } else {
-                const isEmpty = activityType === "checked_empty";
-                await insertRecord(false, isEmpty, isEmpty ? 0 : 100);
-            }
-
-            return { success: true, message: 'Feed activity recorded successfully' };
-        } catch (error) {
-            console.error('Error recording feed activity:', error);
-            throw error;
-        }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     //              BREEDING PLAN  //////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -3209,6 +2956,7 @@ class DatabaseOperations {
                 WHERE wr.ID IS NULL
                 AND cr.CalfDiedAtBirth = 0
                 AND cr.EmbryoAborted   = 0
+                AND cr.CalfTag IS NOT NULL
                 ${planFilter}
                 ORDER BY cr.BirthDate ASC
             `);
@@ -3948,8 +3696,8 @@ class DatabaseOperations {
      *   Weight:           number | null
      * }> }>}
      */
-    async getPregancyChecks({ planId = null, cowTag = null, breedingRecordId = null } = {}) {
-        if (!planId && !cowTag && !breedingRecordId) throw new Error('At least one filter (planId, cowTag, or breedingRecordId) is required');
+    async getPregancyChecks({ planId = null, cowTag = null, breedingRecordId = null, testResults = null } = {}) {
+        if (!planId && !cowTag && !breedingRecordId && !testResults) throw new Error('At least one filter (planId, cowTag, breedingRecordId, or testResults) is required');
         await this.ensureConnection();
 
         const request = this.pool.request();
@@ -3966,6 +3714,10 @@ class DatabaseOperations {
         if (breedingRecordId) {
             request.input('breedingRecordId', sql.Int, breedingRecordId);
             conditions.push('pc.BreedingRecordID = @breedingRecordId');
+        }
+        if (testResults) {
+            request.input('testResults', sql.NVarChar, testResults);
+            conditions.push('pc.TestResults = @testResults');
         }
 
         const result = await request.query(`
@@ -5332,6 +5084,224 @@ class DatabaseOperations {
 
     //                   PASTURE MANAGMENT //////////////////////////////////////////////////////////////////////////////////////////
 
+
+
+    /**
+     * Get all available pastures
+     */
+    async getAllPastures() {
+        await this.ensureConnection();
+
+        try {
+            const query = `SELECT PastureName FROM Pastures ORDER BY PastureName`;
+            const result = await this.pool.request().query(query);
+            return {
+                pastures: result.recordset.map(row => row.PastureName)
+            };
+        } catch (error) {
+            console.error('Error fetching pastures:', error);
+            throw new Error(`Failed to fetch pastures: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Get all available feed types from PastureFeedOptions
+     */
+    async getAllFeedTypes() {
+        await this.ensureConnection();
+
+        try {
+            const query = `SELECT Feed FROM PastureFeedOptions ORDER BY Feed`;
+            const result = await this.pool.request().query(query);
+            return {
+                feedTypes: result.recordset.map(row => row.Feed)
+            };
+        } catch (error) {
+            console.error('Error fetching feed types:', error);
+            throw new Error(`Failed to fetch feed types: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Add new feed type to PastureFeedOptions
+     * @param {Object} params - { feedType }
+     */
+    async addFeedType(params) {
+        const { feedType } = params;
+        await this.ensureConnection();
+
+        try {
+            const request = this.pool.request();
+            request.input('feedType', sql.NVarChar, feedType);
+
+            const query = `INSERT INTO PastureFeedOptions (Feed) VALUES (@feedType)`;
+            const result = await request.query(query);
+
+            return {
+                success: true,
+                rowsAffected: result.rowsAffected[0],
+                message: 'Feed type added successfully'
+            };
+        } catch (error) {
+            console.error('Error adding feed type:', error);
+
+            // Handle duplicate key constraint violation
+            if (error.number === 2627) {
+                return {
+                    success: false,
+                    operationalError: true,
+                    message: `Feed type '${feedType}' already exists`
+                };
+            }
+
+            throw new Error(`Failed to add feed type: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Get feed status for a specific herd, optionally filtered by feed types
+     * @param {Object} params - { herdName, feeds? }
+     */
+    async getHerdFeedStatus(params) {
+        const { herdName, feeds } = params;
+        await this.ensureConnection();
+
+        try {
+            const herdID = await this._resolveHerdID(herdName);
+
+            const herdResult = await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
+
+            const pastureName = herdResult.recordset[0].CurrentPasture;
+            if (!pastureName) {
+                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
+            }
+
+            // Get all feed types (or filtered list)
+            let feedTypesResult;
+            if (feeds && feeds.length > 0) {
+                const feedTypesRequest = this.pool.request();
+                const feedPlaceholders = feeds.map((_, index) => `@feed${index}`).join(',');
+                feeds.forEach((feed, index) => {
+                    feedTypesRequest.input(`feed${index}`, sql.NVarChar, feed);
+                });
+                feedTypesResult = await feedTypesRequest.query(
+                    `SELECT Feed FROM PastureFeedOptions WHERE Feed IN (${feedPlaceholders}) ORDER BY Feed`
+                );
+            } else {
+                feedTypesResult = await this.pool.request()
+                    .query(`SELECT Feed FROM PastureFeedOptions ORDER BY Feed`);
+            }
+
+            const feedStatus = [];
+
+            for (const feedType of feedTypesResult.recordset) {
+                const feed = feedType.Feed;
+
+                const activityResult = await this.pool.request()
+                    .input('pasture', sql.NVarChar, pastureName)
+                    .input('feedType', sql.NVarChar, feed)
+                    .query(`
+                        SELECT TOP 1 DateCompleted, WasRefilled, WasEmpty
+                        FROM PastureFeedRecords
+                        WHERE Pasture = @pasture AND FeedType = @feedType
+                        ORDER BY DateCompleted DESC
+                    `);
+
+                let lastActivityDate = null;
+                let daysAgo = null;
+                let lastActivity = null;
+
+                if (activityResult.recordset.length > 0) {
+                    const record = activityResult.recordset[0];
+                    lastActivityDate = record.DateCompleted;
+                    daysAgo = Math.floor((new Date() - new Date(record.DateCompleted)) / (1000 * 60 * 60 * 24));
+
+                    if (record.WasRefilled) {
+                        lastActivity = "refilled";
+                    } else if (record.WasEmpty) {
+                        lastActivity = "checked_empty";
+                    } else {
+                        lastActivity = "checked_not_empty";
+                    }
+                }
+
+                feedStatus.push({
+                    feedType: feed,
+                    lastActivityDate,
+                    daysAgo,
+                    lastActivity,
+                    displayText: daysAgo !== null ? `${daysAgo} days ago` : "never"
+                });
+            }
+
+            return { pastureName, feedStatus };
+        } catch (error) {
+            console.error('Error fetching herd feed status:', error);
+            throw new Error(`Failed to fetch feed status: ${error.message}`);
+        }
+    }
+
+
+    /**
+     * Record feed activity for a pasture
+     * @param {Object} params - { herdName, feedType, activityType, wasEmpty?, username }
+     */
+    async recordFeedActivity(params) {
+        const { herdName, feedType, activityType, wasEmpty, levelAtRefill, username } = params;
+        await this.ensureConnection();
+
+        try {
+            const herdID = await this._resolveHerdID(herdName);
+
+            const herdResult = await this.pool.request()
+                .input('herdID', sql.Int, herdID)
+                .query(`SELECT CurrentPasture FROM Herds WHERE HerdID = @herdID`);
+
+            const pastureName = herdResult.recordset[0].CurrentPasture;
+            if (!pastureName) {
+                throw new Error(`Herd '${herdName}' is not assigned to a pasture`);
+            }
+
+            const now = new Date();
+
+            const insertRecord = async (wasRefilled, isEmpty, level) => {
+                await this.pool.request()
+                    .input('pasture', sql.NVarChar, pastureName)
+                    .input('dateCompleted', sql.DateTime, now)
+                    .input('username', sql.NVarChar, username)
+                    .input('feedType', sql.NVarChar, feedType)
+                    .input('wasRefilled', sql.Bit, wasRefilled)
+                    .input('wasEmpty', sql.Bit, isEmpty)
+                    .input('levelAtRefill', sql.Int, level)
+                    .query(`
+                        INSERT INTO PastureFeedRecords (Pasture, DateCompleted, Username, FeedType, WasRefilled, WasEmpty, LevelAtRefill)
+                        VALUES (@pasture, @dateCompleted, @username, @feedType, @wasRefilled, @wasEmpty, @levelAtRefill)
+                    `);
+            };
+
+            if (activityType === "refilled") {
+                await insertRecord(false, wasEmpty, wasEmpty ? 0 : 100);
+                await insertRecord(true, false, 100);
+            } else if (activityType === "level_check") {
+                await insertRecord(false, levelAtRefill < 5, levelAtRefill);
+            } else {
+                const isEmpty = activityType === "checked_empty";
+                await insertRecord(false, isEmpty, isEmpty ? 0 : 100);
+            }
+
+            return { success: true, message: 'Feed activity recorded successfully' };
+        } catch (error) {
+            console.error('Error recording feed activity:', error);
+            throw error;
+        }
+    }
+
+
     async getPastureMaintenanceEvents(params) {
         const { pastureName } = params;
         await this.ensureConnection();
@@ -5380,6 +5350,629 @@ class DatabaseOperations {
             throw error;
         }
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // EQUIPMENT ////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    /**
+     * Get a list of equipment filtered by status.
+     * @param {{ status?: 'active' | 'inactive' | null }}
+     * @returns {Promise<{ equipment: Array<{
+     *   ID: number, Name: string, Description: string,
+     *   EquipmentType: string, EquipmentStatus: string,
+     *   IsVehicle: boolean, Location: string
+     * }> }>}
+     */
+    async getEquipmentRecords({ status = null } = {}) {
+        await this.ensureConnection();
+
+        let whereClause = '';
+        if (status === 'active')   whereClause = "WHERE e.EquipmentStatus = 'Active'";
+        if (status === 'inactive') whereClause = "WHERE e.EquipmentStatus != 'Active'";
+
+        const result = await this.pool.request().query(`
+            SELECT
+                e.ID,
+                e.Name,
+                e.Description,
+                e.EquipmentType,
+                e.EquipmentStatus,
+                e.IsVehicle,
+                l.LocationName AS Location
+            FROM Equipment e
+            LEFT JOIN Locations l ON l.ID = e.LocationID
+            ${whereClause}
+            ORDER BY e.Name ASC
+        `);
+
+        return { equipment: result.recordset };
+    }
+
+    /**
+     * Get a single piece of equipment by ID, including purchase and sale records.
+     * @param {{ id: number }}
+     * @returns {Promise<{
+     *   equipment: Object,
+     *   purchaseRecord: Object | null,
+     *   saleRecord: Object | null
+     * } | null>}
+     */
+    async getEquipmentRecord({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for getEquipmentRecord');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`
+                SELECT
+                    e.ID, e.Name, e.Description, e.PastureName, e.LocationID,
+                    l.LocationName                AS Location,
+                    e.IsVehicle, e.EquipmentStatus, e.EquipmentType,
+                    e.Make, e.Model, e.Year,
+                    e.[VINSerialNumber]          AS VINSerialNumber,
+                    e.Registration, e.RegistrationExpiry, e.GrossWeightRating,
+                    e.WarrantyExpiry, e.WarrantyNotes,
+                    e.PurchaseRecordID, e.SaleRecordID, e.Notes,
+                    pr.PurchaseDate, pr.PurchasePrice,
+                    pr.PaymentMethod              AS PurchasePaymentMethod,
+                    pr.Origin                     AS PurchaseOrigin,
+                    pr.PurchaseNotes,
+                    sr.SaleDate, sr.SalePrice,
+                    sr.PaymentMethod              AS SalePaymentMethod,
+                    sr.Customer, sr.Commission, sr.SaleNotes
+                FROM Equipment e
+                LEFT JOIN Locations       l  ON l.ID  = e.LocationID
+                LEFT JOIN PurchaseRecords pr ON pr.ID = e.PurchaseRecordID
+                LEFT JOIN SaleRecords     sr ON sr.ID = e.SaleRecordID
+                WHERE e.ID = @id
+            `);
+
+        if (result.recordset.length === 0) return null;
+        const row = result.recordset[0];
+
+        return {
+            equipment: {
+                ID:                 row.ID,
+                Name:               row.Name               || '',
+                Description:        row.Description        || '',
+                PastureName:        row.PastureName        || '',
+                LocationID:         row.LocationID         ?? null,
+                Location:           row.Location           || '',
+                IsVehicle:          !!row.IsVehicle,
+                EquipmentStatus:    row.EquipmentStatus    || '',
+                EquipmentType:      row.EquipmentType      || '',
+                Make:               row.Make               || '',
+                Model:              row.Model              || '',
+                Year:               row.Year               ?? null,
+                VINSerialNumber:    row.VINSerialNumber    || '',
+                Registration:       row.Registration       || '',
+                RegistrationExpiry: row.RegistrationExpiry ?? null,
+                GrossWeightRating:  row.GrossWeightRating  || '',
+                WarrantyExpiry:     row.WarrantyExpiry     ?? null,
+                WarrantyNotes:      row.WarrantyNotes      || '',
+                PurchaseRecordID:   row.PurchaseRecordID   ?? null,
+                SaleRecordID:       row.SaleRecordID       ?? null,
+                Notes:              row.Notes              || '',
+            },
+            purchaseRecord: row.PurchaseRecordID ? {
+                id:            row.PurchaseRecordID,
+                purchaseDate:  row.PurchaseDate             ?? null,
+                purchasePrice: row.PurchasePrice            ?? null,
+                paymentMethod: row.PurchasePaymentMethod    || '',
+                origin:        row.PurchaseOrigin           || '',
+                purchaseNotes: row.PurchaseNotes            || '',
+            } : null,
+            saleRecord: row.SaleRecordID ? {
+                id:            row.SaleRecordID,
+                saleDate:      row.SaleDate                 ?? null,
+                salePrice:     row.SalePrice                ?? null,
+                paymentMethod: row.SalePaymentMethod        || '',
+                customer:      row.Customer                 || '',
+                commission:    row.Commission               ?? null,
+                saleNotes:     row.SaleNotes                || '',
+            } : null,
+        };
+    }
+
+    /**
+     * Create a piece of equipment.
+     * @param {{ name: string, equipmentStatus: string, equipmentType: string, ...rest }}
+     * @returns {Promise<{ success: boolean, id: number }>}
+     */
+    async createEquipment({
+        name, description = null, pastureName = null, locationID = null,
+        isVehicle = false, equipmentStatus, equipmentType,
+        make = null, model = null, year = null, serialNumber = null,
+        registration = null, registrationExpiry = null, grossWeightRating = null,
+        warrantyExpiry = null, warrantyNotes = null, notes = null,
+        purchaseRecordID = null, saleRecordID = null,
+    }) {
+        await this.ensureConnection();
+        if (!name) throw new Error('name is required for createEquipment');
+
+        const result = await this.pool.request()
+            .input('name',               sql.NVarChar,          name)
+            .input('description',        sql.NVarChar(sql.MAX), description)
+            .input('pastureName',        sql.NVarChar,          pastureName)
+            .input('locationID',         sql.Int,               locationID)
+            .input('isVehicle',          sql.Bit,               isVehicle)
+            .input('equipmentStatus',    sql.NVarChar,          equipmentStatus)
+            .input('equipmentType',      sql.NVarChar,          equipmentType)
+            .input('make',               sql.NVarChar,          make)
+            .input('model',              sql.NVarChar,          model)
+            .input('year',               sql.Int,               year ? parseInt(year) : null)
+            .input('serialNumber',       sql.NVarChar,          serialNumber)
+            .input('registration',       sql.NVarChar,          registration)
+            .input('registrationExpiry', sql.DateTime2,         registrationExpiry ? new Date(registrationExpiry) : null)
+            .input('grossWeightRating',  sql.NVarChar,          grossWeightRating)
+            .input('warrantyExpiry',     sql.DateTime2,         warrantyExpiry ? new Date(warrantyExpiry) : null)
+            .input('warrantyNotes',      sql.NVarChar(sql.MAX), warrantyNotes)
+            .input('notes',              sql.NVarChar(sql.MAX), notes)
+            .input('purchaseRecordID',   sql.Int,               purchaseRecordID)
+            .input('saleRecordID',       sql.Int,               saleRecordID)
+            .query(`
+                INSERT INTO Equipment (
+                    Name, Description, PastureName, LocationID,
+                    IsVehicle, EquipmentStatus, EquipmentType,
+                    Make, Model, Year, [VINSerialNumber],
+                    Registration, RegistrationExpiry, GrossWeightRating,
+                    WarrantyExpiry, WarrantyNotes, Notes,
+                    PurchaseRecordID, SaleRecordID
+                )
+                OUTPUT INSERTED.ID
+                VALUES (
+                    @name, @description, @pastureName, @locationID,
+                    @isVehicle, @equipmentStatus, @equipmentType,
+                    @make, @model, @year, @serialNumber,
+                    @registration, @registrationExpiry, @grossWeightRating,
+                    @warrantyExpiry, @warrantyNotes, @notes,
+                    @purchaseRecordID, @saleRecordID
+                )
+            `);
+
+        return { success: true, id: result.recordset[0].ID };
+    }
+
+    /**
+     * Update a piece of equipment by ID.
+     * @param {{ id: number, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updateEquipment({ id, updates }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for updateEquipment');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            name:               { column: 'Name',               type: sql.NVarChar          },
+            description:        { column: 'Description',        type: sql.NVarChar(sql.MAX) },
+            pastureName:        { column: 'PastureName',        type: sql.NVarChar          },
+            locationID:         { column: 'LocationID',         type: sql.Int               },
+            isVehicle:          { column: 'IsVehicle',          type: sql.Bit               },
+            equipmentStatus:    { column: 'EquipmentStatus',    type: sql.NVarChar          },
+            equipmentType:      { column: 'EquipmentType',      type: sql.NVarChar          },
+            make:               { column: 'Make',               type: sql.NVarChar          },
+            model:              { column: 'Model',              type: sql.NVarChar          },
+            year:               { column: 'Year',               type: sql.Int               },
+            serialNumber:       { column: 'VINSerialNumber',   type: sql.NVarChar          },
+            registration:       { column: 'Registration',       type: sql.NVarChar          },
+            registrationExpiry: { column: 'RegistrationExpiry', type: sql.DateTime2         },
+            grossWeightRating:  { column: 'GrossWeightRating',  type: sql.NVarChar          },
+            warrantyExpiry:     { column: 'WarrantyExpiry',     type: sql.DateTime2         },
+            warrantyNotes:      { column: 'WarrantyNotes',      type: sql.NVarChar(sql.MAX) },
+            notes:              { column: 'Notes',              type: sql.NVarChar(sql.MAX) },
+            purchaseRecordID:   { column: 'PurchaseRecordID',   type: sql.Int               },
+            saleRecordID:       { column: 'SaleRecordID',       type: sql.Int               },
+        };
+
+        const request = this.pool.request();
+        request.input('id', sql.Int, id);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown Equipment field: ${field}`);
+            const { column, type } = fieldMap[field];
+
+            let coerced = value;
+            if (field === 'registrationExpiry' || field === 'warrantyExpiry')
+                coerced = value ? new Date(value) : null;
+            if (field === 'locationID' || field === 'purchaseRecordID' || field === 'saleRecordID' || field === 'year')
+                coerced = value != null ? parseInt(value) : null;
+
+            request.input(field, type, coerced);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+            UPDATE Equipment SET ${setClauses.join(', ')} WHERE ID = @id
+        `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No equipment found with ID ${id}`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete a piece of equipment by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deleteEquipment({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for deleteEquipment');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`DELETE FROM Equipment WHERE ID = @id`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No equipment found with ID ${id}`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
+
+
+
+
+
+
+
+    // EQUIPMENT MAINTENANCE
+
+    /**
+     * Get all maintenance records for a piece of equipment.
+     * @param {{ equipmentId: number }}
+     * @returns {Promise<{ records: Array<Object> }>}
+     */
+    async getEquipmentMaintenanceRecords({ equipmentId }) {
+        await this.ensureConnection();
+        if (!equipmentId) throw new Error('equipmentId is required for getEquipmentMaintenanceRecords');
+
+        const result = await this.pool.request()
+            .input('equipmentId', sql.Int, equipmentId)
+            .query(`
+                SELECT
+                    ID, EquipmentID, DateRecorded, RecordedByUsername,
+                    DatePerformed, PerformedByUsername,
+                    Title, Description, ServiceType,
+                    MeterReadingAtService, MeterUnit,
+                    NextServiceDue, NextServiceUnits
+                FROM EquipmentMaintenance
+                WHERE EquipmentID = @equipmentId
+                ORDER BY DatePerformed DESC
+            `);
+
+        return { records: result.recordset };
+    }
+
+    /**
+     * Get a single maintenance record by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<Object | null>}
+     */
+    async getEquipmentMaintenanceRecord({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for getEquipmentMaintenanceRecord');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`
+                SELECT
+                    ID, EquipmentID, DateRecorded, RecordedByUsername,
+                    DatePerformed, PerformedByUsername,
+                    Title, Description, ServiceType,
+                    MeterReadingAtService, MeterUnit,
+                    NextServiceDue, NextServiceUnits
+                FROM EquipmentMaintenance
+                WHERE ID = @id
+            `);
+
+        if (result.recordset.length === 0) return null;
+        return result.recordset[0];
+    }
+
+    /**
+     * Create a maintenance record.
+     * @param {{ equipmentID: number, datePerformed: string, title: string, ...rest }}
+     * @returns {Promise<{ success: boolean, id: number }>}
+     */
+    async createEquipmentMaintenanceRecord({
+        equipmentID, dateRecorded = null, recordedByUsername = null,
+        datePerformed, performedByUsername = null,
+        title, description = null, serviceType = null,
+        meterReadingAtService = null, meterUnit = null,
+        nextServiceDue = null, nextServiceUnits = null,
+    }) {
+        await this.ensureConnection();
+        if (!equipmentID)   throw new Error('equipmentID is required');
+        if (!datePerformed) throw new Error('datePerformed is required');
+        if (!title)         throw new Error('title is required');
+
+        const result = await this.pool.request()
+            .input('equipmentID',           sql.Int,               equipmentID)
+            .input('dateRecorded',          sql.DateTime2,         dateRecorded ? new Date(dateRecorded) : new Date())
+            .input('recordedByUsername',    sql.NVarChar,          recordedByUsername)
+            .input('datePerformed',         sql.DateTime2,         new Date(datePerformed))
+            .input('performedByUsername',   sql.NVarChar,          performedByUsername)
+            .input('title',                 sql.NVarChar,          title)
+            .input('description',           sql.NVarChar(sql.MAX), description)
+            .input('serviceType',           sql.NVarChar,          serviceType)
+            .input('meterReadingAtService', sql.Decimal(10, 2),    meterReadingAtService)
+            .input('meterUnit',             sql.NVarChar,          meterUnit)
+            .input('nextServiceDue',        sql.Decimal(10, 2),    nextServiceDue)
+            .input('nextServiceUnits',      sql.NVarChar,          nextServiceUnits)
+            .query(`
+                INSERT INTO EquipmentMaintenance (
+                    EquipmentID, DateRecorded, RecordedByUsername,
+                    DatePerformed, PerformedByUsername,
+                    Title, Description, ServiceType,
+                    MeterReadingAtService, MeterUnit,
+                    NextServiceDue, NextServiceUnits
+                )
+                OUTPUT INSERTED.ID
+                VALUES (
+                    @equipmentID, @dateRecorded, @recordedByUsername,
+                    @datePerformed, @performedByUsername,
+                    @title, @description, @serviceType,
+                    @meterReadingAtService, @meterUnit,
+                    @nextServiceDue, @nextServiceUnits
+                )
+            `);
+
+        return { success: true, id: result.recordset[0].ID };
+    }
+
+    /**
+     * Update a maintenance record by ID.
+     * @param {{ id: number, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updateEquipmentMaintenanceRecord({ id, updates }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for updateEquipmentMaintenanceRecord');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            equipmentID:           { column: 'EquipmentID',           type: sql.Int               },
+            dateRecorded:          { column: 'DateRecorded',          type: sql.DateTime2         },
+            recordedByUsername:    { column: 'RecordedByUsername',    type: sql.NVarChar          },
+            datePerformed:         { column: 'DatePerformed',         type: sql.DateTime2         },
+            performedByUsername:   { column: 'PerformedByUsername',   type: sql.NVarChar          },
+            title:                 { column: 'Title',                 type: sql.NVarChar          },
+            description:           { column: 'Description',           type: sql.NVarChar(sql.MAX) },
+            serviceType:           { column: 'ServiceType',           type: sql.NVarChar          },
+            meterReadingAtService: { column: 'MeterReadingAtService', type: sql.Decimal(10, 2)    },
+            meterUnit:             { column: 'MeterUnit',             type: sql.NVarChar          },
+            nextServiceDue:        { column: 'NextServiceDue',        type: sql.Decimal(10, 2)    },
+            nextServiceUnits:      { column: 'NextServiceUnits',      type: sql.NVarChar          },
+        };
+
+        const request = this.pool.request();
+        request.input('id', sql.Int, id);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown EquipmentMaintenance field: ${field}`);
+            const { column, type } = fieldMap[field];
+
+            let coerced = value;
+            if (field === 'dateRecorded' || field === 'datePerformed')
+                coerced = value ? new Date(value) : null;
+            if (field === 'equipmentID')
+                coerced = value != null ? parseInt(value) : null;
+
+            request.input(field, type, coerced);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+            UPDATE EquipmentMaintenance SET ${setClauses.join(', ')} WHERE ID = @id
+        `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No maintenance record found with ID ${id}`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete a maintenance record by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deleteEquipmentMaintenanceRecord({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for deleteEquipmentMaintenanceRecord');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`DELETE FROM EquipmentMaintenance WHERE ID = @id`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No maintenance record found with ID ${id}`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
+
+
+    
+
+
+
+
+    // EQUIPMENT PARTS
+
+    /**
+     * Get all visible parts for a piece of equipment.
+     * @param {{ equipmentId: number }}
+     * @returns {Promise<{ parts: Array<Object> }>}
+     */
+    async getEquipmentParts({ equipmentId }) {
+        await this.ensureConnection();
+        if (!equipmentId) throw new Error('equipmentId is required for getEquipmentParts');
+
+        const result = await this.pool.request()
+            .input('equipmentId', sql.Int, equipmentId)
+            .query(`
+                SELECT ID, EquipmentID, PartType, PartNumber, Manufacturer, Notes, Visible
+                FROM EquipmentParts
+                WHERE EquipmentID = @equipmentId AND Visible = 1
+                ORDER BY PartType ASC, PartNumber ASC
+            `);
+
+        return { parts: result.recordset };
+    }
+
+    /**
+     * Get a single equipment part by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<Object | null>}
+     */
+    async getEquipmentPart({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for getEquipmentPart');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`
+                SELECT ID, EquipmentID, PartType, PartNumber, Manufacturer, Notes, Visible
+                FROM EquipmentParts
+                WHERE ID = @id
+            `);
+
+        if (result.recordset.length === 0) return null;
+        return result.recordset[0];
+    }
+
+    /**
+     * Create an equipment part record.
+     * @param {{ equipmentID: number, partNumber: string, ...rest }}
+     * @returns {Promise<{ success: boolean, id: number }>}
+     */
+    async createEquipmentPart({
+        equipmentID, partType = null, partNumber,
+        manufacturer = null, notes = null, visible = true,
+    }) {
+        await this.ensureConnection();
+        if (!equipmentID) throw new Error('equipmentID is required');
+        if (!partNumber)  throw new Error('partNumber is required');
+
+        const result = await this.pool.request()
+            .input('equipmentID',  sql.Int,               equipmentID)
+            .input('partType',     sql.NVarChar,          partType)
+            .input('partNumber',   sql.NVarChar,          partNumber)
+            .input('manufacturer', sql.NVarChar,          manufacturer)
+            .input('notes',        sql.NVarChar(sql.MAX), notes)
+            .input('visible',      sql.Bit,               visible)
+            .query(`
+                INSERT INTO EquipmentParts (EquipmentID, PartType, PartNumber, Manufacturer, Notes, Visible)
+                OUTPUT INSERTED.ID
+                VALUES (@equipmentID, @partType, @partNumber, @manufacturer, @notes, @visible)
+            `);
+
+        return { success: true, id: result.recordset[0].ID };
+    }
+
+    /**
+     * Update an equipment part by ID.
+     * @param {{ id: number, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updateEquipmentPart({ id, updates }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for updateEquipmentPart');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            equipmentID:  { column: 'EquipmentID',  type: sql.Int               },
+            partType:     { column: 'PartType',     type: sql.NVarChar          },
+            partNumber:   { column: 'PartNumber',   type: sql.NVarChar          },
+            manufacturer: { column: 'Manufacturer', type: sql.NVarChar          },
+            notes:        { column: 'Notes',        type: sql.NVarChar(sql.MAX) },
+            visible:      { column: 'Visible',      type: sql.Bit               },
+        };
+
+        const request = this.pool.request();
+        request.input('id', sql.Int, id);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown EquipmentParts field: ${field}`);
+            const { column, type } = fieldMap[field];
+            const coerced = field === 'equipmentID' && value != null ? parseInt(value) : value;
+            request.input(field, type, coerced);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+            UPDATE EquipmentParts SET ${setClauses.join(', ')} WHERE ID = @id
+        `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No part found with ID ${id}`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete an equipment part by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deleteEquipmentPart({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for deleteEquipmentPart');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`DELETE FROM EquipmentParts WHERE ID = @id`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No part found with ID ${id}`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -9578,22 +10171,6 @@ module.exports = {
     deleteHerdNote: (params) => dbOps.deleteHerdNote(params),
 
 
-
-
-    // Pasture & feed activity
-    getAllPastures: () => dbOps.getAllPastures(),
-    addFeedType: (params) => dbOps.addFeedType(params),
-    getHerdFeedStatus: (params) => dbOps.getHerdFeedStatus(params),
-    getAllFeedTypes: () => dbOps.getAllFeedTypes(),
-    recordFeedActivity: (params) => dbOps.recordFeedActivity(params),
-    getPastureMaintenanceEvents: (params) => dbOps.getPastureMaintenanceEvents(params),
-    addPastureMaintenanceEvent: (params) => dbOps.addPastureMaintenanceEvent(params),
-
-
-
-
-
-
     // Breeding Plan
     getBreedingPlans: () => dbOps.getBreedingPlans(),
     getBreedingPlan:   (params) => dbOps.getBreedingPlan(params),
@@ -9650,6 +10227,42 @@ module.exports = {
     deleteWeaningRecord: (params) => dbOps.deleteWeaningRecord(params),
 
     getWeaningCandidates: (params) => dbOps.getWeaningCandidates(params),
+
+
+
+
+    // Pasture & feed activity
+    getAllPastures: () => dbOps.getAllPastures(),
+    addFeedType: (params) => dbOps.addFeedType(params),
+    getHerdFeedStatus: (params) => dbOps.getHerdFeedStatus(params),
+    getAllFeedTypes: () => dbOps.getAllFeedTypes(),
+    recordFeedActivity: (params) => dbOps.recordFeedActivity(params),
+    getPastureMaintenanceEvents: (params) => dbOps.getPastureMaintenanceEvents(params),
+    addPastureMaintenanceEvent: (params) => dbOps.addPastureMaintenanceEvent(params),
+
+    
+    // Equipment
+    getEquipmentRecords:                 (params) => dbOps.getEquipmentRecords(params),
+    getEquipmentRecord:                  (params) => dbOps.getEquipmentRecord(params),
+    createEquipment:                     (params) => dbOps.createEquipment(params),
+    updateEquipment:                     (params) => dbOps.updateEquipment(params),
+    deleteEquipment:                     (params) => dbOps.deleteEquipment(params),
+
+    // Equipment Maintenance
+    getEquipmentMaintenanceRecords:      (params) => dbOps.getEquipmentMaintenanceRecords(params),
+    getEquipmentMaintenanceRecord:       (params) => dbOps.getEquipmentMaintenanceRecord(params),
+    createEquipmentMaintenanceRecord:    (params) => dbOps.createEquipmentMaintenanceRecord(params),
+    updateEquipmentMaintenanceRecord:    (params) => dbOps.updateEquipmentMaintenanceRecord(params),
+    deleteEquipmentMaintenanceRecord:    (params) => dbOps.deleteEquipmentMaintenanceRecord(params),
+
+    // Equipment Parts
+    getEquipmentParts:                   (params) => dbOps.getEquipmentParts(params),
+    getEquipmentPart:                    (params) => dbOps.getEquipmentPart(params),
+    createEquipmentPart:                 (params) => dbOps.createEquipmentPart(params),
+    updateEquipmentPart:                 (params) => dbOps.updateEquipmentPart(params),
+    deleteEquipmentPart:                 (params) => dbOps.deleteEquipmentPart(params),
+
+
 
 
 

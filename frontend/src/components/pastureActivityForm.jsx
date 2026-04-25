@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useFormSubmit, FormField } from './formKit';
-import FormSelect from './formSelect';
+import { FormSelect } from './formControls';
 import { useUser } from '../UserContext';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';

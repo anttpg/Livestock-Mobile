@@ -74,7 +74,7 @@ function handlePost(req, res) {
       const parsed = querystring.parse(body);
       console.log("Received test form input:", parsed);
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      return res.end("Form received");
+      return res.end("form received");
     }
 
     console.warn(`Unsupported content type: ${contentType}`);
