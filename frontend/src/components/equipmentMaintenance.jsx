@@ -169,7 +169,7 @@ function EquipmentMaintenance({ equipmentId }) {
                     <EquipmentPartsForm
                         initialData={partsEditTarget}
                         equipmentID={equipmentId}
-                        onSuccess={partsHandleSuccess}
+                        onSuccess={(res) => partsHandleSuccess(res?.row ?? res)}
                         onError={partsHandleError}
                         onClose={() => setPartsEditTarget(null)}
                     />
@@ -200,7 +200,7 @@ function EquipmentMaintenance({ equipmentId }) {
                     <EquipmentMaintenanceForm
                         initialData={recordsEditTarget}
                         equipmentID={equipmentId}
-                        onSuccess={recordsHandleSuccess}
+                        onSuccess={(res) => recordsHandleSuccess(res?.row ?? res)}
                         onError={recordsHandleError}
                         onClose={() => setRecordsEditTarget(null)}
                     />

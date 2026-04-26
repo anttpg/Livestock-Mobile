@@ -4,6 +4,7 @@ import TableViewer from './tableViewer';
 import PopupConfirm from './popupConfirm';
 import { useTableEdit } from './useTableEdit';
 import { formatDateDisplay, toUTC, toLocalDisplay, toLocalInput } from '../utils/dateUtils';
+import { PregnancyLinkerBubble } from './pregnancyLinker';
 
 
 const PENDING_RESULTS = new Set(['Untested', 'Awaiting Results', 'Retest', '', null, undefined]);
@@ -326,6 +327,7 @@ function PregCheck({ breedingPlanId, breedingYear }) {
         <div>
              <div className="multibubble-page" style={{gap: '50px' }}>
                 <div className="bubble-container">
+                    <PregnancyLinkerBubble />
                     <TableForm
                         title="Pregnancy Check"
                         headerContent={headerContent}

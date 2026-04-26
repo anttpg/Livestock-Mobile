@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
-import { FormSelect } from './formControls';
+import React, { useState, useEffect, useRef } from 'react';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
+import { FormSelect, FormSelectBasic, FormValueUnit } from './formControls';
 import { useUser } from '../UserContext';
+import { useRecordMeta } from './formKit';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
+import FileViewer from './FileViewer';
 import '../styles/forms.css';
 
-function defaultMaintenanceData(username = '', equipmentIDProp = '', overrides = {}) {
+// FIX: FK fields (equipmentID, performedByUsername) default to null, not ''.
+// Submitting '' for an FK column causes foreign key constraint errors.
+function defaultMaintenanceData(equipmentIDProp = null, overrides = {}) {
     const today = toLocalInput(new Date().toISOString());
     return {
         equipmentID:           equipmentIDProp,
-        dateRecorded:          today,
-        recordedByUsername:    username,
         datePerformed:         today,
-        performedByUsername:   '',
+        performedByUsername:   null,
         title:                 '',
         description:           '',
         serviceType:           '',
@@ -37,15 +39,30 @@ function defaultMaintenanceData(username = '', equipmentIDProp = '', overrides =
  * @param {Function}    onSuccess
  */
 function EquipmentMaintenanceForm({ initialData = null, equipmentID = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
-    const { user }  = useUser();
+    const isEditing     = !!initialData;
+    const { user }      = useUser();
+    const { recordMeta} = useRecordMeta();
+    const fileViewerRef = useRef(null);
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            return { ...defaultMaintenanceData(user?.username, equipmentID || ''), ...initialData,
-                dateRecorded: toLocalInput(initialData.dateRecorded), datePerformed: toLocalInput(initialData.datePerformed) };
+            return {
+                // FIX: use ?? null (not || '') for FK fields so a falsy-but-set value
+                // (e.g. 0) isn't replaced, and an absent value lands as null not ''.
+                ...defaultMaintenanceData(equipmentID ?? initialData.equipmentID ?? initialData.EquipmentID ?? null),
+                datePerformed:         toLocalInput(initialData.datePerformed  || initialData.DatePerformed),
+                performedByUsername:   initialData.performedByUsername  ?? initialData.PerformedByUsername  ?? null,
+                title:                 initialData.title                ?? initialData.Title                ?? '',
+                description:           initialData.description          ?? initialData.Description          ?? '',
+                serviceType:           initialData.serviceType          ?? initialData.ServiceType          ?? '',
+                meterReadingAtService: initialData.meterReadingAtService ?? initialData.MeterReadingAtService ?? '',
+                meterUnit:             initialData.meterUnit            ?? initialData.MeterUnit            ?? '',
+                nextServiceDue:        initialData.nextServiceDue       ?? initialData.NextServiceDue       ?? '',
+                nextServiceUnits:      initialData.nextServiceUnits     ?? initialData.NextServiceUnits     ?? '',
+            };
         }
-        return defaultMaintenanceData(user?.username, equipmentID || '');
+        // FIX: ?? null so a null equipmentID prop stays null rather than becoming ''.
+        return defaultMaintenanceData(equipmentID ?? null);
     });
 
     const [dropdownData, setDropdownData] = useState({
@@ -70,18 +87,35 @@ function EquipmentMaintenanceForm({ initialData = null, equipmentID = null, onCl
             return e;
         },
         submit: async () => {
-            const payload = {
-                ...formData,
-                dateRecorded:          toUTC(formData.dateRecorded),
-                datePerformed:         toUTC(formData.datePerformed),
+            const _id = initialData?.ID ?? initialData?.id;
+            const { ID: _, id: __, ...formFields } = formData;   // strip both casings from the payload
+
+            // FIX: wrap payload in nullifyEmpty so any stray '' values on FK or
+            // optional fields don't reach the DB as empty strings.
+            // Numeric coercions are applied first so they are preserved as-is.
+            const payload = nullifyEmpty({
+                ...formFields,
+                ...recordMeta,
+                datePerformed: toUTC(formData.datePerformed),
                 meterReadingAtService: formData.meterReadingAtService ? parseFloat(formData.meterReadingAtService) : null,
-                nextServiceDue:        formData.nextServiceDue        ? parseFloat(formData.nextServiceDue)        : null,
-            };
+                nextServiceDue: formData.nextServiceDue ? parseFloat(formData.nextServiceDue) : null,
+            });
+
             const res = await fetch(
-                isEditing ? `/api/equipment-maintenance/${initialData.id}` : '/api/equipment-maintenance',
+                isEditing ? `/api/equipment-maintenance/${_id}` : '/api/equipment-maintenance',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save maintenance record');
+
+            // FIX: consume the response body exactly once and return the result.
+            // Previously res.json() was called inside the isEditing branch for
+            // flushPending and never returned, so useTableEdit edit mode never
+            // received the record back.
+            const result = await res.json();
+            if (!isEditing) {
+                await fileViewerRef.current?.flushPending(result.id);
+            }
+            return result;
         },
         onSuccess
     });
@@ -92,18 +126,18 @@ function EquipmentMaintenanceForm({ initialData = null, equipmentID = null, onCl
                 <div className="form-col">
                     <div className="form-section-title">Service Record</div>
 
+                    {/* FIX: replace raw <select> with FormSelectBasic so an empty
+                        selection emits null rather than ''. The field is still
+                        disabled when locked; FormSelectBasic forwards the prop. */}
                     <FormField label="Equipment" required error={errors.equipmentID}>
-                        <select
-                            className={`form-select${errors.equipmentID ? ' form-select--error' : ''}`}
+                        <FormSelectBasic
                             value={formData.equipmentID}
+                            onChange={val => { setField('equipmentID', val); setErrors(p => ({ ...p, equipmentID: '' })); }}
+                            options={dropdownData.equipment}
+                            placeholder="Select equipment..."
                             disabled={equipmentLocked}
-                            onChange={e => { setField('equipmentID', e.target.value); setErrors(p => ({ ...p, equipmentID: '' })); }}
-                        >
-                            <option value="">Select equipment...</option>
-                            {dropdownData.equipment.map((eq, i) => (
-                                <option key={i} value={eq.id}>{eq.name}</option>
-                            ))}
-                        </select>
+                            error={errors.equipmentID}
+                        />
                     </FormField>
 
                     <FormField label="Title" required error={errors.title}>
@@ -133,32 +167,27 @@ function EquipmentMaintenanceForm({ initialData = null, equipmentID = null, onCl
                     <div className="form-section-title" style={{ marginTop: '20px' }}>Meter Reading</div>
 
                     <FormField label="Reading at Service">
-                        <div className="form-inline">
-                            <input type="number" step="0.1" className="form-input"
-                                value={formData.meterReadingAtService} placeholder="e.g. 250"
-                                onChange={e => setField('meterReadingAtService', e.target.value)} />
-                            <FormSelect
-                                value={formData.meterUnit}
-                                onChange={val => setField('meterUnit', val)}
-                                options={dropdownData.meterUnits}
-                                placeholder="Unit..."
-                                className="form-select--unit"
-                            />
-                        </div>
+                        <FormValueUnit
+                            value={formData.meterReadingAtService}
+                            onValueChange={val => setField('meterReadingAtService', val)}
+                            unit={formData.meterUnit}
+                            onUnitChange={val => setField('meterUnit', val)}
+                            unitOptions={dropdownData.meterUnits}
+                            valuePlaceholder="e.g. 250"
+                            step="0.1"
+                        />
                     </FormField>
 
                     <FormField label="Next Service Due" hint="Threshold reading at which next service is due">
-                        <div className="form-inline">
-                            <input type="number" step="0.1" className="form-input"
-                                value={formData.nextServiceDue} placeholder="e.g. 500"
-                                onChange={e => setField('nextServiceDue', e.target.value)} />
-                            <FormSelect
-                                value={formData.nextServiceUnits}
-                                onChange={val => setField('nextServiceUnits', val)}
-                                options={dropdownData.meterUnits}
-                                placeholder="Unit..."
-                            />
-                        </div>
+                        <FormValueUnit
+                            value={formData.nextServiceDue}
+                            onValueChange={val => setField('nextServiceDue', val)}
+                            unit={formData.nextServiceUnits}
+                            onUnitChange={val => setField('nextServiceUnits', val)}
+                            unitOptions={dropdownData.meterUnits}
+                            valuePlaceholder="e.g. 500"
+                            step="0.1"
+                        />
                     </FormField>
                 </div>
 
@@ -179,18 +208,16 @@ function EquipmentMaintenanceForm({ initialData = null, equipmentID = null, onCl
                             placeholder="Select user..."
                         />
                     </FormField>
-
-                    <div className="form-section-title" style={{ marginTop: '20px' }}>Record Metadata</div>
-
-                    <FormField label="Date Recorded">
-                        <input type="date" className="form-input" value={toLocalInput(formData.dateRecorded)}
-                            onChange={e => setField('dateRecorded', e.target.value)} />
-                    </FormField>
-
-                    <FormField label="Recorded By">
-                        <input className="form-input" value={formData.recordedByUsername} disabled />
-                    </FormField>
                 </div>
+            </div>
+
+            <div style={{ padding: '0 20px 20px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Attachments</div>
+                <FileViewer
+                    ref={fileViewerRef}
+                    domain="equipmentMaintenanceUpload"
+                    recordId={isEditing ? initialData.ID : null}
+                />
             </div>
 
             <div className="form-actions">

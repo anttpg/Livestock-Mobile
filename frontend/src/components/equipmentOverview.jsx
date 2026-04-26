@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import PhotoViewer from './photoViewer';
+import FileViewer from './FileViewer';
 import { toLocalDisplayLong } from '../utils/dateUtils';
 
 // Fields to display in the detail list.
@@ -134,6 +135,15 @@ function EquipmentOverview({ equipmentId, data, loading, onEdit }) {
                         </table>
                     )}
                 </div>
+            </div>
+
+            {/* ── Equipment files ── */}
+            <div style={{ marginTop: '24px', borderTop: '1px solid #eee', paddingTop: '16px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Files</div>
+                <FileViewer
+                    domain="equipmentUpload"
+                    recordId={equipmentId}
+                />
             </div>
         </div>
     );

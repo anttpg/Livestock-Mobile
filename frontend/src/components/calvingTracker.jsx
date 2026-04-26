@@ -9,6 +9,8 @@ import AnimalForm from './animalForm';
 import Popup from './popup';
 import AnimalFolder from './animalFolder';
 import AnimalCombobox from './animalCombobox';
+import { CalvingLinkerBubble } from './calvingLinker';
+
 
 
 const DEFAULT_GESTATION_DAYS = 283;
@@ -566,6 +568,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
         <>
             <div className="multibubble-page" style={{ gap: '50px' }}>
                 <div className="bubble-container">
+                    <CalvingLinkerBubble />
                     <TableForm
                         title="Calving Tracker"
                         headerContent={headerContent}

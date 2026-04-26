@@ -170,6 +170,7 @@ const FileViewer = forwardRef(function FileViewer({ domain, recordId }, ref) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <label style={{ fontWeight: 'bold' }}>Related Files:</label>
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={fileUploading}
            style={{
@@ -247,6 +248,7 @@ const FileViewer = forwardRef(function FileViewer({ domain, recordId }, ref) {
 
               {/* Delete button */}
               <button
+                type="button"
                 onClick={() => requestDelete(filename)}
                 title="Delete file"
                 style={{ ...iconBtnStyle, color: '#dc3545' }}
@@ -266,6 +268,7 @@ const FileViewer = forwardRef(function FileViewer({ domain, recordId }, ref) {
                 {file.name} <em>(pending save)</em>
               </span>
               <button
+                type="button"
                 onClick={() => removePending(index)}
                 title="Remove"
                 style={{ ...iconBtnStyle, color: '#dc3545' }}

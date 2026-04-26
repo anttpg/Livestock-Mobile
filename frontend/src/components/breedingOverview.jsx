@@ -2,9 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PopupConfirm from './popupConfirm';
 import AnimalCombobox, { StatusBadge } from './animalCombobox';
 import AnimalTableSelector from './animalTableSelector';
-import { UnlinkedRecordsBubble } from './recordLinker';
+import { PregnancyLinkerBubble } from './pregnancyLinker';
+import { CalvingLinkerBubble } from './calvingLinker';
+import { WeaningLinkerBubble } from './weaningLinker';
 import Popup from './popup';
 import { toUTC, toLocalDisplay } from '../utils/dateUtils';
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -622,78 +625,7 @@ function ChronicallyOpenCowsBubble({ pregChecks, planNames }) {
     );
 }
 
-const fetchUnlinkedPregChecks = () =>
-    fetch('/api/pregnancy-checks/unlinked', { credentials: 'include' })
-        .then(r => r.ok ? r.json() : { records: [] });
 
-const fetchPregCheckCandidates = (rec) =>
-    fetch(`/api/breeding-records?cowTag=${encodeURIComponent(rec.CowTag)}`, { credentials: 'include' })
-        .then(r => r.ok ? r.json() : { records: [] });
-
-const savePregCheckLink = (rec, candidate) =>
-    fetch(`/api/pregnancy-checks/${rec.ID}`, {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ BreedingRecordID: candidate.ID }),
-    });
-
-const renderPregCheckRecord = (rec) => ({
-    primary:   rec.CowTag,
-    secondary: [
-        toLocalDisplay(rec.PregCheckDate),
-        rec.MonthsPregnant != null ? `${rec.MonthsPregnant}mo` : null,
-        rec.TestType || null,
-    ].filter(Boolean).join('  ·  '),
-    badge: rec.TestResults ? {
-        label:  rec.TestResults,
-        bg:     rec.TestResults === 'Pregnant' ? '#e8f5e9' : '#f5f5f5',
-        color:  rec.TestResults === 'Pregnant' ? '#2e7d32' : '#666',
-        border: rec.TestResults === 'Pregnant' ? '#a5d6a7' : '#ddd',
-    } : null,
-    note: rec.Notes || null,
-});
-
-const pregCheckCandidateLabel = (rec) =>
-    `Breeding records for ${rec.CowTag}`;
-
-
-
-
-const fetchUnlinkedCalvingRecords = () =>
-    fetch('/api/calving-records/unlinked', { credentials: 'include' })
-        .then(r => r.ok ? r.json() : { records: [] });
-
-const fetchCalvingCandidates = (rec) => {
-    if (!rec.DamTag) return Promise.resolve({ records: [] });
-    return fetch(`/api/breeding-records?cowTag=${encodeURIComponent(rec.DamTag)}`, { credentials: 'include' })
-        .then(r => r.ok ? r.json() : { records: [] });
-};
-
-const saveCalvingLink = (rec, candidate) =>
-    fetch(`/api/calving-records/${rec.ID}`, {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ BreedingRecordID: candidate.ID }),
-    });
-
-const renderCalvingRecord = (rec) => ({
-    primary:   rec.DamTag || 'No dam tag',
-    secondary: [
-        rec.CalfTag ? `Calf: ${rec.CalfTag}` : null,
-        toLocalDisplay(rec.BirthDate),
-        rec.CalfSex || null,
-        rec.CalfDiedAtBirth ? 'Died at birth' : null,
-    ].filter(Boolean).join('  ·  '),
-    badge: null,
-    note: rec.CalvingNotes || null,
-});
-
-const calvingCandidateLabel = (rec) =>
-    rec.DamTag
-        ? `Breeding records for dam ${rec.DamTag}`
-        : 'No dam tag — cannot look up breeding records';
 
 
 // ---------------------------------------------------------------------------
@@ -792,28 +724,8 @@ function BreedingOverview({ planId }) {
     return (
         <div className='bubble-container' style={{ display: 'flex', flexDirection: 'column' }}>
             {/* Unlinked records always shown regardless of plan selection */}
-            <UnlinkedRecordsBubble
-                fetchUnlinked={fetchUnlinkedPregChecks}
-                fetchCandidates={fetchPregCheckCandidates}
-                saveLink={savePregCheckLink}
-                renderRecord={renderPregCheckRecord}
-                candidateLabel={pregCheckCandidateLabel}
-                noun="pregnancy check"
-                nounPlural="pregnancy checks"
-                popupTitle="Link Pregnancy Checks to Breeding Records"
-                onRefresh={fetchOverview}
-            />
-            <UnlinkedRecordsBubble
-                fetchUnlinked={fetchUnlinkedCalvingRecords}
-                fetchCandidates={fetchCalvingCandidates}
-                saveLink={saveCalvingLink}
-                renderRecord={renderCalvingRecord}
-                candidateLabel={calvingCandidateLabel}
-                noun="calving record"
-                nounPlural="calving records"
-                popupTitle="Link Calving Records to Breeding Records"
-                onRefresh={fetchOverview}
-            />
+            <PregnancyLinkerBubble onRefresh={fetchOverview} />
+            <CalvingLinkerBubble onRefresh={fetchOverview} />
 
             <ChronicallyOpenCowsBubble
                 pregChecks={overview.pregChecks}

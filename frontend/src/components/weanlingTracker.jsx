@@ -4,9 +4,9 @@ import TableViewer from './tableViewer';
 import PopupConfirm from './popupConfirm';
 import { useTableEdit } from './useTableEdit';
 import { toUTC, toLocalDisplay, toAge } from '../utils/dateUtils';
+import { WeaningLinkerBubble } from './weaningLinker';
 
 
-// ─── Historical records table ─────────────────────────────────────────────────
 
 function WeaningHistoricalTable({ planId }) {
     const [records,  setRecords]  = useState([]);

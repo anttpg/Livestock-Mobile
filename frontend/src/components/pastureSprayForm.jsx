@@ -1,26 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
-import { FormSelect } from './formControls';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
+import { FormSelect, FormSelectBasic, FormValueUnit } from './formControls';
 import { useUser } from '../UserContext';
+import { useRecordMeta } from './formKit';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';
 
 const WIND_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
-function defaultSprayData(username = '', pastureNameProp = '', overrides = {}) {
+// FIX: FK fields (pastureName, appliedByUsername) default to null, not ''.
+// windDirection also defaults to null now that it uses FormSelectBasic.
+function defaultSprayData(pastureNameProp = null, overrides = {}) {
     const today = toLocalInput(new Date().toISOString());
     return {
         pastureName:         pastureNameProp,
-        dateRecorded:        today,
-        recordedByUsername:  username,
         dateApplied:         today,
-        appliedByUsername:   '',
+        appliedByUsername:   null,
         chemicalName:        '',
         rate:                '',
         rateUnit:            '',
         acresSprayed:        '',
         windSpeed:           '',
-        windDirection:       '',
+        windDirection:       null,
         temperature:         '',
         temperatureUnit:     'F',
         notes:               '',
@@ -41,15 +42,16 @@ function defaultSprayData(username = '', pastureNameProp = '', overrides = {}) {
  * @param {Function}    onSuccess
  */
 function PastureSprayForm({ initialData = null, pastureName = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
-    const { user }  = useUser();
+    const isEditing     = !!initialData;
+    const { recordMeta} = useRecordMeta();
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            return { ...defaultSprayData(user?.username, pastureName || ''), ...initialData,
-                dateRecorded: toLocalInput(initialData.dateRecorded), dateApplied: toLocalInput(initialData.dateApplied) };
+            // FIX: ?? null so an absent pastureName stays null, not ''.
+            return { ...defaultSprayData(pastureName ?? null), ...initialData,
+                dateApplied: toLocalInput(initialData.dateApplied) };
         }
-        return defaultSprayData(user?.username, pastureName || '');
+        return defaultSprayData(pastureName ?? null);
     });
 
     const [dropdownData, setDropdownData] = useState({
@@ -74,20 +76,25 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
             return e;
         },
         submit: async () => {
-            const payload = {
-                ...formData,
-                dateRecorded:  toUTC(formData.dateRecorded),
+            const { id: _, ...formFields } = formData;
+            // FIX: nullifyEmpty catches any stray '' on optional/FK fields.
+            // Numeric coercions run first so their values pass through as-is.
+            const payload = nullifyEmpty({
+                ...formFields,
+                ...recordMeta,
                 dateApplied:   toUTC(formData.dateApplied),
                 rate:          formData.rate         ? parseFloat(formData.rate)         : null,
                 acresSprayed:  formData.acresSprayed ? parseFloat(formData.acresSprayed) : null,
                 windSpeed:     formData.windSpeed    ? parseFloat(formData.windSpeed)    : null,
                 temperature:   formData.temperature  ? parseFloat(formData.temperature)  : null,
-            };
+            });
             const res = await fetch(
                 isEditing ? `/api/pasture-spray/${initialData.id}` : '/api/pasture-spray',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save spray record');
+            // FIX: return the result so useTableEdit edit mode receives the updated record.
+            return await res.json();
         },
         onSuccess
     });
@@ -177,38 +184,28 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
                             <input type="number" step="0.1" className="form-input"
                                 value={formData.windSpeed} placeholder="Speed (mph)"
                                 onChange={e => setField('windSpeed', e.target.value)} />
-                            <select className="form-select form-select--unit"
+                            {/* FIX: replace raw <select> with FormSelectBasic so an empty
+                                selection emits null rather than ''. */}
+                            <FormSelectBasic
                                 value={formData.windDirection}
-                                onChange={e => setField('windDirection', e.target.value)}>
-                                <option value="">Dir.</option>
-                                {WIND_DIRECTIONS.map((d, i) => <option key={i} value={d}>{d}</option>)}
-                            </select>
+                                onChange={val => setField('windDirection', val)}
+                                options={WIND_DIRECTIONS.map(d => ({ id: d, name: d }))}
+                                placeholder="Dir."
+                                className="form-select--unit"
+                            />
                         </div>
                     </FormField>
 
                     <FormField label="Temperature">
-                        <div className="form-inline">
-                            <input type="number" step="0.1" className="form-input"
-                                value={formData.temperature} placeholder="0"
-                                onChange={e => setField('temperature', e.target.value)} />
-                            <select className="form-select form-select--unit"
-                                value={formData.temperatureUnit}
-                                onChange={e => setField('temperatureUnit', e.target.value)}>
-                                <option value="F">°F</option>
-                                <option value="C">°C</option>
-                            </select>
-                        </div>
-                    </FormField>
-
-                    <div className="form-section-title" style={{ marginTop: '20px' }}>Record Metadata</div>
-
-                    <FormField label="Date Recorded">
-                        <input type="date" className="form-input" value={toLocalInput(formData.dateRecorded)}
-                            onChange={e => setField('dateRecorded', e.target.value)} />
-                    </FormField>
-
-                    <FormField label="Recorded By">
-                        <input className="form-input" value={formData.recordedByUsername} disabled />
+                        <FormValueUnit
+                            value={formData.temperature}
+                            onValueChange={val => setField('temperature', val)}
+                            unit={formData.temperatureUnit}
+                            onUnitChange={val => setField('temperatureUnit', val)}
+                            unitOptions={['F', 'C']}
+                            valuePlaceholder="0"
+                            step="0.1"
+                        />
                     </FormField>
                 </div>
             </div>

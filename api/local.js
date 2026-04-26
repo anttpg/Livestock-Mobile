@@ -59,6 +59,12 @@ class LocalFileOperations {
             medicalUpload: {
                 getDirectory: (id) => path.join(this.medicalDir, `Record_${id}`, 'Uploads'),
             },
+            equipmentUpload: {
+                getDirectory: (id) => path.join(this.equipmentDir, `Item_${id}`, 'Uploads'),
+            },
+            equipmentMaintenanceUpload: {
+                getDirectory: (id) => path.join(this.equipmentMaintenanceDir, `Record_${id}`, 'Uploads'),
+            },
         };
     }
 

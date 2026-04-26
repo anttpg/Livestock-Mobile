@@ -667,7 +667,7 @@ app.put('/api/cow/weight',
 
 // BREEDING ROUTES
 
-// Breeding Plans
+// Generic animal-by-type getter
 app.get('/api/bulls',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getBulls(req, res)
@@ -678,6 +678,7 @@ app.get('/api/unweaned-calves',
     async (req, res) => apiWrapper.getUnweanedCalves(req, res)
 );
 
+// Breeding Plans
 app.get('/api/breeding-plans',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getBreedingPlans(req, res)
@@ -825,6 +826,11 @@ app.delete('/api/calving-records/:id',
 app.get('/api/weaning-records',
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.getWeaningRecords(req, res)
+);
+
+app.get('/api/weaning-records/unlinked',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getUnlinkedWeaningRecords(req, res)
 );
 
 app.post('/api/weaning-records',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
-import { useUser } from '../UserContext';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
+import { FormSelectBasic } from './formControls';
 import '../styles/forms.css';
 
 function defaultPartsData(equipmentIDProp = '', overrides = {}) {
@@ -33,7 +33,14 @@ function EquipmentPartsForm({ initialData = null, equipmentID = null, onClose, o
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            return { ...defaultPartsData(equipmentID || ''), ...initialData };
+            return {
+                ...defaultPartsData(equipmentID || initialData.equipmentID || initialData.EquipmentID || ''),
+                partType:     initialData.partType     ?? initialData.PartType     ?? '',
+                partNumber:   initialData.partNumber   ?? initialData.PartNumber   ?? '',
+                manufacturer: initialData.manufacturer ?? initialData.Manufacturer ?? '',
+                notes:        initialData.notes        ?? initialData.Notes        ?? '',
+                visible:      initialData.visible      ?? initialData.Visible      ?? true,
+            };
         }
         return defaultPartsData(equipmentID || '');
     });
@@ -58,14 +65,14 @@ function EquipmentPartsForm({ initialData = null, equipmentID = null, onClose, o
             return e;
         },
         submit: async () => {
-            const payload = {
+            const payload = nullifyEmpty({
                 equipmentID:  parseInt(formData.equipmentID),
-                partType:     formData.partType     || null,
+                partType:     formData.partType,
                 partNumber:   formData.partNumber.trim(),
-                manufacturer: formData.manufacturer || null,
-                notes:        formData.notes        || null,
+                manufacturer: formData.manufacturer,
+                notes:        formData.notes,
                 visible:      formData.visible,
-            };
+            });
             const res = await fetch(
                 isEditing
                     ? `/api/equipment-parts/${initialData.ID}`
@@ -91,17 +98,16 @@ function EquipmentPartsForm({ initialData = null, equipmentID = null, onClose, o
                     <div className="form-section-title">Part Details</div>
 
                     <FormField label="Equipment" required error={errors.equipmentID}>
-                        <select
-                            className={`form-select${errors.equipmentID ? ' form-select--error' : ''}`}
+                        <FormSelectBasic
                             value={formData.equipmentID}
+                            onChange={val => { setField('equipmentID', val); setErrors(p => ({ ...p, equipmentID: '' })); }}
+                            options={dropdownData.equipment ?? []}
+                            objectKey="id"
+                            labelKey="name"
+                            placeholder="Select equipment..."
                             disabled={equipmentLocked}
-                            onChange={e => { setField('equipmentID', e.target.value); setErrors(p => ({ ...p, equipmentID: '' })); }}
-                        >
-                            <option value="">Select equipment...</option>
-                            {(dropdownData.equipment ?? []).map((eq, i) => (
-                                <option key={i} value={eq.id}>{eq.name}</option>
-                            ))}
-                        </select>
+                            error={errors.equipmentID}
+                        />
                     </FormField>
 
                     <FormField label="Part Number" required error={errors.partNumber}>

@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
 import { FormSelect } from './formControls';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';
 
-function defaultHayData(pastureNameProp = '', overrides = {}) {
+// FIX: FK fields (pastureName, vegetationType, hayUnitType) default to null, not ''.
+function defaultHayData(pastureNameProp = null, overrides = {}) {
     return {
         pastureName:    pastureNameProp,
         dateMowed:      '',
         dateBaled:      '',
         acresCut:       '',
-        vegetationType: '',
+        vegetationType: null,
         unitsProduced:  '',
-        hayUnitType:    '',
+        hayUnitType:    null,
         weightProduced: '',
         notes:          '',
         ...overrides
@@ -36,10 +37,11 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            return { ...defaultHayData(pastureName || ''), ...initialData,
+            // FIX: ?? null so an absent pastureName stays null, not ''.
+            return { ...defaultHayData(pastureName ?? null), ...initialData,
                 dateMowed: toLocalInput(initialData.dateMowed), dateBaled: toLocalInput(initialData.dateBaled) };
         }
-        return defaultHayData(pastureName || '');
+        return defaultHayData(pastureName ?? null);
     });
 
     const [dropdownData, setDropdownData] = useState({
@@ -62,19 +64,24 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
             return e;
         },
         submit: async () => {
-            const payload = {
-                ...formData,
-                dateMowed:      formData.dateMowed      ? toUTC(formData.dateMowed)               : null,
-                dateBaled:      formData.dateBaled      ? toUTC(formData.dateBaled)               : null,
-                acresCut:       formData.acresCut       ? parseFloat(formData.acresCut)           : null,
-                unitsProduced:  formData.unitsProduced  ? parseFloat(formData.unitsProduced)      : null,
-                weightProduced: formData.weightProduced ? parseFloat(formData.weightProduced)     : null,
-            };
+            const { id: _, ...formFields } = formData;
+            // FIX: nullifyEmpty catches any stray '' on optional/FK fields.
+            // Numeric coercions run first so their values pass through as-is.
+            const payload = nullifyEmpty({
+                ...formFields,
+                dateMowed:      formData.dateMowed      ? toUTC(formData.dateMowed)           : null,
+                dateBaled:      formData.dateBaled      ? toUTC(formData.dateBaled)           : null,
+                acresCut:       formData.acresCut       ? parseFloat(formData.acresCut)       : null,
+                unitsProduced:  formData.unitsProduced  ? parseFloat(formData.unitsProduced)  : null,
+                weightProduced: formData.weightProduced ? parseFloat(formData.weightProduced) : null,
+            });
             const res = await fetch(
                 isEditing ? `/api/pasture-hay/${initialData.id}` : '/api/pasture-hay',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save hay record');
+            // FIX: return the result so useTableEdit edit mode receives the updated record.
+            return await res.json();
         },
         onSuccess
     });

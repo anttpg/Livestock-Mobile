@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFormSubmit, FormField } from './formKit';
 import { FormSelect } from './formControls';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
+import FileViewer from './FileViewer';
 import '../styles/forms.css';
 
 function defaultEquipmentData(overrides = {}) {
     return {
         name:               '',
         description:        '',
-        pastureName:        '',
         locationID:         '',
         isVehicle:          false,
         equipmentStatus:    '',
@@ -51,7 +51,8 @@ function defaultSaleData() {
  * @param {Function}    onSuccess
  */
 function EquipmentForm({ initialData = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
+    const isEditing     = !!initialData;
+    const fileViewerRef = useRef(null);
 
     const [formData, setFormData] = useState(() =>
         initialData
@@ -72,7 +73,7 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
     );
 
     const [dropdownData, setDropdownData] = useState({
-        equipmentTypes: [], equipmentStatuses: [], pastures: [], locations: [], paymentMethods: [],
+        equipmentTypes: [], equipmentStatuses: [], locations: [], paymentMethods: [],
         _meta: { editable: {} }
     });
 
@@ -99,10 +100,9 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let purchaseRecordID = initialData?.purchaseRecordID || null;
             if (purchaseData.purchaseDate || purchaseData.purchasePrice) {
                 const res = await fetch(
-                    purchaseRecordID ? `/api/purchases/${purchaseRecordID}` : '/api/purchases',
-                    {
-                        method: purchaseRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-                        body: JSON.stringify({ ...purchaseData, purchaseDate: purchaseData.purchaseDate ? toUTC(purchaseData.purchaseDate) : null }) }
+                    purchaseRecordID ? `/api/purchase-records/${purchaseRecordID}` : '/api/purchase-records',
+                    { method: purchaseRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+                      body: JSON.stringify({ ...purchaseData, purchaseDate: purchaseData.purchaseDate ? toUTC(purchaseData.purchaseDate) : null }) }
                 );
                 if (!res.ok) throw new Error((await res.json()).error || 'Failed to save purchase record');
                 purchaseRecordID = (await res.json()).id ?? purchaseRecordID;
@@ -111,7 +111,7 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let saleRecordID = initialData?.saleRecordID || null;
             if (isSold && (saleData.saleDate || saleData.salePrice)) {
                 const res = await fetch(
-                    saleRecordID ? `/api/sales/${saleRecordID}` : '/api/sales',
+                    saleRecordID ? `/api/sale-records/${saleRecordID}` : '/api/sale-records',
                     {
                         method: saleRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
                         body: JSON.stringify({ ...saleData, saleDate: saleData.saleDate ? toUTC(saleData.saleDate) : null })
@@ -121,25 +121,20 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
                 saleRecordID = (await res.json()).id ?? saleRecordID;
             }
 
-            const { id, purchaseRecord, saleRecord, ...equipmentFields } = formData;
-
+            const { id: _id, purchaseRecord: _pr, saleRecord: _sr, ...formFields } = formData;
             const res = await fetch(
                 isEditing ? `/api/equipment/${initialData.id}` : '/api/equipment',
                 {
-                    method:  isEditing ? 'PUT' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        ...equipmentFields,
-                        registrationExpiry: formData.registrationExpiry ? toUTC(formData.registrationExpiry) : null,
-                        warrantyExpiry:     formData.warrantyExpiry     ? toUTC(formData.warrantyExpiry)     : null,
-                        purchaseRecordID,
-                        saleRecordID: isSold ? saleRecordID : null,
-                    }),
+                    method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+                    body: JSON.stringify({ ...formFields, registrationExpiry: formData.registrationExpiry ? toUTC(formData.registrationExpiry) : null, warrantyExpiry: formData.warrantyExpiry ? toUTC(formData.warrantyExpiry) : null, purchaseRecordID, saleRecordID: isSold ? saleRecordID : null })
                 }
             );
-
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save equipment');
+
+            if (!isEditing) {
+                const { id } = await res.json();
+                await fileViewerRef.current?.flushPending(id);
+            }
         },
         onSuccess
     });
@@ -227,14 +222,6 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
                 <div className="form-col">
                     <div className="form-section-title">Location</div>
 
-                    <FormField label="Pasture">
-                        <FormSelect
-                            value={formData.pastureName}
-                            onChange={val => setField('pastureName', val)}
-                            options={dropdownData.pastures}
-                            placeholder="Select pasture..."
-                        />
-                    </FormField>
 
                     <FormField label="Location">
                         <select className="form-select" value={formData.locationID}
@@ -339,6 +326,15 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
                         </FormField>
                     </div>
                 </div>
+            </div>
+
+            <div style={{ padding: '0 20px 20px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Attachments</div>
+                <FileViewer
+                    ref={fileViewerRef}
+                    domain="equipmentUpload"
+                    recordId={isEditing ? initialData.id : null}
+                />
             </div>
 
             <div className="form-actions">

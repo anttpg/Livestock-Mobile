@@ -138,6 +138,64 @@ export function FormSelect({
 
 
 /**
+ * Plain styled select with no add-new behaviour.
+ * Emits null (not '') when the placeholder / empty option is selected.
+ * Use this for any select whose options are not user-extensible.
+ *
+ * @param {string|null} value
+ * @param {Function}    onChange
+ * @param {string[]}    options       - Flat string array, or { id, name }[] — see objectKey.
+ * @param {string}      [objectKey]   - If options are objects, the key used as both value and label
+ *                                      unless labelKey is also provided.
+ * @param {string}      [labelKey]    - If options are objects with separate value/label keys.
+ * @param {string}      [placeholder]
+ * @param {string}      [error]
+ * @param {boolean}     [disabled]
+ */
+export function FormSelectBasic({
+    value,
+    onChange,
+    options = [],
+    objectKey,
+    labelKey,
+    placeholder,
+    error,
+    disabled,
+    ...rest
+}) {
+    const handleChange = (e) => {
+        onChange(e.target.value === '' ? null : e.target.value);
+    };
+ 
+    const renderOptions = () => {
+        if (!options.length) return null;
+        if (typeof options[0] === 'object') {
+            const valKey = objectKey || 'id';
+            const lblKey = labelKey || objectKey || 'name';
+            return options.map((o, i) => (
+                <option key={i} value={o[valKey]}>{o[lblKey]}</option>
+            ));
+        }
+        return options.map((o, i) => <option key={i} value={o}>{o}</option>);
+    };
+ 
+    return (
+        <select
+            className={`form-select${error ? ' form-select--error' : ''}`}
+            value={value ?? ''}
+            onChange={handleChange}
+            disabled={disabled}
+            {...rest}
+        >
+            {placeholder && <option value="">{placeholder}</option>}
+            {renderOptions()}
+        </select>
+    );
+}
+
+
+
+/**
  * A paired number input + unit selector on one line.
  * Unit options come from dropdownData — pass the relevant array directly.
  * Emits null (not '') when unit is cleared.

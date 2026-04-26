@@ -805,15 +805,16 @@ class APIWrapper {
 
     async getCalvingRecords(req, res) {
         return this.executeDBOperation(req, res, 'getCalvingRecords', (req) => {
-            const planId           = req.query.planId           ? parseInt(req.query.planId)           : null;
-            const damTag           = req.query.damTag           || null;
+            const planId = req.query.planId ? parseInt(req.query.planId) : null;
+            const damTag = req.query.damTag || null;
+            const calfTag = req.query.calfTag || null;
             const breedingRecordId = req.query.breedingRecordId ? parseInt(req.query.breedingRecordId) : null;
 
-            if (!planId && !damTag && !breedingRecordId) {
-                throw new Error('At least one filter (planId, damTag, or breedingRecordId) is required');
+            if (!planId && !damTag && !breedingRecordId && !calfTag) {
+                throw new Error('At least one filter (planId, damTag, calfTag, or breedingRecordId) is required');
             }
 
-            return { planId, damTag, breedingRecordId };
+            return { planId, damTag, calfTag, breedingRecordId };
         });
     }
 
@@ -892,6 +893,11 @@ class APIWrapper {
             return { planId, cowTag, calvingRecordId };
         });
     }
+
+    async getUnlinkedWeaningRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getUnlinkedWeaningRecords', () => ({}));
+    }
+
 
     async createWeaningRecord(req, res) {
         return this.executeDBOperation(req, res, 'createWeaningRecord', (req) => {
@@ -1864,6 +1870,7 @@ class APIWrapper {
                 recordId: req.params.recordId,
                 filename: req.params.filename,
             });
+            console.log('getFile mimeType:', result.mimeType, 'filename:', result.filename);
             if (result.success) {
                 res.set({
                     'Content-Type': result.mimeType,

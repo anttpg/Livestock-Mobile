@@ -77,6 +77,7 @@ export function RecordLinker({
     saveLink,
     renderRecord,
     candidateLabel,
+    CandidateComponent = BreedingRecordCandidate,
     noun,
     onDone,
 }) {
@@ -278,7 +279,7 @@ export function RecordLinker({
                         ) : (
                             <div style={{ Top: '12px', paddingBottom: '12px', paddingLeft: '10px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
                                 {candidates.map(c => (
-                                    <BreedingRecordCandidate
+                                    <CandidateComponent
                                         key={c.ID}
                                         record={c}
                                         isSelected={selectedCandidate?.ID === c.ID}

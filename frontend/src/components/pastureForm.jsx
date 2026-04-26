@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
 import { FormSelect } from './formControls';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';
 
+// FIX: FK fields (pastureType, vegetationType, areaUnits) default to null, not ''.
+// pastureName is the string PK — it stays '' so the required validation fires correctly.
 function defaultPastureData(overrides = {}) {
-    return { pastureName: '', pastureType: '', vegetationType: '', area: '', areaUnits: '', notes: '', ...overrides };
+    return { pastureName: '', pastureType: null, vegetationType: null, area: '', areaUnits: null, notes: '', ...overrides };
 }
 
 /**
@@ -45,11 +47,16 @@ function PastureForm({ initialData = null, onClose, onSuccess }) {
             return e;
         },
         submit: async () => {
+            const { id: _id, ...formFields } = formData;
+            // FIX: nullifyEmpty converts any stray '' on FK/optional fields to null.
+            const payload = nullifyEmpty(formFields);
             const res = await fetch(
                 isEditing ? `/api/pastures/${encodeURIComponent(initialData.pastureName)}` : '/api/pastures',
-                { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(formData) }
+                { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save pasture');
+            // FIX: return the result so useTableEdit edit mode receives the updated record.
+            return await res.json();
         },
         onSuccess
     });

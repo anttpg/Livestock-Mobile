@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField } from './formKit';
+import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
 import { FormSelect } from './formControls';
 import { useUser } from '../UserContext';
+import { useRecordMeta } from './formKit';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
 import '../styles/forms.css';
 
-function defaultActivityData(username = '', pastureNameProp = '', overrides = {}) {
+// FIX: FK fields (pastureName, performedByUsername) default to null, not ''.
+function defaultActivityData(pastureNameProp = null, overrides = {}) {
     const today = toLocalInput(new Date().toISOString());
     return {
         pastureName:         pastureNameProp,
-        dateRecorded:        today,
-        recordedByUsername:  username,
         datePerformed:       today,
-        performedByUsername: '',
+        performedByUsername: null,
         title:               '',
         description:         '',
         activityType:        '',
@@ -33,15 +33,16 @@ function defaultActivityData(username = '', pastureNameProp = '', overrides = {}
  * @param {Function}    onSuccess
  */
 function PastureActivityForm({ initialData = null, pastureName = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
-    const { user }  = useUser();
+    const isEditing     = !!initialData;
+    const { recordMeta} = useRecordMeta();
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            return { ...defaultActivityData(user?.username, pastureName || ''), ...initialData,
-                dateRecorded: toLocalInput(initialData.dateRecorded), datePerformed: toLocalInput(initialData.datePerformed) };
+            // FIX: ?? null so an absent pastureName stays null, not ''.
+            return { ...defaultActivityData(pastureName ?? null), ...initialData,
+                datePerformed: toLocalInput(initialData.datePerformed) };
         }
-        return defaultActivityData(user?.username, pastureName || '');
+        return defaultActivityData(pastureName ?? null);
     });
 
     const [dropdownData, setDropdownData] = useState({
@@ -66,12 +67,16 @@ function PastureActivityForm({ initialData = null, pastureName = null, onClose, 
             return e;
         },
         submit: async () => {
-            const payload = { ...formData, dateRecorded: toUTC(formData.dateRecorded), datePerformed: toUTC(formData.datePerformed) };
+            const { id: _id, ...formFields } = formData;
+            // FIX: nullifyEmpty catches any stray '' on optional/FK fields.
+            const payload = nullifyEmpty({ ...formFields, ...recordMeta, datePerformed: toUTC(formData.datePerformed) });
             const res = await fetch(
                 isEditing ? `/api/pasture-activity/${initialData.id}` : '/api/pasture-activity',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save activity record');
+            // FIX: return the result so useTableEdit edit mode receives the updated record.
+            return await res.json();
         },
         onSuccess
     });
@@ -134,17 +139,6 @@ function PastureActivityForm({ initialData = null, pastureName = null, onClose, 
                             options={dropdownData.users}
                             placeholder="Select user..."
                         />
-                    </FormField>
-
-                    <div className="form-section-title" style={{ marginTop: '20px' }}>Record Metadata</div>
-
-                    <FormField label="Date Recorded">
-                        <input type="date" className="form-input" value={toLocalInput(formData.dateRecorded)}
-                            onChange={e => setField('dateRecorded', e.target.value)} />
-                    </FormField>
-
-                    <FormField label="Recorded By">
-                        <input className="form-input" value={formData.recordedByUsername} disabled />
                     </FormField>
                 </div>
             </div>

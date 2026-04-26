@@ -19,8 +19,11 @@ function normalizeEquipment(eq) {
         description:        eq.Description     ?? eq.description     ?? '',
         equipmentStatus:    eq.EquipmentStatus ?? eq.equipmentStatus ?? '',
         equipmentType:      eq.EquipmentType   ?? eq.equipmentType   ?? '',
-        locationID:         eq.LocationID      ?? eq.locationID      ?? '',
-        pastureName:        eq.PastureName     ?? eq.pastureName     ?? '',
+        // FIX: FK fields must fall back to null, not ''. Submitting '' for an
+        // integer FK column causes a foreign key constraint error. This value
+        // is passed directly as initialData to EquipmentForm, so it must
+        // already be null when the field is absent.
+        locationID:         eq.LocationID      ?? eq.locationID      ?? null,
         isVehicle:          eq.IsVehicle       ?? eq.isVehicle       ?? false,
         make:               eq.Make            ?? eq.make            ?? '',
         model:              eq.Model           ?? eq.model           ?? '',
@@ -154,7 +157,7 @@ function Equipment() {
             switch (tab) {
                 case 'overview':    endpoint = `/api/equipment/${selectedId}`;                          break;
                 case 'maintenance': endpoint = `/api/equipment-maintenance?equipmentId=${selectedId}`; break;
-                case 'notes':       break;
+                case 'notes':       return null;
                 default:            endpoint = `/api/equipment/${selectedId}`;
             }
 
@@ -322,7 +325,7 @@ function Equipment() {
                 {activeEditTarget && (
                     <EquipmentForm
                         initialData={activeEditTarget}
-                        onSuccess={activeHandleSuccess}
+                         onSuccess={() => { setActiveEditTarget(null); fetchEquipment(); }}
                         onError={activeHandleError}
                         onClose={() => setActiveEditTarget(null)}
                     />
@@ -339,7 +342,7 @@ function Equipment() {
                 {inactiveEditTarget && (
                     <EquipmentForm
                         initialData={inactiveEditTarget}
-                        onSuccess={inactiveHandleSuccess}
+                        onSuccess={() => { setInactiveEditTarget(null); fetchEquipment(); }}
                         onError={inactiveHandleError}
                         onClose={() => setInactiveEditTarget(null)}
                     />
