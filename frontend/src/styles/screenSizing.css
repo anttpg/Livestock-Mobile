@@ -96,7 +96,7 @@
         --folder-offset: 10px;
         --tree-gap: 50px;
         --image-size: 160px;
-        --table-text-size: 12px;
+        --table-text-size: 13px;
         --table-padding: 6px;
         --button-scale: 0.92;
 
@@ -119,7 +119,7 @@
         --folder-offset: 5px;
         --tree-gap: 40px;
         --image-size: 140px;
-        --table-text-size: 12px;
+        --table-text-size: 13px;
         --table-padding: 5px;
         --salepurchase-table-columns: 3;
         --customer-table-columns: 2;
@@ -140,13 +140,13 @@
 @media (max-width: 370px) {
     :root {
         --bubble-padding: 7px;
-        --layout-padding: 5px;
+        --layout-padding: 7px;
         --multibubble-gap: 5px;
         --folder-gap: 5px;
         --folder-offset: 5px;
         --tree-gap: 20px;
         --image-size: 130px;
-        --table-text-size: 11px;
+        --table-text-size: 13px;
         --table-padding: 3px;
         --salepurchase-table-columns: 3;
         --button-scale: 0.85;
@@ -159,13 +159,13 @@
 @media (max-width: 350px) {
     :root {
         --bubble-padding: 7px;
-        --layout-padding: 5px;
+        --layout-padding: 7px;
         --multibubble-gap: 5px;
         --folder-gap: 5px;
         --folder-offset: 5px;
         --tree-gap: 20px;
         --image-size: 130px;
-        --table-text-size: 10px;
+        --table-text-size: 13px;
         --table-padding: 2px;
         --note-table-columns: 3;
         --button-scale: 0.8;
@@ -326,6 +326,9 @@ button:disabled {
     cursor: not-allowed;
 }
 
+.button-blue {
+    /*background-color: #17a2b8;*/
+}
 
 
 

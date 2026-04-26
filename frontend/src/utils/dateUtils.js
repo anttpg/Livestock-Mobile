@@ -99,3 +99,14 @@ export function formatDateDisplay(d) {
     if (!d) return '';
     return new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
 }
+
+/**
+ * Returns the age in whole months from a birthdate to today.
+ * Returns null if empty.
+ */
+export function ageInMonths(dateStr) {
+  if (!dateStr) return null;
+  const birth = new Date(dateStr);
+  const now = new Date();
+  return (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
+}

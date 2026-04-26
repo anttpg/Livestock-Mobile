@@ -590,9 +590,9 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           <h3 style={{ margin: '0' }}>Issues & Injuries</h3>
           <button
             onClick={handleCreateNewIssue}
+            className='button-blue'
             style={{
               padding: '8px 16px',
-              backgroundColor: '#007bff',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -610,7 +610,7 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           columns={issuesColumns}
           showActionColumn={true}
           actionButtonText="View Details"
-          actionButtonColor="#007bff"
+          actionButtonColor="#17a2b8"
           onActionClick={(row) => handleViewDetails(row)}
           alternatingRows={true}
           evenRowColor="#fff"
@@ -657,10 +657,10 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h3 style={{ margin: '0 0 15px 0' }}>Treatments & Immunizations</h3>
           <button
+            className='button-blue'
             onClick={handleCreateNewTreatment}
             style={{
               padding: '8px 16px',
-              backgroundColor: '#007bff',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -701,9 +701,9 @@ function Medical({ cowTag, cowData, loading = false, onRefresh }) {
           <h3 style={{ margin: '0' }}>Medicine Database</h3>
           <button
             onClick={handleOpenMedicationViewer}
+            className='button-blue'
             style={{
               padding: '8px 16px',
-              backgroundColor: '#17a2b8',
               color: 'white',
               border: 'none',
               borderRadius: '4px',

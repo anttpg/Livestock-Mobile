@@ -3885,7 +3885,7 @@ class DatabaseOperations {
             request.input('fetusSex',         sql.NVarChar,          FetusSex);
             request.input('monthsPregnant',   sql.Float,             MonthsPregnant != null ? parseFloat(MonthsPregnant) : null);
             request.input('notes',            sql.NVarChar(sql.MAX), Notes);
-            request.input('calvingAlert',     sql.Bit,               CalvingAlert ?? false);
+            request.input('calvingAlert',     sql.TinyInt,           CalvingAlert ?? 0);
 
             const result = await request.query(`
                 INSERT INTO PregancyCheck
@@ -3987,7 +3987,7 @@ class DatabaseOperations {
                 FetusSex:         { type: sql.NVarChar          },
                 MonthsPregnant:   { type: sql.Float             },
                 Notes:            { type: sql.NVarChar(sql.MAX) },
-                CalvingAlert:     { type: sql.Bit               },
+                CalvingAlert:     { type: sql.TinyInt },
             };
 
             const request = this.pool.request();

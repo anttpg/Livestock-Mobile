@@ -45,6 +45,7 @@ function PhotoViewer({
   recordId,                          // cow tag, record ID, etc.
   filter,                            // optional keyword: 'HEAD', 'BODY', 'ISSUE', etc.
   defaultImage = '/images/NoPhoto.png',
+  fitToSquare = false,               // if true, image never exceeds a 1:1 ratio (black bars when portrait)
   style = {}
 }) {
   const [cacheKey, setCacheKey] = useState(() => Date.now());
@@ -53,16 +54,31 @@ function PhotoViewer({
   const [imageCount, setImageCount] = useState(0);
   const [loadedImages, setLoadedImages] = useState(new Map());
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [showCamera, setShowCamera] = useState(false);
   const [initialImage, setInitialImage] = useState('/images/loading.png');
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef(null);    // gallery / file picker
+  const cameraInputRef = useRef(null);  // native camera capture
+  const containerRef = useRef(null);
+
+  // Measure the container so we can cap the image height when fitToSquare is on
+  useEffect(() => {
+    if (!fitToSquare || !containerRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ width, height });
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [fitToSquare]);
+
+  // Height of the image display area: capped at container width when fitToSquare is true
+  const imageDisplayHeight = fitToSquare && containerSize.width > 0
+    ? Math.min(containerSize.width, containerSize.height)
+    : null;
 
   const encodedId = recordId ? encodeURIComponent(recordId) : null;
   const base = domain && encodedId ? `/api/images/${domain}/${encodedId}` : null;
@@ -166,45 +182,8 @@ function PhotoViewer({
 
   const handleImageClick = () => {
     if (isLoadingInitial || uploadProgress !== null) return;
-    if (imageCount === 0) triggerFileUpload();
+    if (imageCount === 0) cameraInputRef.current?.click();
     else handleExpand();
-  };
-
-  const openCamera = async () => {
-    try {
-      if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-        alert('Camera access requires HTTPS connection on mobile devices');
-        return;
-      }
-      if (!navigator.mediaDevices?.getUserMedia) {
-        alert('Camera not supported on this device/browser');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
-      streamRef.current = stream;
-      setShowCamera(true);
-      setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, 100);
-    } catch (error) {
-      const messages = {
-        NotAllowedError: 'Camera permission denied. Please enable camera access in your browser settings.',
-        NotFoundError: 'No camera found on this device.',
-        NotSupportedError: 'Camera not supported on this browser.',
-        NotReadableError: 'Camera is already in use by another application.'
-      };
-      alert(messages[error.name] || 'Camera access denied or not available');
-    }
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    canvas.toBlob(async (blob) => { if (blob) await doUpload(blob); }, 'image/jpeg', 0.8);
   };
 
   const handleFileUpload = (event) => {
@@ -213,15 +192,14 @@ function PhotoViewer({
     if (!file.type.startsWith('image/')) { alert('Please select a valid image file'); return; }
     if (file.size > 10 * 1024 * 1024) { alert('File size too large. Please select an image smaller than 10MB'); return; }
     doUpload(file);
+    // Reset both inputs so the same file can be re-selected after a delete, etc.
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
-
-  const triggerFileUpload = () => fileInputRef.current?.click();
 
   const doUpload = async (blob) => {
     try {
       setUploadProgress(0);
-      closeCamera();
       const result = await uploadFn(blob, (pct) => setUploadProgress(pct));
       if (result.success) {
         setUploadProgress(null);
@@ -238,12 +216,6 @@ function PhotoViewer({
       setUploadProgress(null);
       alert('Error uploading photo. Please check your connection and try again.');
     }
-  };
-
-  const closeCamera = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
-    setShowCamera(false);
   };
 
   const getCurrentImageUrl = (index) => loadedImages.get(index + 1) ?? '/images/loading.png';
@@ -283,13 +255,18 @@ function PhotoViewer({
   return (
     <>
       <div
+        ref={containerRef}
         style={{
           ...style,
           position: 'relative',
           borderRadius: '5px',
           overflow: 'hidden',
           cursor: isInteractive ? 'pointer' : 'default',
-          opacity: isLoadingInitial ? 0.8 : 1
+          opacity: isLoadingInitial ? 0.8 : 1,
+          backgroundColor: '#000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
         onClick={handleImageClick}
         onMouseEnter={(e) => { if (isInteractive) e.currentTarget.style.filter = 'brightness(0.9)'; }}
@@ -310,12 +287,19 @@ function PhotoViewer({
           </div>
         )}
 
-        <img
-          src={isLoadingInitial ? '/images/loading.png' : initialImage}
-          alt="photo"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={(e) => { if (!isLoadingInitial) e.target.src = defaultImage; }}
-        />
+        <div style={{
+          width: '100%',
+          height: imageDisplayHeight != null ? `${imageDisplayHeight}px` : '100%',
+          flexShrink: 0,
+          position: 'relative',
+        }}>
+          <img
+            src={isLoadingInitial ? '/images/loading.png' : initialImage}
+            alt="photo"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={(e) => { if (!isLoadingInitial) e.target.src = defaultImage; }}
+          />
+        </div>
 
         {isInteractive && (
           <div style={{
@@ -329,7 +313,23 @@ function PhotoViewer({
         )}
       </div>
 
-      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+      {/* Native camera capture — triggers the device camera app directly */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileUpload}
+      />
+      {/* File picker — used from the gallery toolbar for uploading from storage */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileUpload}
+      />
 
       <Popup isOpen={isExpanded} onClose={() => setIsExpanded(false)} title="Photos" height="90vh">
         {dataLoaded ? (
@@ -338,8 +338,8 @@ function PhotoViewer({
             loadedImages={loadedImages}
             currentIndex={currentIndex}
             onIndexChange={setCurrentIndex}
-            onAddPhoto={openCamera}
-            onUploadPhoto={triggerFileUpload}
+            onAddPhoto={() => cameraInputRef.current?.click()}
+            onUploadPhoto={() => fileInputRef.current?.click()}
             onDelete={deleteFn ? () => setShowDeleteConfirm(true) : null}
             onPrevious={() => setCurrentIndex(i => Math.max(0, i - 1))}
             onNext={() => setCurrentIndex(i => Math.min(imageCount - 1, i + 1))}
@@ -352,24 +352,6 @@ function PhotoViewer({
             <img src="/images/loading.png" alt="Loading..." style={{ width: '64px', height: '64px' }} />
           </div>
         )}
-      </Popup>
-
-      <Popup isOpen={showCamera} onClose={closeCamera} title="Take Photo" width="80vw" height="80vh" maxWidth="600px" maxHeight="600px">
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '5px' }} />
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-          <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '15px', alignItems: 'center' }}>
-            {[
-              { icon: 'photo_camera', color: '#4CAF50', action: capturePhoto },
-              { icon: 'upload', color: '#2196F3', action: triggerFileUpload },
-              { icon: 'close', color: '#f44336', action: closeCamera }
-            ].map(({ icon, color, action }) => (
-              <button key={icon} onClick={action} style={{ backgroundColor: color, color: 'white', border: 'none', borderRadius: '50%', width: '60px', height: '60px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span className="material-symbols-outlined">{icon}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </Popup>
 
       <PopupConfirm
@@ -390,6 +372,25 @@ function PhotoGallery({
   imageCount, currentIndex, onIndexChange, onAddPhoto, onUploadPhoto,
   onDelete, onPrevious, onNext, getCurrentImageUrl, isUploading, uploadProgress
 }) {
+  const [compact, setCompact] = useState(false);
+  const wrapperRef = useRef(null);
+  const counterRef = useRef(null);
+  const toolbarRef = useRef(null);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const ro = new ResizeObserver(() => {
+      const counter = counterRef.current;
+      const toolbar = toolbarRef.current;
+      if (!counter || !toolbar) return;
+      const gap = 10; // minimum space to keep between them
+      setCompact(counter.getBoundingClientRect().right + gap >= toolbar.getBoundingClientRect().left);
+    });
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, []);
+
   if (imageCount === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', gap: '20px' }}>
@@ -417,7 +418,7 @@ function PhotoGallery({
   ];
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       {isUploading && (
         <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 20, gap: '10px', padding: '16px' }}>
           <span className="material-symbols-outlined" style={{ color: 'white', fontSize: '36px' }}>cloud_upload</span>
@@ -429,15 +430,15 @@ function PhotoGallery({
         </div>
       )}
 
-      <div style={{ position: 'absolute', top: '15px', left: '15px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 12px', borderRadius: '20px', fontSize: '16px', fontWeight: 'bold', zIndex: 10 }}>
+      <div ref={counterRef} style={{ position: 'absolute', top: '15px', left: '15px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 12px', borderRadius: '20px', fontSize: '16px', fontWeight: 'bold', zIndex: 10 }}>
         {currentIndex + 1}/{imageCount}
       </div>
 
-      <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10, display: 'flex', gap: '10px' }}>
+      <div ref={toolbarRef} style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10, display: 'flex', gap: '10px' }}>
         {topRightButtons.map(({ icon, label, action, color }) => (
-          <button key={label} onClick={action} style={{ backgroundColor: color ?? 'rgba(0,0,0,0.7)', color: 'white', border: 'none', borderRadius: '20px', padding: '8px 12px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <button key={label} onClick={action} style={{ backgroundColor: color ?? 'rgba(0,0,0,0.7)', color: 'white', border: 'none', borderRadius: '20px', padding: '8px 12px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: compact ? 0 : '5px' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{icon}</span>
-            {label}
+            {!compact && label}
           </button>
         ))}
       </div>

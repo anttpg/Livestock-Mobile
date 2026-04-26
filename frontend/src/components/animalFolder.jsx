@@ -94,7 +94,7 @@ function AnimalFolder() {
                     placeholder="Search by tag"
                 />
 
-                <button onClick={() => setAddAnimalOpen(true)}>
+                <button className='button-blue' onClick={() => setAddAnimalOpen(true)}>
                     Add Animal
                 </button>
             </div>

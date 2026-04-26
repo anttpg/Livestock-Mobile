@@ -1,130 +1,228 @@
-
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Timeline from './timeline';
 import Table from './table';
+import Popup from './popup';
+import { useNavigate } from 'react-router-dom';
+import CalvingAlertsBubble from './calvingAlert';
+import { toLocalDisplayLong, ageInMonths } from '../utils/dateUtils';
 
 function Overview() {
-    // Hardcoded data for recent events
+  const [calvingData, setCalvingData] = useState({
+    calvingAlerts: [],
+    expectedBirths: [],
+    pregChecks: [],
+    calvingRecords: [],
+  });
 
-    const recentEvents = [
-        { date: '2025-07-31', name: 'Fly spray Herd 3' },
-        { date: '2025-07-29', name: 'Put Kenny on Herd 2' },
-        { date: '2025-07-16', name: 'Split Herd 2' },
-        { date: '2025-07-15', name: 'Moved Herd 1 to North Pasture' },
-        { date: '2025-07-14', name: 'Vaccinated calves in Herd 2' }
-      ];
-    
-      // Hardcoded attention items
-      const attentionItems = [
-        { item: 'Fence down', location: 'South Pasture', date: '07/31/2025', reporter: 'Anthony' },
-        { item: 'Fence down', location: 'North Pasture', date: '07/31/2025', reporter: 'Anthony' },
-        { item: 'Water trough overflowing', location: 'North Pasture 3', date: '07/29/2025', reporter: 'Robert' },
-        { item: 'Chicken coop needs remesh', location: '4 acre nursery', date: '07/11/2025', reporter: 'Anthony' }
-      ];
-  
-      // Define columns for the attention items table
-      const attentionColumns = [
-        {
-          key: 'item',
-          header: 'Item',
-          type: 'text',
-          align: 'left'
-        },
-        {
-          key: 'location',
-          header: 'Location',
-          type: 'text',
-          align: 'left'
-        },
-        {
-          key: 'date',
-          header: 'Date',
-          type: 'text', // Keep as text since your dates are already formatted
-          align: 'left'
-        },
-        {
-          key: 'reporter',
-          header: 'Reporter',
-          type: 'text',
-          align: 'left'
+  const [animalData, setAnimalData] = useState({ bulls: [], cows: [], calves: [] });
+  const [openAnimalPopup, setOpenAnimalPopup] = useState(null);
+
+  const navigate = useNavigate();
+
+  const fetchCalvingData = useCallback(async () => {
+    try {
+      const plansRes = await fetch('/api/breeding-plans', { credentials: 'include' });
+      if (!plansRes.ok) return;
+      const { plans = [] } = await plansRes.json();
+      const activePlans = plans.filter(p => p.IsActive);
+      if (activePlans.length === 0) return;
+
+      const overviews = await Promise.all(
+        activePlans.map(p =>
+          fetch(`/api/breeding-plans/${p.ID}/overview`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+        )
+      );
+
+      const seenAlerts = new Set();
+      const seenBirths = new Set();
+      const merged = { calvingAlerts: [], expectedBirths: [], pregChecks: [], calvingRecords: [] };
+
+      for (const data of overviews) {
+        if (!data) continue;
+        for (const a of (data.calvingAlerts || [])) {
+          if (!seenAlerts.has(a.cowTag)) { seenAlerts.add(a.cowTag); merged.calvingAlerts.push(a); }
         }
-      ];
-    
-      const handleSeeAllEvents = () => {
-        alert('Navigate to full events page');
-      };
-    
-      const handleAttentionItemClick = (item) => {
-        alert(`View details for: ${item.item} at ${item.location}`);
-      };
-  
-    return (
-      <div className="multibubble-column">
-        {/* Page Title */}
-        <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 20px 0' }}>
-          Overview
-        </h1>
-  
-        {/* Panel 1: 2025 Breeding Plan */}
-        <div className="bubble-container">
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 15px 0' }}>
-            2025 breeding plan
-          </h2>
-          <div style={{ fontSize: '16px', lineHeight: '1.6' }}>
-            <div style={{ marginBottom: '5px' }}>25 cows</div>
-            <div style={{ marginBottom: '5px' }}>15 cows open</div>
-            <div style={{ marginBottom: '5px' }}>10 pregnant, 5 in need of preg check</div>
-            <div>6 calves</div>
-          </div>
-        </div>
-  
-        {/* Panel 2: Recent Events */}
-        <div className="bubble-container">
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 15px 0' }}>
-            Recent events
-          </h2>
-          <Timeline 
-            data={recentEvents} 
-            maxEvents={3} 
-            onSeeAll={handleSeeAllEvents}
-          />
-        </div>
-  
-        {/* Panel 3: Items Requiring Attention */}
-        <Table
-          data={attentionItems}
-          columns={attentionColumns}
-          title={`${attentionItems.length} items require attention`}
-          emptyMessage="No items requiring attention"
-          onActionClick={handleAttentionItemClick}
-          actionButtonText="VIEW"
-          actionButtonColor="#dc3545"
-          showActionColumn={true}
-          maxRows={5} // Show only 5 items initially, rest in popup
-          style={{
-            // Override the default padding to match your panel style
-            padding: '20px',
-            fontSize: '24px',
+        for (const b of (data.expectedBirths || [])) {
+          const k = b.cowTag + (b.breedingRecordId || '');
+          if (!seenBirths.has(k)) { seenBirths.add(k); merged.expectedBirths.push(b); }
+        }
+        merged.pregChecks.push(...(data.pregChecks || []));
+        merged.calvingRecords.push(...(data.calvingRecords || []));
+      }
+
+      setCalvingData(merged);
+    } catch (e) {
+      console.error('Overview: failed to fetch calving data', e);
+    }
+  }, []);
+
+  const fetchAnimalData = useCallback(async () => {
+    try {
+      const res = await fetch('/api/animals/active', { credentials: 'include' });
+      if (!res.ok) return;
+      const { cows: animals = [] } = await res.json();
+
+      const bulls  = animals.filter(a => a.Sex === 'Male'   && ageInMonths(a.DateOfBirth) >= 12);
+      const cows   = animals.filter(a => a.Sex === 'Female' && ageInMonths(a.DateOfBirth) >= 12);
+      const calves = animals.filter(a => ageInMonths(a.DateOfBirth) < 12);
+
+      setAnimalData({ bulls, cows, calves });
+    } catch (e) {
+      console.error('Overview: failed to fetch animal data', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCalvingData();
+    fetchAnimalData();
+  }, [fetchCalvingData, fetchAnimalData]);
+
+  const animalTableColumns = [
+    {
+      key: 'CowTag',
+      header: 'Tag',
+      type: 'text',
+      align: 'left',
+      customRender: (value, row) => (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/animal?search=${row.CowTag}&tab=general`);
           }}
-          
-        />
-  
-        {/* Panel 4: Herds Running Low */}
-        <div className="bubble-container">
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 15px 0' }}>
-            Herds may be running low on...
-          </h2>
-          <div style={{ fontSize: '16px', lineHeight: '1.8' }}>
-            <div style={{ marginBottom: '8px', color: '#333' }}>
-              <span style={{ fontWeight: 'bold' }}>Herd 3:</span> licktub (3 days ago)
-            </div>
-            <div style={{ color: '#333' }}>
-              <span style={{ fontWeight: 'bold' }}>Herd 2:</span> hay (2 days ago)
-            </div>
-          </div>
+          style={{ color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          {value}
+        </span>
+      ),
+    },
+    {
+      key: 'DateOfBirth',
+      header: 'Date of Birth',
+      type: 'date',
+      align: 'left',
+    },
+    {
+      key: 'HerdName',
+      header: 'Herd',
+      type: 'text',
+      align: 'left',
+    },
+  ];
+
+  const navButtons = [
+    { label: 'Herds',          icon: 'footprint',      path: '/herds'       },
+    { label: 'Animal Records', icon: 'folder_open',    path: '/animal'      },
+    { label: 'Breeding Plan',  icon: 'calendar_month', path: '/breeding'    },
+    { label: 'Equipment',      icon: 'forklift',       path: '/equipment'   },
+    { label: 'Pastures',       icon: 'grass',          path: '/pastures'    },
+    { label: 'Fieldsheets',    icon: 'assignment',     path: '/fieldsheets' },
+  ];
+
+  const animalGroups = [
+    { key: 'bulls',  label: 'Bulls',  icon: 'male'   },
+    { key: 'cows',   label: 'Cows',   icon: 'female' },
+    { key: 'calves', label: 'Calves', icon: null     },
+  ];
+
+  const baseButtonStyle = {
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    gap: '6px', padding: '16px 8px',
+    border: '1px solid #e8e8e8', borderRadius: '8px',
+    backgroundColor: '#f2f2f2',
+    cursor: 'pointer',
+    fontSize: '12px', fontWeight: '600', color: '#444',
+    transition: 'background-color 0.15s, border-color 0.15s',
+  };
+
+  return (
+    <div className="multibubble-column">
+      <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 20px 0' }}>
+        Overview
+      </h1>
+
+      {/* Nav buttons */}
+      <div className="bubble-container" style={{ marginBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+          {navButtons.map(({ label, icon, path }) => (
+            <button
+              key={path}
+              onClick={() => navigate(path)}
+              style={baseButtonStyle}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#e8e8e8'; e.currentTarget.style.borderColor = '#ccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#f2f2f2'; e.currentTarget.style.borderColor = '#e8e8e8'; }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '26px', color: '#555' }}>
+                {icon}
+              </span>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
-    );
-  }
-  
-  export default Overview;
+
+      {/* Animal count cards */}
+      <div className="bubble-container" style={{ marginBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+          {animalGroups.map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setOpenAnimalPopup(key)}
+              style={baseButtonStyle}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#e8e8e8'; e.currentTarget.style.borderColor = '#ccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#f2f2f2'; e.currentTarget.style.borderColor = '#e8e8e8'; }}
+            >
+              <span style={{ fontSize: '22px', fontWeight: '700', color: '#222', lineHeight: 1 }}>
+                {animalData[key].length}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {icon && (
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#555' }}>
+                    {icon}
+                  </span>
+                )}
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Animal popups */}
+      {animalGroups.map(({ key, label }) => (
+        <Popup
+          key={key}
+          isOpen={openAnimalPopup === key}
+          onClose={() => setOpenAnimalPopup(null)}
+          title={label}
+          fullscreen
+        >
+          <Table
+            columns={animalTableColumns}
+            data={animalData[key]}
+            showActionColumn={false}
+            actionButtonText="VIEW"
+            actionButtonColor="#3bb558"
+            onActionClick={(row) => navigate(`/animal?search=${row.CowTag}&tab=general`)}
+          />
+        </Popup>
+      ))}
+
+      <div className="bubble-container">
+        <CalvingAlertsBubble
+          calvingAlerts={calvingData.calvingAlerts}
+          expectedBirths={calvingData.expectedBirths}
+          pregChecks={calvingData.pregChecks}
+          calvingRecords={calvingData.calvingRecords}
+          planId={null}
+          onRefresh={fetchCalvingData}
+          showExpectedBirths={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default Overview;

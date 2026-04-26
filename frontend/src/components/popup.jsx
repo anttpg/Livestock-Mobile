@@ -186,7 +186,7 @@ function Popup({
     const zIndex = 1000 + (backdropCount * 10);
 
     // Convert maxHeight and maxWidth to pixels for proper calculations
-    const maxHeightPx = convertToPixels(maxHeight, viewportHeight * 0.95);
+    const maxHeightPx = convertToPixels(maxHeight, viewportHeight);
     const widthLimitVar = parseFloat(
         getComputedStyle(document.documentElement).getPropertyValue('--popup-width-limit')
     );

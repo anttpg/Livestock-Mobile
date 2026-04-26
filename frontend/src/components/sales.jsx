@@ -475,10 +475,10 @@ function Sales({ cowTag }) {
 
             <button
               onClick={handleManagePurchase}
+              className='button-blue'
               style={{
                 marginTop: '15px',
                 padding: '8px 16px',
-                backgroundColor: '#007bff',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
@@ -604,10 +604,10 @@ function Sales({ cowTag }) {
 
             <button
               onClick={handleManageSale}
+              className='button-blue'
               style={{
                 marginTop: '15px',
                 padding: '8px 16px',
-                backgroundColor: '#007bff',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',

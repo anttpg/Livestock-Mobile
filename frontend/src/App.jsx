@@ -193,8 +193,8 @@ function AppContent() {
               )
             }
           />
-          <Route path="/" element={<Navigate to="/animal" replace />} />
-          <Route path="*" element={<Navigate to="/animal" replace />} />
+          <Route path="/" element={<Navigate to="/overview" replace />} />
+          <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </Router>
 

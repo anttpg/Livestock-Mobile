@@ -219,22 +219,34 @@ function General({ cowTag, cowData, onRefresh }) {
                 </div>
                 ) : (
                     <>
-                        {/* Left side - Photo Viewers (responsive sizing) */}
+                        {/* Left side */}
                         <div style={{
+                            flex: '0 1 400px',
+                            minWidth: '150px',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '10px',
-                            flex: 1,
-                            minWidth: '200px',
-                            maxWidth: '400px',
-                            aspectRatio: '1 / 1',
-                            width: '100%'
                         }}>
-                            <PhotoViewer domain="cow" recordId={cowTag} filter="HEAD" defaultImage="/images/NoHead.png" style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }} />
-                            <PhotoViewer domain="cow" recordId={cowTag} filter="BODY" defaultImage="/images/NoBody.png" style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }} />
+                                <PhotoViewer
+                                    domain="cow"
+                                    recordId={cowTag}
+                                    filter="HEAD"
+                                    defaultImage="/images/NoHead.png"
+                                    fitToSquare={true}
+                                    style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }}
+                                />
+                                <PhotoViewer
+                                    domain="cow"
+                                    recordId={cowTag}
+                                    filter="BODY"
+                                    defaultImage="/images/NoBody.png"
+                                    fitToSquare={true}
+                                    style={{ flex: 1, borderRadius: '5px', minHeight: '0', width: '100%' }}
+                                />
                         </div>
 
-                        {/* Right side - Minimap and Info (fixed width) */}
+
+                        {/* Right side */}
                         <div style={{
                             width: '200px',
                             display: 'flex',
@@ -242,6 +254,7 @@ function General({ cowTag, cowData, onRefresh }) {
                             gap: '15px',
                             flexShrink: 1
                         }}>
+                            
                             {/* Minimap Component */}
                             <div style={{
                                 width: 'var(--minimap)',

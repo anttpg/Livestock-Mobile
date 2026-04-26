@@ -591,7 +591,13 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 </div>
 
                 <div className="bubble-container">
-                    {breedingPlanId && <CalvingHistoricalTable planId={breedingPlanId} />}
+                    {breedingPlanId ? (
+                        <CalvingHistoricalTable planId={breedingPlanId} />
+                    ) : (
+                        <div className="empty-state-box">
+                            To see existing records, select a breeding plan.
+                        </div>
+                    )} 
                 </div>
             </div>
 

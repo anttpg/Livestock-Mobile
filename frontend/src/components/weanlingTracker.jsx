@@ -219,7 +219,13 @@ function WeanlingTracker({ breedingPlanId, breedingYear }) {
                     />
                 </div>
                 <div className="bubble-container">
-                    {breedingPlanId && <WeaningHistoricalTable planId={breedingPlanId} />}
+                    {breedingPlanId ? 
+                        (<WeaningHistoricalTable planId={breedingPlanId} />
+                        ) : (
+                        <div className="empty-state-box">
+                            To see existing records, select a breeding plan.
+                        </div>
+                    )}
                 </div>
             </div>
         </>

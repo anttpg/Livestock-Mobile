@@ -606,8 +606,23 @@ function PurchaseSaleViewer({
     <div>
       {!isEditing && !isCreating ? (
         <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{  padding: '10px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
             <div>
+                <button
+                    onClick={onClose}
+                    className='resizing-button'
+                    style={{
+                    padding: '20px 15px',
+                    backgroundColor: '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                    }}
+                >
+                    Close
+                </button>
                 <button
                     onClick={handleCreate}
                     className='resizing-button'
@@ -623,21 +638,6 @@ function PurchaseSaleViewer({
                     }}
                 >
                     + Add {recordType}
-                </button>
-                <button
-                    onClick={onClose}
-                    className='resizing-button'
-                    style={{
-                    padding: '20px 15px',
-                    backgroundColor: '#6c757d',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                    }}
-                >
-                    Close
                 </button>
                 </div>
           </div>
@@ -667,7 +667,7 @@ function PurchaseSaleViewer({
           />
         </>
       ) : (
-        <div>
+        <div style={{padding: '20px'}}>
           <h2>{isCreating ? `Add New ${recordType}` : `Edit ${recordType}`}</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
@@ -983,21 +983,7 @@ function PurchaseSaleViewer({
             )}
           </div>
 
-          <div style={{ marginTop: '30px', display: 'flex', gap: '10px' }}>
-            <button
-              onClick={handleSave}
-              style={{
-                padding: '10px 30px',
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '14px'
-              }}
-            >
-              {isCreating ? `Create ${recordType}` : 'Save Changes'}
-            </button>
+          <div style={{ marginTop: '30px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
             <button
               onClick={handleCancel}
               style={{
@@ -1011,6 +997,20 @@ function PurchaseSaleViewer({
               }}
             >
               Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              style={{
+                padding: '10px 30px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              {isCreating ? `Create ${recordType}` : 'Save Changes'}
             </button>
           </div>
         </div>
