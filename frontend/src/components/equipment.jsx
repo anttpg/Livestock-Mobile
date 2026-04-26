@@ -255,7 +255,7 @@ function Equipment() {
                     isOpen={folderEditTarget !== null}
                     onClose={() => setFolderEditTarget(null)}
                     title={`Edit Equipment — ${folderEditTarget?.name ?? ''}`}
-                    fullscreen={true}
+                    fullscreen={false}
                 >
                     {folderEditTarget && (
                         <EquipmentForm
@@ -325,7 +325,7 @@ function Equipment() {
                 {activeEditTarget && (
                     <EquipmentForm
                         initialData={activeEditTarget}
-                         onSuccess={() => { setActiveEditTarget(null); fetchEquipment(); }}
+                        onSuccess={() => { setActiveEditTarget(null); fetchEquipment(); }}
                         onError={activeHandleError}
                         onClose={() => setActiveEditTarget(null)}
                     />

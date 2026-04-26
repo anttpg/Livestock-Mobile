@@ -26,10 +26,10 @@ const DETAIL_FIELDS = [
 function DetailRow({ label, value }) {
     return (
         <tr>
-            <td style={{ padding: '6px 12px 6px 0', color: '#666', fontSize: '13px', whiteSpace: 'nowrap', verticalAlign: 'top', width: '1%' }}>
+            <td style={{ padding: '6px 12px 6px 0', color: '#666', fontSize: '13px', verticalAlign: 'top', width: '1%' }}>
                 {label}
             </td>
-            <td style={{ padding: '6px 0', fontSize: '13px', color: '#1a1a1a', verticalAlign: 'top' }}>
+            <td style={{ padding: '6px 0', fontSize: '13px', color: '#1a1a1a', verticalAlign: 'top', overflowWrap: 'break-word', minWidth: 0 }}>
                 {value}
             </td>
         </tr>
@@ -80,49 +80,50 @@ function EquipmentOverview({ equipmentId, data, loading, onEdit }) {
 
     return (
         <div className='bubble-container'>
+            <div style={{ marginTop: '4px', marginBottom: '8px', padding: '3px'  }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '20px', fontWeight: '700', color: '#1a1a1a' }}>
+                        {equipment.Name}
+                    </span>
+                    {onEdit && (
+                        <button
+                            type="button"
+                            onClick={onEdit}
+                            title="Edit equipment"
+                            style={{
+                                flexShrink: 0,
+                                background: 'none', border: 'none', padding: '2px 4px',
+                                cursor: 'pointer', color: '#888',
+                                display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f5f5f5'; e.currentTarget.style.color = '#333'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#888'; }}
+                        >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit</span>
+                        </button>
+                    )}
+                </div>
+
+                {equipment.Description && (
+                    <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#555' }}>
+                        {equipment.Description}
+                    </p>
+                )}
+            </div>
+
             <div style={{ display: 'flex', gap: '32px', alignItems: 'flex-start', padding: '4px 0' }}>
 
-                {/* ── Photo viewer ── */}
-                <div style={{ flexShrink: 0 }}>
+                <div style={{ flex: '0 1 350px', minWidth: '80px' }}>
                     <PhotoViewer
                         domain="equipment"
                         recordId={equipmentId}
                         defaultImage="/images/NoPhoto.png"
+                        style={{ width: '100%', aspectRatio: '1 / 1' }}
                     />
                 </div>
 
-                {/* ── Detail list ── */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '700', color: '#1a1a1a' }}>
-                                {equipment.Name}
-                            </span>
-                            {onEdit && (
-                                <button
-                                    type="button"
-                                    onClick={onEdit}
-                                    title="Edit equipment"
-                                    style={{
-                                        flexShrink: 0,
-                                        background: 'none', border: 'none', padding: '2px 4px',
-                                        cursor: 'pointer', color: '#888',
-                                        display: 'inline-flex', alignItems: 'center', borderRadius: '3px',
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f5f5f5'; e.currentTarget.style.color = '#333'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#888'; }}
-                                >
-                                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit</span>
-                                </button>
-                            )}
-                        </div>
-                        {equipment.Description && (
-                            <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#555' }}>
-                                {equipment.Description}
-                            </p>
-                        )}
-                    </div>
-
+                {/*  Detail list */}
+                <div style={{ flex: '1 0 0', minWidth: '160px'}}>
                     {rows.length === 0 ? (
                         <p style={{ fontSize: '13px', color: '#aaa', marginTop: '12px' }}>No additional details recorded.</p>
                     ) : (
@@ -137,7 +138,6 @@ function EquipmentOverview({ equipmentId, data, loading, onEdit }) {
                 </div>
             </div>
 
-            {/* ── Equipment files ── */}
             <div style={{ marginTop: '24px', borderTop: '1px solid #eee', paddingTop: '16px' }}>
                 <div className="form-section-title" style={{ marginBottom: '12px' }}>Files</div>
                 <FileViewer

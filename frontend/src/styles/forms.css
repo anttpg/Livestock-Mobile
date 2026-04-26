@@ -1,7 +1,7 @@
 /*  Field wrapper*/
 
 .form-field {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
 }
 
 .form-label {
@@ -146,6 +146,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-left: 8px;
     margin-bottom: 14px;
     font-size: 13px;
     color: #555;

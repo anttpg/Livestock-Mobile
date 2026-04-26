@@ -100,7 +100,7 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let purchaseRecordID = initialData?.purchaseRecordID || null;
             if (purchaseData.purchaseDate || purchaseData.purchasePrice) {
                 const res = await fetch(
-                    purchaseRecordID ? `/api/purchase-records/${purchaseRecordID}` : '/api/purchase-records',
+                    purchaseRecordID ? `/api/purchases/${purchaseRecordID}` : '/api/purchases',
                     { method: purchaseRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
                       body: JSON.stringify({ ...purchaseData, purchaseDate: purchaseData.purchaseDate ? toUTC(purchaseData.purchaseDate) : null }) }
                 );
@@ -111,7 +111,7 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
             let saleRecordID = initialData?.saleRecordID || null;
             if (isSold && (saleData.saleDate || saleData.salePrice)) {
                 const res = await fetch(
-                    saleRecordID ? `/api/sale-records/${saleRecordID}` : '/api/sale-records',
+                    saleRecordID ? `/api/sales/${saleRecordID}` : '/api/sales',
                     {
                         method: saleRecordID ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
                         body: JSON.stringify({ ...saleData, saleDate: saleData.saleDate ? toUTC(saleData.saleDate) : null })
@@ -164,6 +164,13 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
                         />
                     </FormField>
 
+                    <div className="form-checkbox-row" style={{marginTop: '-8px'}}>
+                        <input type="checkbox" id="isVehicle" checked={formData.isVehicle}
+                            onChange={e => setField('isVehicle', e.target.checked)} />
+                        <label htmlFor="isVehicle">This is a vehicle</label>
+                    </div>
+
+
                     <FormField label="Status" required error={errors.equipmentStatus}>
                         <FormSelect
                             value={formData.equipmentStatus}
@@ -173,12 +180,6 @@ function EquipmentForm({ initialData = null, onClose, onSuccess }) {
                             error={errors.equipmentStatus}
                         />
                     </FormField>
-
-                    <div className="form-checkbox-row">
-                        <input type="checkbox" id="isVehicle" checked={formData.isVehicle}
-                            onChange={e => setField('isVehicle', e.target.checked)} />
-                        <label htmlFor="isVehicle">This is a vehicle</label>
-                    </div>
 
                     <div className="form-section-title" style={{ marginTop: '20px' }}>Specifications</div>
 

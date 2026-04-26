@@ -385,7 +385,7 @@ function PhotoViewer({
   );
 }
 
-// PhotoGallery — unchanged
+
 function PhotoGallery({
   imageCount, currentIndex, onIndexChange, onAddPhoto, onUploadPhoto,
   onDelete, onPrevious, onNext, getCurrentImageUrl, isUploading, uploadProgress
