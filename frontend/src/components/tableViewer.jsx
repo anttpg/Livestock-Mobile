@@ -4,8 +4,10 @@ import { useUser } from '../UserContext';
 import Popup from './popup';
 import '../styles/formTables.css';
 
-function defaultRowKey(r) {
-    return r.ID != null ? String(r.ID) : String(r.CowTag);
+function defaultRowKey(r, i) {
+    if (r.ID      != null) return String(r.ID);
+    if (r.CowTag  != null) return String(r.CowTag);
+    return String(i);          // safe fallback for any other table
 }
 
 // TableViewer — read-only table for viewing existing records.

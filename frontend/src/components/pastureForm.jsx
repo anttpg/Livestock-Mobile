@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
 import { FormSelect } from './formControls';
-import { toUTC, toLocalInput } from '../utils/dateUtils';
+import FileViewer from './FileViewer';
 import '../styles/forms.css';
 
 // FIX: FK fields (pastureType, vegetationType, areaUnits) default to null, not ''.
@@ -13,7 +13,7 @@ function defaultPastureData(overrides = {}) {
 /**
  * Add or edit a pasture record. PastureName is the PK and is locked in edit mode.
  *
- * Temp routes:
+ * Routes:
  *   POST   /api/pastures
  *   PUT    /api/pastures/:name
  *
@@ -22,7 +22,8 @@ function defaultPastureData(overrides = {}) {
  * @param {Function}    onSuccess
  */
 function PastureForm({ initialData = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
+    const isEditing    = !!initialData;
+    const fileViewerRef = useRef(null);
 
     const [formData, setFormData] = useState(() =>
         initialData ? { ...defaultPastureData(), ...initialData } : defaultPastureData()
@@ -48,15 +49,18 @@ function PastureForm({ initialData = null, onClose, onSuccess }) {
         },
         submit: async () => {
             const { id: _id, ...formFields } = formData;
-            // FIX: nullifyEmpty converts any stray '' on FK/optional fields to null.
             const payload = nullifyEmpty(formFields);
             const res = await fetch(
                 isEditing ? `/api/pastures/${encodeURIComponent(initialData.pastureName)}` : '/api/pastures',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save pasture');
-            // FIX: return the result so useTableEdit edit mode receives the updated record.
-            return await res.json();
+            const result = await res.json();
+            // PastureName is known before creation, so we can flush immediately.
+            if (!isEditing) {
+                await fileViewerRef.current?.flushPending(formData.pastureName.trim());
+            }
+            return result;
         },
         onSuccess
     });
@@ -128,6 +132,15 @@ function PastureForm({ initialData = null, onClose, onSuccess }) {
                             onChange={e => setField('notes', e.target.value)} />
                     </FormField>
                 </div>
+            </div>
+
+            <div style={{ padding: '0 20px 20px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Attachments</div>
+                <FileViewer
+                    ref={fileViewerRef}
+                    domain="pastureUpload"
+                    recordId={isEditing ? initialData.pastureName : null}
+                />
             </div>
 
             <div className="form-actions">

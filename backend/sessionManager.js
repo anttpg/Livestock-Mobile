@@ -1016,7 +1016,7 @@ app.post('/api/record-feed-activity',
 );
 
 // Get all available pastures
-app.get('/api/pastures', async (req, res) => {
+app.get('/api/pastures/all', async (req, res) => {
   return apiWrapper.getAllPastures(req, res);
 });
 
@@ -1118,7 +1118,71 @@ app.delete('/api/equipment-parts/:id',
 
 
 
+// Pastures
+app.get('/api/pastures',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPastures(req, res)
+);
+app.post('/api/pastures',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createPasture(req, res)
+);
+app.get('/api/pastures/:name',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPasture(req, res)
+);
+app.put('/api/pastures/:name',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updatePasture(req, res)
+);
+app.delete('/api/pastures/:name',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deletePasture(req, res)
+);
 
+// Pasture Spray Applications
+app.get('/api/pasture-spray-applications',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPastureSprayApplications(req, res)
+);
+app.post('/api/pasture-spray-applications',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createPastureSprayApplication(req, res)
+);
+app.get('/api/pasture-spray-applications/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPastureSprayApplication(req, res)
+);
+app.put('/api/pasture-spray-applications/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updatePastureSprayApplication(req, res)
+);
+app.delete('/api/pasture-spray-applications/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deletePastureSprayApplication(req, res)
+);
+
+// Pasture Hay Production
+app.get('/api/pasture-hay-production',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPastureHayProductionRecords(req, res)
+);
+app.post('/api/pasture-hay-production',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.createPastureHayProductionRecord(req, res)
+);
+app.get('/api/pasture-hay-production/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getPastureHayProductionRecord(req, res)
+);
+app.put('/api/pasture-hay-production/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.updatePastureHayProductionRecord(req, res)
+);
+app.delete('/api/pasture-hay-production/:id',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.deletePastureHayProductionRecord(req, res)
+);
 
 
 

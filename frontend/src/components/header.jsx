@@ -44,6 +44,7 @@ function Header({ children }) {
     { to: '/animal',        label: 'Animal Records',     type: 'link'   },
     { to: '/breeding',      label: 'Breeding Plan',      type: 'link'   },
     { to: '/equipment',     label: 'Equipment',          type: 'link'   },
+    { href: '/pastures', label: 'Pastures', type: 'anchor' },
     { href: '/fieldsheets', label: 'Fieldsheets', type: 'anchor' },
   ];
 

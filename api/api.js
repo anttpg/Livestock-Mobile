@@ -1496,7 +1496,127 @@ class APIWrapper {
     }
 
 
+    // Pastures
+    async getPastures(req, res) {
+        return this.executeDBOperation(req, res, 'getPastures', () => ({}));
+    }
 
+    async getPasture(req, res) {
+        return this.executeDBOperation(req, res, 'getPasture', (req) => ({
+            name: req.params.name,
+        }));
+    }
+
+    async createPasture(req, res) {
+        return this.executeDBOperation(req, res, 'createPasture', (req) => ({
+            pastureName: req.body.pastureName || null,
+            pastureCoordinates: req.body.pastureCoordinates || null,
+            points: req.body.points || null,
+            pastureType: req.body.pastureType || null,
+            vegetationType: req.body.vegetationType || null,
+            area: req.body.area != null ? parseFloat(req.body.area) : null,
+            areaUnits: req.body.areaUnits || null,
+            notes: req.body.notes || null,
+        }));
+    }
+
+    async updatePasture(req, res) {
+        return this.executeDBOperation(req, res, 'updatePasture', (req) => ({
+            name: req.params.name,
+            updates: req.body,
+        }));
+    }
+
+    async deletePasture(req, res) {
+        return this.executeDBOperation(req, res, 'deletePasture', (req) => ({
+            name: req.params.name,
+        }));
+    }
+
+    // Pasture Spray Applications
+    async getPastureSprayApplications(req, res) {
+        return this.executeDBOperation(req, res, 'getPastureSprayApplications', (req) => ({
+            pastureName: req.query.pastureName || null,
+        }));
+    }
+
+    async getPastureSprayApplication(req, res) {
+        return this.executeDBOperation(req, res, 'getPastureSprayApplication', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async createPastureSprayApplication(req, res) {
+        return this.executeDBOperation(req, res, 'createPastureSprayApplication', (req) => ({
+            dateRecorded: req.body.dateRecorded || null,
+            recordedByUsername: req.body.recordedByUsername || null,
+            dateApplied: req.body.dateApplied || null,
+            appliedByUsername: req.body.appliedByUsername || null,
+            chemicalName: req.body.chemicalName || null,
+            rate: req.body.rate != null ? parseFloat(req.body.rate) : null,
+            rateUnit: req.body.rateUnit || null,
+            acresSprayed: req.body.acresSprayed != null ? parseFloat(req.body.acresSprayed) : null,
+            windSpeed: req.body.windSpeed != null ? parseFloat(req.body.windSpeed) : null,
+            windDirection: req.body.windDirection || null,
+            temperature: req.body.temperature != null ? parseFloat(req.body.temperature) : null,
+            temperatureUnit: req.body.temperatureUnit || 'F',
+            notes: req.body.notes || null,
+            pastureName: req.body.pastureName || null,
+        }));
+    }
+
+    async updatePastureSprayApplication(req, res) {
+        return this.executeDBOperation(req, res, 'updatePastureSprayApplication', (req) => ({
+            id: parseInt(req.params.id),
+            updates: req.body,
+        }));
+    }
+
+    async deletePastureSprayApplication(req, res) {
+        return this.executeDBOperation(req, res, 'deletePastureSprayApplication', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    // Pasture Hay Production
+    async getPastureHayProductionRecords(req, res) {
+        return this.executeDBOperation(req, res, 'getPastureHayProductionRecords', (req) => ({
+            pastureName: req.query.pastureName || null,
+        }));
+    }
+
+    async getPastureHayProductionRecord(req, res) {
+        return this.executeDBOperation(req, res, 'getPastureHayProductionRecord', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
+
+    async createPastureHayProductionRecord(req, res) {
+        return this.executeDBOperation(req, res, 'createPastureHayProductionRecord', (req) => ({
+            pastureName: req.body.pastureName || null,
+            dateMowed: req.body.dateMowed || null,
+            dateBaled: req.body.dateBaled || null,
+            acresCut: req.body.acresCut != null ? parseFloat(req.body.acresCut) : null,
+            vegetationType: req.body.vegetationType || null,
+            unitsProduced: req.body.unitsProduced != null ? parseFloat(req.body.unitsProduced) : null,
+            hayUnitType: req.body.hayUnitType || null,
+            weightProduced: req.body.weightProduced != null ? parseFloat(req.body.weightProduced) : null,
+            notes: req.body.notes || null,
+        }));
+    }
+
+    async updatePastureHayProductionRecord(req, res) {
+        return this.executeDBOperation(req, res, 'updatePastureHayProductionRecord', (req) => ({
+            id: parseInt(req.params.id),
+            updates: req.body,
+        }));
+    }
+
+    async deletePastureHayProductionRecord(req, res) {
+        return this.executeDBOperation(req, res, 'deletePastureHayProductionRecord', (req) => ({
+            id: parseInt(req.params.id),
+        }));
+    }
 
 
 

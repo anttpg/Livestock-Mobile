@@ -220,22 +220,9 @@ function Equipment() {
         return (
             <div >
                 <h1 style={{ marginTop: '0px' }}>Equipment Records</h1>
-
                 <button
                     onClick={() => navigate('/equipment')}
-                    style={{
-                        display:      'inline-flex',
-                        alignItems:   'center',
-                        gap:          '4px',
-                        backgroundColor: 'white',
-                        border:       '1px solid #ccd3dc',
-                        borderRadius: '4px',
-                        padding:      '6px 12px',
-                        fontSize:     '13px',
-                        cursor:       'pointer',
-                        color:        '#444',
-                        marginBottom: '16px',
-                    }}
+                    className="button-return"
                 >
                     <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>arrow_back</span>
                     All Equipment
@@ -274,6 +261,14 @@ function Equipment() {
 
     return (
         <>
+            <button
+                onClick={() => navigate('/overview')}
+                className="button-return"
+            >
+                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>arrow_back</span>
+                Overview
+            </button>
+
             <div className='multibubble-page'>
                 <div className="bubble-container">
                     <TableViewer

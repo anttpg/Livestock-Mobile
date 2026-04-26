@@ -330,6 +330,20 @@ button:disabled {
     /*background-color: #17a2b8;*/
 }
 
+.button-return {
+    display:          inline-flex;
+    align-items:      center;
+    gap:              4px;
+    background-color: white;
+    border:           1px solid #ccd3dc;
+    border-radius:    4px;
+    padding:          6px 12px;
+    font-size:        13px;
+    cursor:           pointer;
+    color:            #444;
+    margin-bottom:    16px;
+}
+
 
 
 .resizing-button {

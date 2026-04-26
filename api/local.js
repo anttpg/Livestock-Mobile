@@ -23,6 +23,10 @@ class LocalFileOperations {
         this.mapDataDir = path.join(this.basePath, 'MapData');
         this.minimapsDir = path.join(this.mapDataDir, 'minimaps');
 
+        this.pasturesDir = path.join(this.basePath, 'Pastures');
+        this.pastureSprayDir = path.join(this.basePath, 'PesticideSpray');
+        this.pastureHayUpload = path.join(this.basePath, 'HayProduction');
+        
         this.usersFile = path.join(this.basePath, 'users.csv');
         // this.backups = path.join(this.basePath, 'backups');
         this.SALT_ROUNDS = 10;
@@ -44,6 +48,7 @@ class LocalFileOperations {
                 getDirectory: (id) => path.join(this.equipmentMaintenanceDir, `Record_${id}`),
                 getBaseFilename: (id, _filter) => `Record_${id}_${this.formatDateForFilename()}`,
             },
+
             map: {
                 getDirectory: (_id) => this.mapDataDir,
                 getBaseFilename: (id, _filter) => id,
@@ -52,6 +57,8 @@ class LocalFileOperations {
                 getDirectory: (_id) => this.minimapsDir,
                 getBaseFilename: (id, _filter) => `${id}_minimap`,
             },
+
+
         };
 
 
@@ -64,6 +71,16 @@ class LocalFileOperations {
             },
             equipmentMaintenanceUpload: {
                 getDirectory: (id) => path.join(this.equipmentMaintenanceDir, `Record_${id}`, 'Uploads'),
+            },
+
+            pastureUpload: {
+                getDirectory: (id) => path.join(this.pasturesDir, `${id}`, 'Uploads'),
+            },
+            pastureSprayUpload: {
+                getDirectory: (id) => path.join(this.pastureSprayDir, `Record_${id}`, 'Uploads'),
+            },
+            pastureHayUpload: {
+                getDirectory: (id) => path.join(this.pastureHayDir, `Record_${id}`, 'Uploads'),
             },
         };
     }

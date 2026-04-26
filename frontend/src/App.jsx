@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Overview from './components/overview';
 import Herds from './components/herds';
 import Equipment from './components/equipment';
+import Pastures from './components/pastures';
 import Fieldsheets from './components/fieldsheets';
 import Login from './components/login';
 import Register from './components/registerUser';
@@ -138,6 +139,14 @@ function AppContent() {
             element={
               <Layout>
                 <Equipment />
+              </Layout>
+            }
+          />
+          <Route
+            path="/pastures"
+            element={
+              <Layout>
+                <Pastures />
               </Layout>
             }
           />

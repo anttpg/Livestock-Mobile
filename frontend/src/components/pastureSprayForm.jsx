@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
+import React, { useState, useEffect, useRef } from 'react';
+import { useFormSubmit, FormField, nullifyEmpty, useRecordMeta } from './formKit';
 import { FormSelect, FormSelectBasic, FormValueUnit } from './formControls';
-import { useUser } from '../UserContext';
-import { useRecordMeta } from './formKit';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
+import FileViewer from './FileViewer';
 import '../styles/forms.css';
 
 const WIND_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -32,9 +31,9 @@ function defaultSprayData(pastureNameProp = null, overrides = {}) {
 /**
  * Add or edit a pasture spray application record.
  *
- * Temp routes:
- *   POST   /api/pasture-spray
- *   PUT    /api/pasture-spray/:id
+ * Routes:
+ *   POST   /api/pasture-spray-applications
+ *   PUT    /api/pasture-spray-applications/:id
  *
  * @param {Object|null} initialData
  * @param {string|null} pastureName   - Pre-fills and locks the pasture selector.
@@ -44,12 +43,12 @@ function defaultSprayData(pastureNameProp = null, overrides = {}) {
 function PastureSprayForm({ initialData = null, pastureName = null, onClose, onSuccess }) {
     const isEditing     = !!initialData;
     const { recordMeta} = useRecordMeta();
+    const fileViewerRef = useRef(null);
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            // FIX: ?? null so an absent pastureName stays null, not ''.
             return { ...defaultSprayData(pastureName ?? null), ...initialData,
-                dateApplied: toLocalInput(initialData.dateApplied) };
+                dateApplied: toLocalInput(initialData.DateApplied ?? initialData.dateApplied) };
         }
         return defaultSprayData(pastureName ?? null);
     });
@@ -64,7 +63,7 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
     }, []);
 
     const setField      = (f, v) => setFormData(p => ({ ...p, [f]: v }));
-    const pastureLocked = !!pastureName || (isEditing && !!initialData.pastureName);
+    const pastureLocked = !!pastureName || (isEditing && !!(initialData.PastureName ?? initialData.pastureName));
     const meta          = dropdownData._meta?.editable || {};
 
     const { handleSubmit, errors, setErrors, submitting, topRef } = useFormSubmit({
@@ -76,9 +75,8 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
             return e;
         },
         submit: async () => {
-            const { id: _, ...formFields } = formData;
-            // FIX: nullifyEmpty catches any stray '' on optional/FK fields.
-            // Numeric coercions run first so their values pass through as-is.
+            const _id = initialData?.ID ?? initialData?.id;
+            const { ID: _, id: __, ...formFields } = formData;
             const payload = nullifyEmpty({
                 ...formFields,
                 ...recordMeta,
@@ -89,12 +87,15 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
                 temperature:   formData.temperature  ? parseFloat(formData.temperature)  : null,
             });
             const res = await fetch(
-                isEditing ? `/api/pasture-spray/${initialData.id}` : '/api/pasture-spray',
+                isEditing ? `/api/pasture-spray-applications/${_id}` : '/api/pasture-spray-applications',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save spray record');
-            // FIX: return the result so useTableEdit edit mode receives the updated record.
-            return await res.json();
+            const result = await res.json();
+            if (!isEditing) {
+                await fileViewerRef.current?.flushPending(result.id);
+            }
+            return result;
         },
         onSuccess
     });
@@ -184,8 +185,6 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
                             <input type="number" step="0.1" className="form-input"
                                 value={formData.windSpeed} placeholder="Speed (mph)"
                                 onChange={e => setField('windSpeed', e.target.value)} />
-                            {/* FIX: replace raw <select> with FormSelectBasic so an empty
-                                selection emits null rather than ''. */}
                             <FormSelectBasic
                                 value={formData.windDirection}
                                 onChange={val => setField('windDirection', val)}
@@ -208,6 +207,15 @@ function PastureSprayForm({ initialData = null, pastureName = null, onClose, onS
                         />
                     </FormField>
                 </div>
+            </div>
+
+            <div style={{ padding: '0 20px 20px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Attachments</div>
+                <FileViewer
+                    ref={fileViewerRef}
+                    domain="pastureSprayUpload"
+                    recordId={isEditing ? (initialData.ID ?? initialData.id) : null}
+                />
             </div>
 
             <div className="form-actions">

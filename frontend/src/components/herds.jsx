@@ -6,6 +6,7 @@ import HerdLog from './herdLog';
 import PastureLog from './pastureLog';
 import HerdSplitter from './herdSplitter';
 import ConfirmPopup from './popupConfirm';
+import { useNavigate } from 'react-router-dom';
 
 const UseLegacyHerdFeed = false; // Toggle for legacy inputs (Buttons)
 
@@ -230,7 +231,7 @@ function Herd({ herdData, userPreferences, onHerdUpdate, onHerdSplit, onShowDisp
                     setFeedStatus(feedData.feedStatus || []);
                 }
 
-                const pasturesResponse = await fetch('/api/pastures', { credentials: 'include' });
+                const pasturesResponse = await fetch('/api/pastures/all', { credentials: 'include' });
                 if (pasturesResponse.ok) {
                     const pasturesData = await pasturesResponse.json();
                     setAvailablePastures(pasturesData.pastures || []);
@@ -1017,7 +1018,7 @@ function Herds() {
     const [unassignedCows, setUnassignedCows] = useState([]);
     const [unassignedGoats, setUnassignedGoats] = useState([]);
     const [showFixNow, setShowFixNow] = useState(false);
-
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -1189,9 +1190,18 @@ function Herds() {
 
     return (
         <div className="multibubble-column">
-            <div style={{ ...layoutStyles.flexBetween, marginBottom: '20px' }}>
-                <h1>Herd Management</h1>
+            <div style={{ ...layoutStyles.flexBetween, marginBottom: '0px' }}>
+                <h1 style={{marginBottom: '0px'}}>Herd Management</h1>
             </div>
+            <button
+                    onClick={() => navigate('/overview')}
+                    className="button-return"
+                    style={{maxWidth: '100px', marginBottom: '40px'}}
+                >
+                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>arrow_back</span>
+                Overview
+            </button>
+
 
             {(unassignedCows.length > 0 || unassignedGoats.length > 0) && (
                 <UnassignedAnimalsBubble

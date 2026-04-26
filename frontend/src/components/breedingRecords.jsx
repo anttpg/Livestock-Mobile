@@ -177,7 +177,7 @@ function AddExposureBubble({ planId, allAnimals, activeAnimals, bullOptions, ass
     const [saving,            setSaving]            = useState(false);
 
     useEffect(() => {
-        fetch('/api/pastures', { credentials: 'include' })
+        fetch('/api/pastures/all', { credentials: 'include' })
             .then(r => r.ok ? r.json() : { pastures: [] })
             .then(d => setAvailablePastures(d.pastures || []))
             .catch(() => {});

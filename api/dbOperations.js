@@ -5395,7 +5395,508 @@ class DatabaseOperations {
 
 
 
+    // PASTURES
 
+    /**
+     * Get all pastures.
+     * @returns {Promise<{ pastures: Array<{
+     *   PastureName: string, PastureCoordinates: string, Points: string,
+     *   PastureType: string, VegetationType: string,
+     *   Area: number, AreaUnits: string, Notes: string
+     * }> }>}
+     */
+    async getPastures() {
+        await this.ensureConnection();
+
+        const result = await this.pool.request().query(`
+        SELECT
+            PastureName, PastureCoordinates, Points,
+            PastureType, VegetationType,
+            Area, AreaUnits, Notes
+        FROM Pastures
+        ORDER BY PastureName ASC
+    `);
+
+        return { pastures: result.recordset };
+    }
+
+    /**
+     * Get a single pasture by name.
+     * @param {{ name: string }}
+     * @returns {Promise<Object | null>}
+     */
+    async getPasture({ name }) {
+        await this.ensureConnection();
+        if (!name) throw new Error('name is required for getPasture');
+
+        const result = await this.pool.request()
+            .input('name', sql.NVarChar, name)
+            .query(`
+            SELECT
+                PastureName, PastureCoordinates, Points,
+                PastureType, VegetationType,
+                Area, AreaUnits, Notes
+            FROM Pastures
+            WHERE PastureName = @name
+        `);
+
+        if (result.recordset.length === 0) return null;
+        return result.recordset[0];
+    }
+
+    /**
+     * Create a pasture.
+     * @param {{ pastureName: string, pastureCoordinates?: string, points?: string,
+     *   pastureType?: string, vegetationType?: string,
+     *   area?: number, areaUnits?: string, notes?: string }}
+     * @returns {Promise<{ success: boolean, pastureName: string }>}
+     */
+    async createPasture({
+        pastureName, pastureCoordinates = null, points = null,
+        pastureType = null, vegetationType = null,
+        area = null, areaUnits = null, notes = null,
+    }) {
+        await this.ensureConnection();
+        if (!pastureName) throw new Error('pastureName is required for createPasture');
+
+        await this.pool.request()
+            .input('pastureName', sql.NVarChar, pastureName)
+            .input('pastureCoordinates', sql.NVarChar(sql.MAX), pastureCoordinates)
+            .input('points', sql.NVarChar(sql.MAX), points)
+            .input('pastureType', sql.NVarChar, pastureType)
+            .input('vegetationType', sql.NVarChar, vegetationType)
+            .input('area', sql.Decimal(10, 2), area)
+            .input('areaUnits', sql.NVarChar, areaUnits)
+            .input('notes', sql.NVarChar(sql.MAX), notes)
+            .query(`
+            INSERT INTO Pastures (PastureName, PastureCoordinates, Points, PastureType, VegetationType, Area, AreaUnits, Notes)
+            VALUES (@pastureName, @pastureCoordinates, @points, @pastureType, @vegetationType, @area, @areaUnits, @notes)
+        `);
+
+        return { success: true, pastureName };
+    }
+
+    /**
+     * Update a pasture by name.
+     * @param {{ name: string, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updatePasture({ name, updates }) {
+        await this.ensureConnection();
+        if (!name) throw new Error('name is required for updatePasture');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            pastureName: { column: 'PastureName', type: sql.NVarChar },
+            pastureCoordinates: { column: 'PastureCoordinates', type: sql.NVarChar(sql.MAX) },
+            points: { column: 'Points', type: sql.NVarChar(sql.MAX) },
+            pastureType: { column: 'PastureType', type: sql.NVarChar },
+            vegetationType: { column: 'VegetationType', type: sql.NVarChar },
+            area: { column: 'Area', type: sql.Decimal(10, 2) },
+            areaUnits: { column: 'AreaUnits', type: sql.NVarChar },
+            notes: { column: 'Notes', type: sql.NVarChar(sql.MAX) },
+        };
+
+        const request = this.pool.request();
+        request.input('name', sql.NVarChar, name);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown Pasture field: ${field}`);
+            const { column, type } = fieldMap[field];
+            request.input(field, type, value ?? null);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+        UPDATE Pastures SET ${setClauses.join(', ')} WHERE PastureName = @name
+    `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No pasture found with name "${name}"`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete a pasture by name.
+     * @param {{ name: string }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deletePasture({ name }) {
+        await this.ensureConnection();
+        if (!name) throw new Error('name is required for deletePasture');
+
+        const result = await this.pool.request()
+            .input('name', sql.NVarChar, name)
+            .query(`DELETE FROM Pastures WHERE PastureName = @name`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No pasture found with name "${name}"`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
+
+
+
+
+    // PASTURE SPRAY APPLICATIONS
+
+    /**
+     * Get all spray application records, optionally filtered by pasture.
+     * @param {{ pastureName?: string | null }}
+     * @returns {Promise<{ applications: Array<{
+     *   ID: number, DateRecorded: string, RecordedByUsername: string,
+     *   DateApplied: string, AppliedByUsername: string,
+     *   ChemicalName: string, Rate: number, RateUnit: string,
+     *   AcresSprayed: number, WindSpeed: number, WindDirection: string,
+     *   Temperature: number, TemperatureUnit: string,
+     *   Notes: string, PastureName: string
+     * }> }>}
+     */
+    async getPastureSprayApplications({ pastureName = null } = {}) {
+        await this.ensureConnection();
+
+        const request = this.pool.request();
+        let whereClause = '';
+        if (pastureName) {
+            request.input('pastureName', sql.NVarChar, pastureName);
+            whereClause = 'WHERE PastureName = @pastureName';
+        }
+
+        const result = await request.query(`
+        SELECT
+            ID, DateRecorded, RecordedByUsername,
+            DateApplied, AppliedByUsername,
+            ChemicalName, Rate, RateUnit,
+            AcresSprayed, WindSpeed, WindDirection,
+            Temperature, TemperatureUnit,
+            Notes, PastureName
+        FROM PastureSprayApplications
+        ${whereClause}
+        ORDER BY DateApplied DESC
+    `);
+
+        return { applications: result.recordset };
+    }
+
+    /**
+     * Get a single spray application by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<Object | null>}
+     */
+    async getPastureSprayApplication({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for getPastureSprayApplication');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`
+            SELECT
+                ID, DateRecorded, RecordedByUsername,
+                DateApplied, AppliedByUsername,
+                ChemicalName, Rate, RateUnit,
+                AcresSprayed, WindSpeed, WindDirection,
+                Temperature, TemperatureUnit,
+                Notes, PastureName
+            FROM PastureSprayApplications
+            WHERE ID = @id
+        `);
+
+        if (result.recordset.length === 0) return null;
+        return result.recordset[0];
+    }
+
+    /**
+     * Create a spray application record.
+     * @param {{ dateApplied: string, chemicalName: string, dateRecorded?: string,
+     *   recordedByUsername?: string, appliedByUsername?: string,
+     *   rate?: number, rateUnit?: string, acresSprayed?: number,
+     *   windSpeed?: number, windDirection?: string,
+     *   temperature?: number, temperatureUnit?: string,
+     *   notes?: string, pastureName?: string }}
+     * @returns {Promise<{ success: boolean, id: number }>}
+     */
+    async createPastureSprayApplication({
+        dateRecorded = null, recordedByUsername = null,
+        dateApplied, appliedByUsername = null,
+        chemicalName, rate = null, rateUnit = null,
+        acresSprayed = null, windSpeed = null, windDirection = null,
+        temperature = null, temperatureUnit = 'F',
+        notes = null, pastureName = null,
+    }) {
+        await this.ensureConnection();
+        if (!dateApplied) throw new Error('dateApplied is required for createPastureSprayApplication');
+        if (!chemicalName) throw new Error('chemicalName is required for createPastureSprayApplication');
+
+        const result = await this.pool.request()
+            .input('dateRecorded', sql.DateTime2, dateRecorded ? new Date(dateRecorded) : new Date())
+            .input('recordedByUsername', sql.NVarChar, recordedByUsername)
+            .input('dateApplied', sql.DateTime2, new Date(dateApplied))
+            .input('appliedByUsername', sql.NVarChar, appliedByUsername)
+            .input('chemicalName', sql.NVarChar, chemicalName)
+            .input('rate', sql.Decimal(10, 2), rate)
+            .input('rateUnit', sql.NVarChar, rateUnit)
+            .input('acresSprayed', sql.Decimal(10, 2), acresSprayed)
+            .input('windSpeed', sql.Decimal(10, 2), windSpeed)
+            .input('windDirection', sql.NVarChar, windDirection)
+            .input('temperature', sql.Decimal(10, 2), temperature)
+            .input('temperatureUnit', sql.NVarChar, temperatureUnit ?? 'F')
+            .input('notes', sql.NVarChar(sql.MAX), notes)
+            .input('pastureName', sql.NVarChar, pastureName)
+            .query(`
+            INSERT INTO PastureSprayApplications (
+                DateRecorded, RecordedByUsername,
+                DateApplied, AppliedByUsername,
+                ChemicalName, Rate, RateUnit,
+                AcresSprayed, WindSpeed, WindDirection,
+                Temperature, TemperatureUnit,
+                Notes, PastureName
+            )
+            OUTPUT INSERTED.ID
+            VALUES (
+                @dateRecorded, @recordedByUsername,
+                @dateApplied, @appliedByUsername,
+                @chemicalName, @rate, @rateUnit,
+                @acresSprayed, @windSpeed, @windDirection,
+                @temperature, @temperatureUnit,
+                @notes, @pastureName
+            )
+        `);
+
+        return { success: true, id: result.recordset[0].ID };
+    }
+
+    /**
+     * Update a spray application by ID.
+     * @param {{ id: number, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updatePastureSprayApplication({ id, updates }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for updatePastureSprayApplication');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            dateRecorded: { column: 'DateRecorded', type: sql.DateTime2 },
+            recordedByUsername: { column: 'RecordedByUsername', type: sql.NVarChar },
+            dateApplied: { column: 'DateApplied', type: sql.DateTime2 },
+            appliedByUsername: { column: 'AppliedByUsername', type: sql.NVarChar },
+            chemicalName: { column: 'ChemicalName', type: sql.NVarChar },
+            rate: { column: 'Rate', type: sql.Decimal(10, 2) },
+            rateUnit: { column: 'RateUnit', type: sql.NVarChar },
+            acresSprayed: { column: 'AcresSprayed', type: sql.Decimal(10, 2) },
+            windSpeed: { column: 'WindSpeed', type: sql.Decimal(10, 2) },
+            windDirection: { column: 'WindDirection', type: sql.NVarChar },
+            temperature: { column: 'Temperature', type: sql.Decimal(10, 2) },
+            temperatureUnit: { column: 'TemperatureUnit', type: sql.NVarChar },
+            notes: { column: 'Notes', type: sql.NVarChar(sql.MAX) },
+            pastureName: { column: 'PastureName', type: sql.NVarChar },
+        };
+
+        const request = this.pool.request();
+        request.input('id', sql.Int, id);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown PastureSprayApplications field: ${field}`);
+            const { column, type } = fieldMap[field];
+
+            let coerced = value;
+            if (field === 'dateRecorded' || field === 'dateApplied')
+                coerced = value ? new Date(value) : null;
+
+            request.input(field, type, coerced);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+        UPDATE PastureSprayApplications SET ${setClauses.join(', ')} WHERE ID = @id
+    `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No spray application found with ID ${id}`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete a spray application by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deletePastureSprayApplication({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for deletePastureSprayApplication');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`DELETE FROM PastureSprayApplications WHERE ID = @id`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No spray application found with ID ${id}`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
+
+
+
+
+    // PASTURE HAY PRODUCTION
+
+    /**
+     * Get all hay production records, optionally filtered by pasture.
+     * @param {{ pastureName?: string | null }}
+     * @returns {Promise<{ records: Array<{
+     *   ID: number, PastureName: string, DateMowed: string, DateBaled: string,
+     *   AcresCut: number, VegetationType: string,
+     *   UnitsProduced: number, HayUnitType: string, WeightProduced: number, Notes: string
+     * }> }>}
+     */
+    async getPastureHayProductionRecords({ pastureName = null } = {}) {
+        await this.ensureConnection();
+
+        const request = this.pool.request();
+        let whereClause = '';
+        if (pastureName) {
+            request.input('pastureName', sql.NVarChar, pastureName);
+            whereClause = 'WHERE PastureName = @pastureName';
+        }
+
+        const result = await request.query(`
+        SELECT
+            ID, PastureName, DateMowed, DateBaled,
+            AcresCut, VegetationType,
+            UnitsProduced, HayUnitType, WeightProduced, Notes
+        FROM PastureHayProduction
+        ${whereClause}
+        ORDER BY DateBaled DESC
+    `);
+
+        return { records: result.recordset };
+    }
+
+    /**
+     * Get a single hay production record by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<Object | null>}
+     */
+    async getPastureHayProductionRecord({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for getPastureHayProductionRecord');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`
+            SELECT
+                ID, PastureName, DateMowed, DateBaled,
+                AcresCut, VegetationType,
+                UnitsProduced, HayUnitType, WeightProduced, Notes
+            FROM PastureHayProduction
+            WHERE ID = @id
+        `);
+
+        if (result.recordset.length === 0) return null;
+        return result.recordset[0];
+    }
+
+    /**
+     * Create a hay production record.
+     * @param {{ pastureName?: string, dateMowed?: string, dateBaled?: string,
+     *   acresCut?: number, vegetationType?: string,
+     *   unitsProduced?: number, hayUnitType?: string,
+     *   weightProduced?: number, notes?: string }}
+     * @returns {Promise<{ success: boolean, id: number }>}
+     */
+    async createPastureHayProductionRecord({
+        pastureName = null, dateMowed = null, dateBaled = null,
+        acresCut = null, vegetationType = null,
+        unitsProduced = null, hayUnitType = null,
+        weightProduced = null, notes = null,
+    }) {
+        await this.ensureConnection();
+
+        const result = await this.pool.request()
+            .input('pastureName', sql.NVarChar, pastureName)
+            .input('dateMowed', sql.DateTime2, dateMowed ? new Date(dateMowed) : null)
+            .input('dateBaled', sql.DateTime2, dateBaled ? new Date(dateBaled) : null)
+            .input('acresCut', sql.Decimal(10, 2), acresCut)
+            .input('vegetationType', sql.NVarChar, vegetationType)
+            .input('unitsProduced', sql.Decimal(10, 2), unitsProduced)
+            .input('hayUnitType', sql.NVarChar, hayUnitType)
+            .input('weightProduced', sql.Decimal(10, 2), weightProduced)
+            .input('notes', sql.NVarChar(sql.MAX), notes)
+            .query(`
+            INSERT INTO PastureHayProduction (
+                PastureName, DateMowed, DateBaled,
+                AcresCut, VegetationType,
+                UnitsProduced, HayUnitType, WeightProduced, Notes
+            )
+            OUTPUT INSERTED.ID
+            VALUES (
+                @pastureName, @dateMowed, @dateBaled,
+                @acresCut, @vegetationType,
+                @unitsProduced, @hayUnitType, @weightProduced, @notes
+            )
+        `);
+
+        return { success: true, id: result.recordset[0].ID };
+    }
+
+    /**
+     * Update a hay production record by ID.
+     * @param {{ id: number, updates: Object }}
+     * @returns {Promise<{ success: boolean, updated: number }>}
+     */
+    async updatePastureHayProductionRecord({ id, updates }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for updatePastureHayProductionRecord');
+        if (!updates || Object.keys(updates).length === 0) return { success: true, updated: 0 };
+
+        const fieldMap = {
+            pastureName: { column: 'PastureName', type: sql.NVarChar },
+            dateMowed: { column: 'DateMowed', type: sql.DateTime2 },
+            dateBaled: { column: 'DateBaled', type: sql.DateTime2 },
+            acresCut: { column: 'AcresCut', type: sql.Decimal(10, 2) },
+            vegetationType: { column: 'VegetationType', type: sql.NVarChar },
+            unitsProduced: { column: 'UnitsProduced', type: sql.Decimal(10, 2) },
+            hayUnitType: { column: 'HayUnitType', type: sql.NVarChar },
+            weightProduced: { column: 'WeightProduced', type: sql.Decimal(10, 2) },
+            notes: { column: 'Notes', type: sql.NVarChar(sql.MAX) },
+        };
+
+        const request = this.pool.request();
+        request.input('id', sql.Int, id);
+        const setClauses = [];
+
+        for (const [field, value] of Object.entries(updates)) {
+            if (!(field in fieldMap)) throw new Error(`Unknown PastureHayProduction field: ${field}`);
+            const { column, type } = fieldMap[field];
+
+            let coerced = value;
+            if (field === 'dateMowed' || field === 'dateBaled')
+                coerced = value ? new Date(value) : null;
+
+            request.input(field, type, coerced);
+            setClauses.push(`[${column}] = @${field}`);
+        }
+
+        const result = await request.query(`
+        UPDATE PastureHayProduction SET ${setClauses.join(', ')} WHERE ID = @id
+    `);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No hay production record found with ID ${id}`);
+        return { success: true, updated: result.rowsAffected[0] };
+    }
+
+    /**
+     * Delete a hay production record by ID.
+     * @param {{ id: number }}
+     * @returns {Promise<{ success: boolean, deleted: number }>}
+     */
+    async deletePastureHayProductionRecord({ id }) {
+        await this.ensureConnection();
+        if (!id) throw new Error('id is required for deletePastureHayProductionRecord');
+
+        const result = await this.pool.request()
+            .input('id', sql.Int, id)
+            .query(`DELETE FROM PastureHayProduction WHERE ID = @id`);
+
+        if (result.rowsAffected[0] === 0) throw new Error(`No hay production record found with ID ${id}`);
+        return { success: true, deleted: result.rowsAffected[0] };
+    }
 
 
 
@@ -5442,7 +5943,7 @@ class DatabaseOperations {
         await this.ensureConnection();
 
         let whereClause = '';
-        if (status === 'active')   whereClause = "WHERE e.EquipmentStatus = 'Active'";
+        if (status === 'active') whereClause = "WHERE e.EquipmentStatus = 'Active'";
         if (status === 'inactive') whereClause = "WHERE e.EquipmentStatus != 'Active'";
 
         const result = await this.pool.request().query(`
@@ -5507,43 +6008,43 @@ class DatabaseOperations {
 
         return {
             equipment: {
-                ID:                 row.ID,
-                Name:               row.Name               || '',
-                Description:        row.Description        || '',
-                LocationID:         row.LocationID         ?? null,
-                Location:           row.Location           || '',
-                IsVehicle:          !!row.IsVehicle,
-                EquipmentStatus:    row.EquipmentStatus    || '',
-                EquipmentType:      row.EquipmentType      || '',
-                Make:               row.Make               || '',
-                Model:              row.Model              || '',
-                Year:               row.Year               ?? null,
-                VINSerialNumber:    row.VINSerialNumber    || '',
-                Registration:       row.Registration       || '',
+                ID: row.ID,
+                Name: row.Name || '',
+                Description: row.Description || '',
+                LocationID: row.LocationID ?? null,
+                Location: row.Location || '',
+                IsVehicle: !!row.IsVehicle,
+                EquipmentStatus: row.EquipmentStatus || '',
+                EquipmentType: row.EquipmentType || '',
+                Make: row.Make || '',
+                Model: row.Model || '',
+                Year: row.Year ?? null,
+                VINSerialNumber: row.VINSerialNumber || '',
+                Registration: row.Registration || '',
                 RegistrationExpiry: row.RegistrationExpiry ?? null,
-                GrossWeightRating:  row.GrossWeightRating  || '',
-                WarrantyExpiry:     row.WarrantyExpiry     ?? null,
-                WarrantyNotes:      row.WarrantyNotes      || '',
-                PurchaseRecordID:   row.PurchaseRecordID   ?? null,
-                SaleRecordID:       row.SaleRecordID       ?? null,
-                Notes:              row.Notes              || '',
+                GrossWeightRating: row.GrossWeightRating || '',
+                WarrantyExpiry: row.WarrantyExpiry ?? null,
+                WarrantyNotes: row.WarrantyNotes || '',
+                PurchaseRecordID: row.PurchaseRecordID ?? null,
+                SaleRecordID: row.SaleRecordID ?? null,
+                Notes: row.Notes || '',
             },
             purchaseRecord: row.PurchaseRecordID ? {
-                id:            row.PurchaseRecordID,
-                purchaseDate:  row.PurchaseDate             ?? null,
-                purchasePrice: row.PurchasePrice            ?? null,
-                paymentMethod: row.PurchasePaymentMethod    || '',
-                origin:        row.PurchaseOrigin           || '',
-                purchaseNotes: row.PurchaseNotes            || '',
+                id: row.PurchaseRecordID,
+                purchaseDate: row.PurchaseDate ?? null,
+                purchasePrice: row.PurchasePrice ?? null,
+                paymentMethod: row.PurchasePaymentMethod || '',
+                origin: row.PurchaseOrigin || '',
+                purchaseNotes: row.PurchaseNotes || '',
             } : null,
             saleRecord: row.SaleRecordID ? {
-                id:            row.SaleRecordID,
-                saleDate:      row.SaleDate                 ?? null,
-                salePrice:     row.SalePrice                ?? null,
-                paymentMethod: row.SalePaymentMethod        || '',
-                customer:      row.Customer                 || '',
-                commission:    row.Commission               ?? null,
-                saleNotes:     row.SaleNotes                || '',
+                id: row.SaleRecordID,
+                saleDate: row.SaleDate ?? null,
+                salePrice: row.SalePrice ?? null,
+                paymentMethod: row.SalePaymentMethod || '',
+                customer: row.Customer || '',
+                commission: row.Commission ?? null,
+                saleNotes: row.SaleNotes || '',
             } : null,
         };
     }
@@ -5565,24 +6066,24 @@ class DatabaseOperations {
         if (!name) throw new Error('name is required for createEquipment');
 
         const result = await this.pool.request()
-            .input('name',               sql.NVarChar,          name)
-            .input('description',        sql.NVarChar(sql.MAX), description)
-            .input('locationID',         sql.Int,               locationID)
-            .input('isVehicle',          sql.Bit,               isVehicle)
-            .input('equipmentStatus',    sql.NVarChar,          equipmentStatus)
-            .input('equipmentType',      sql.NVarChar,          equipmentType)
-            .input('make',               sql.NVarChar,          make)
-            .input('model',              sql.NVarChar,          model)
-            .input('year',               sql.Int,               year ? parseInt(year) : null)
-            .input('serialNumber',       sql.NVarChar,          serialNumber)
-            .input('registration',       sql.NVarChar,          registration)
-            .input('registrationExpiry', sql.DateTime2,         registrationExpiry ? new Date(registrationExpiry) : null)
-            .input('grossWeightRating',  sql.NVarChar,          grossWeightRating)
-            .input('warrantyExpiry',     sql.DateTime2,         warrantyExpiry ? new Date(warrantyExpiry) : null)
-            .input('warrantyNotes',      sql.NVarChar(sql.MAX), warrantyNotes)
-            .input('notes',              sql.NVarChar(sql.MAX), notes)
-            .input('purchaseRecordID',   sql.Int,               purchaseRecordID)
-            .input('saleRecordID',       sql.Int,               saleRecordID)
+            .input('name', sql.NVarChar, name)
+            .input('description', sql.NVarChar(sql.MAX), description)
+            .input('locationID', sql.Int, locationID)
+            .input('isVehicle', sql.Bit, isVehicle)
+            .input('equipmentStatus', sql.NVarChar, equipmentStatus)
+            .input('equipmentType', sql.NVarChar, equipmentType)
+            .input('make', sql.NVarChar, make)
+            .input('model', sql.NVarChar, model)
+            .input('year', sql.Int, year ? parseInt(year) : null)
+            .input('serialNumber', sql.NVarChar, serialNumber)
+            .input('registration', sql.NVarChar, registration)
+            .input('registrationExpiry', sql.DateTime2, registrationExpiry ? new Date(registrationExpiry) : null)
+            .input('grossWeightRating', sql.NVarChar, grossWeightRating)
+            .input('warrantyExpiry', sql.DateTime2, warrantyExpiry ? new Date(warrantyExpiry) : null)
+            .input('warrantyNotes', sql.NVarChar(sql.MAX), warrantyNotes)
+            .input('notes', sql.NVarChar(sql.MAX), notes)
+            .input('purchaseRecordID', sql.Int, purchaseRecordID)
+            .input('saleRecordID', sql.Int, saleRecordID)
             .query(`
                 INSERT INTO Equipment (
                     Name, Description, LocationID,
@@ -9349,6 +9850,27 @@ module.exports = {
     recordFeedActivity: (params) => dbOps.recordFeedActivity(params),
     getPastureMaintenanceEvents: (params) => dbOps.getPastureMaintenanceEvents(params),
     addPastureMaintenanceEvent: (params) => dbOps.addPastureMaintenanceEvent(params),
+
+    // Pastures
+    getPastures:                     (params) => dbOps.getPastures(params),
+    getPasture:                      (params) => dbOps.getPasture(params),
+    createPasture:                   (params) => dbOps.createPasture(params),
+    updatePasture:                   (params) => dbOps.updatePasture(params),
+    deletePasture:                   (params) => dbOps.deletePasture(params),
+
+    // Pasture Spray Applications
+    getPastureSprayApplications:     (params) => dbOps.getPastureSprayApplications(params),
+    getPastureSprayApplication:      (params) => dbOps.getPastureSprayApplication(params),
+    createPastureSprayApplication:   (params) => dbOps.createPastureSprayApplication(params),
+    updatePastureSprayApplication:   (params) => dbOps.updatePastureSprayApplication(params),
+    deletePastureSprayApplication:   (params) => dbOps.deletePastureSprayApplication(params),
+
+    // Pasture Hay Production
+    getPastureHayProductionRecords:  (params) => dbOps.getPastureHayProductionRecords(params),
+    getPastureHayProductionRecord:   (params) => dbOps.getPastureHayProductionRecord(params),
+    createPastureHayProductionRecord:(params) => dbOps.createPastureHayProductionRecord(params),
+    updatePastureHayProductionRecord:(params) => dbOps.updatePastureHayProductionRecord(params),
+    deletePastureHayProductionRecord:(params) => dbOps.deletePastureHayProductionRecord(params),
 
     
     // Equipment

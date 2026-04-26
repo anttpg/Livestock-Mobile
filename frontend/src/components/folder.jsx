@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const FolderTabs = ({ activeTab, onTabChange, tabs = [], alertStates = {}, alertColors = {}, selectedTabColor = 'white' }) => {
     const tabWidth = '140px';
@@ -64,6 +64,7 @@ function Folder({
     const [tabData, setTabData] = useState({});
     const [loadingStates, setLoadingStates] = useState({});
     const [searchParams, setSearchParams] = useSearchParams();
+    const navigate        = useNavigate();
 
     // Initialize tab data structure when tabs change
     useEffect(() => {
@@ -152,9 +153,21 @@ function Folder({
         return renderTab(currentTabConfig, tabData[activeTab], helpers);
     };
 
+
+
     return (
+        <>
+            <h1 style={{ marginTop: '0px', marginBottom: '5px' }}>{title}</h1>
+            <button
+                    onClick={() => navigate('/overview')}
+                    className="button-return"
+                    style={{marginBottom: '50px', maxWidth: '100px' }}
+                >
+                <span className="material-symbols-outlined" style={{ fontSize: '15px'}}>arrow_back</span>
+                Overview
+            </button>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
-            <h1 style={{ marginTop: '0px' }}>{title}</h1>
             <FolderTabs
                 activeTab={activeTab}
                 onTabChange={handleTabChangeInternal}
@@ -167,6 +180,7 @@ function Folder({
                 {renderCurrentTab()}
             </div>
         </div>
+        </>
     );
 }
 

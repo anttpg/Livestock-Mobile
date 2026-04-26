@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFormSubmit, FormField, nullifyEmpty } from './formKit';
 import { FormSelect } from './formControls';
 import { toUTC, toLocalInput } from '../utils/dateUtils';
+import FileViewer from './FileViewer';
 import '../styles/forms.css';
 
 // FIX: FK fields (pastureName, vegetationType, hayUnitType) default to null, not ''.
@@ -23,9 +24,9 @@ function defaultHayData(pastureNameProp = null, overrides = {}) {
 /**
  * Add or edit a hay production record.
  *
- * Temp routes:
- *   POST   /api/pasture-hay
- *   PUT    /api/pasture-hay/:id
+ * Routes:
+ *   POST   /api/pasture-hay-production
+ *   PUT    /api/pasture-hay-production/:id
  *
  * @param {Object|null} initialData
  * @param {string|null} pastureName   - Pre-fills and locks the pasture selector.
@@ -33,13 +34,16 @@ function defaultHayData(pastureNameProp = null, overrides = {}) {
  * @param {Function}    onSuccess
  */
 function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuccess }) {
-    const isEditing = !!initialData;
+    const isEditing    = !!initialData;
+    const fileViewerRef = useRef(null);
 
     const [formData, setFormData] = useState(() => {
         if (initialData) {
-            // FIX: ?? null so an absent pastureName stays null, not ''.
-            return { ...defaultHayData(pastureName ?? null), ...initialData,
-                dateMowed: toLocalInput(initialData.dateMowed), dateBaled: toLocalInput(initialData.dateBaled) };
+            return {
+                ...defaultHayData(pastureName ?? null), ...initialData,
+                dateMowed: toLocalInput(initialData.DateMowed ?? initialData.dateMowed),
+                dateBaled: toLocalInput(initialData.DateBaled ?? initialData.dateBaled),
+            };
         }
         return defaultHayData(pastureName ?? null);
     });
@@ -54,7 +58,7 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
     }, []);
 
     const setField      = (f, v) => setFormData(p => ({ ...p, [f]: v }));
-    const pastureLocked = !!pastureName || (isEditing && !!initialData.pastureName);
+    const pastureLocked = !!pastureName || (isEditing && !!(initialData.PastureName ?? initialData.pastureName));
     const meta          = dropdownData._meta?.editable || {};
 
     const { handleSubmit, errors, setErrors, submitting, topRef } = useFormSubmit({
@@ -64,9 +68,8 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
             return e;
         },
         submit: async () => {
-            const { id: _, ...formFields } = formData;
-            // FIX: nullifyEmpty catches any stray '' on optional/FK fields.
-            // Numeric coercions run first so their values pass through as-is.
+            const _id = initialData?.ID ?? initialData?.id;
+            const { ID: _, id: __, ...formFields } = formData;
             const payload = nullifyEmpty({
                 ...formFields,
                 dateMowed:      formData.dateMowed      ? toUTC(formData.dateMowed)           : null,
@@ -76,12 +79,15 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
                 weightProduced: formData.weightProduced ? parseFloat(formData.weightProduced) : null,
             });
             const res = await fetch(
-                isEditing ? `/api/pasture-hay/${initialData.id}` : '/api/pasture-hay',
+                isEditing ? `/api/pasture-hay-production/${_id}` : '/api/pasture-hay-production',
                 { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) }
             );
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to save hay record');
-            // FIX: return the result so useTableEdit edit mode receives the updated record.
-            return await res.json();
+            const result = await res.json();
+            if (!isEditing) {
+                await fileViewerRef.current?.flushPending(result.id);
+            }
+            return result;
         },
         onSuccess
     });
@@ -167,6 +173,15 @@ function PastureHayForm({ initialData = null, pastureName = null, onClose, onSuc
                             onChange={e => setField('notes', e.target.value)} />
                     </FormField>
                 </div>
+            </div>
+
+            <div style={{ padding: '0 20px 20px' }}>
+                <div className="form-section-title" style={{ marginBottom: '12px' }}>Attachments</div>
+                <FileViewer
+                    ref={fileViewerRef}
+                    domain="pastureHayUpload"
+                    recordId={isEditing ? (initialData.ID ?? initialData.id) : null}
+                />
             </div>
 
             <div className="form-actions">
