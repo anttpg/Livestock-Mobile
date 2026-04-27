@@ -58,6 +58,7 @@ function PhotoViewer({
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAddPhotoPopup, setShowAddPhotoPopup] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   const fileInputRef = useRef(null);    // gallery / file picker
@@ -182,7 +183,7 @@ function PhotoViewer({
 
   const handleImageClick = () => {
     if (isLoadingInitial || uploadProgress !== null) return;
-    if (imageCount === 0) cameraInputRef.current?.click();
+    if (imageCount === 0) setShowAddPhotoPopup(true);
     else handleExpand();
   };
 
@@ -352,6 +353,25 @@ function PhotoViewer({
             <img src="/images/loading.png" alt="Loading..." style={{ width: '64px', height: '64px' }} />
           </div>
         )}
+      </Popup>
+
+      <Popup isOpen={showAddPhotoPopup} onClose={() => setShowAddPhotoPopup(false)} title="Add Photo" height="auto">
+        <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', padding: '24px' }}>
+          <button
+            onClick={() => { setShowAddPhotoPopup(false); cameraInputRef.current?.click(); }}
+            style={{ backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', padding: '12px 24px', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <span className="material-symbols-outlined">add_a_photo</span>
+            Take Photo
+          </button>
+          <button
+            onClick={() => { setShowAddPhotoPopup(false); fileInputRef.current?.click(); }}
+            style={{ backgroundColor: '#2196F3', color: 'white', border: 'none', borderRadius: '5px', padding: '12px 24px', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <span className="material-symbols-outlined">upload</span>
+            Upload Photo
+          </button>
+        </div>
       </Popup>
 
       <PopupConfirm
