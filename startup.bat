@@ -49,7 +49,7 @@ start "Backend" cmd /c "npm run backend > "%LOCAL_PATH%\backend.log" 2>&1"
 timeout /t 2
 
 echo Starting frontend on port 8080...
-start "Frontend" cmd /c "npm run preview > "%LOCAL_PATH%\frontend.log" 2>&1"
+start "Frontend" cmd /c "npm run frontend > "%LOCAL_PATH%\frontend.log" 2>&1"
 
 echo.
 echo Applications started:
