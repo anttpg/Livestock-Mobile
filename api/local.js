@@ -42,7 +42,7 @@ class LocalFileOperations {
         };
 
         //dedicated cache directory
-        this.THUMBNAIL_CACHE_DIR = path.join(__dirname, '../../data/image-cache');
+        this.THUMBNAIL_CACHE_DIR = path.join(this.basePath, 'image-cache');
 
         this.IMAGE_DOMAIN_CONFIG = {
             medical: {
