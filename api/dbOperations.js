@@ -3148,7 +3148,7 @@ class DatabaseOperations {
                 )) ASC`;
 
             const breedJoin = `
-                INNER JOIN Cattle c ON c.CowTag = br.CowTag
+                INNER JOIN CowTable c ON c.CowTag = br.CowTag
                 CROSS APPLY (
                     SELECT COALESCE(b.GestationPeriod, 283) AS GestationPeriod
                     FROM Breed b
