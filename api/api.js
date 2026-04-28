@@ -2075,21 +2075,25 @@ class APIWrapper {
         }));
     }
 
-    // Binary — cannot use executeFileOperation
     async getImage(req, res) {
         try {
+            const size = ['thumb', 'medium', 'high', 'full'].includes(req.query.size)
+                ? req.query.size
+                : 'full';
+
             const result = await localFileOps.getImage({
                 domain: req.params.domain,
                 recordId: req.params.recordId,
                 filter: req.query.filter,
                 n: parseInt(req.params.n) || 1,
+                size,
             });
             if (result.success) {
                 res.set({
                     'Content-Type': result.mimeType,
                     'Content-Length': result.size,
                     'Last-Modified': result.modified.toUTCString(),
-                    'Cache-Control': 'public, max-age=31536000',
+                    'Cache-Control': size === 'full' ? 'public, max-age=31536000' : 'public, max-age=86400',
                     'X-Filename': result.filename,
                 });
                 return res.send(result.fileBuffer);
@@ -2101,20 +2105,24 @@ class APIWrapper {
         }
     }
 
-    // Binary — cannot use executeFileOperation
     async getImageByName(req, res) {
         try {
+            const size = ['thumb', 'medium', 'high', 'full'].includes(req.query.size)
+                ? req.query.size
+                : 'full';
+
             const result = await localFileOps.getImageByName({
                 domain: req.params.domain,
                 recordId: req.params.recordId,
                 filename: req.params.filename,
+                size,
             });
             if (result.success) {
                 res.set({
                     'Content-Type': result.mimeType,
                     'Content-Length': result.size,
                     'Last-Modified': result.modified.toUTCString(),
-                    'Cache-Control': 'public, max-age=31536000',
+                    'Cache-Control': size === 'full' ? 'public, max-age=31536000' : 'public, max-age=86400',
                     'X-Filename': result.filename,
                 });
                 return res.send(result.fileBuffer);
@@ -2125,7 +2133,6 @@ class APIWrapper {
             return res.status(500).json({ error: err.message });
         }
     }
-
 
 
 

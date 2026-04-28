@@ -219,6 +219,7 @@ function Overview() {
           planId={null}
           onRefresh={fetchCalvingData}
           showExpectedBirths={false}
+          confirmOnUncheck={true}
         />
       </div>
     </div>

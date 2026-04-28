@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
 const { param } = require('express-validator');
+const sharp = require('sharp');
 require('dotenv').config();
 
 /**
@@ -30,6 +31,18 @@ class LocalFileOperations {
         this.usersFile = path.join(this.basePath, 'users.csv');
         // this.backups = path.join(this.basePath, 'backups');
         this.SALT_ROUNDS = 10;
+
+
+        // Image size tier definitions
+        this.SIZE_TIERS = {
+            thumb:  { width: 200,  quality: 30 },
+            medium: { width: 400,  quality: 50 },
+            high: { width: 800,  quality: 78 },
+            full:   { width: null, quality: 88 }, // null = no resize, just compress
+        };
+
+        //dedicated cache directory
+        this.THUMBNAIL_CACHE_DIR = path.join(__dirname, '../../data/image-cache');
 
         this.IMAGE_DOMAIN_CONFIG = {
             medical: {
@@ -634,6 +647,55 @@ class LocalFileOperations {
 
 
 
+    /**
+     * Process an image buffer into a specific size tier.
+     * Returns a compressed JPEG buffer regardless of input format.
+     * @param {Buffer} inputBuffer
+     * @param {'thumb'|'medium'|'full'} size
+     * @returns {Promise<Buffer>}
+     */
+    async processImageTier(inputBuffer, size = 'full') {
+        const tier = this.SIZE_TIERS[size];
+        if (!tier) throw new Error(`Unknown size tier: ${size}`);
+
+        let pipeline = sharp(inputBuffer);
+
+        if (tier.width) {
+            pipeline = pipeline.resize(tier.width, null, {
+                withoutEnlargement: true, // never upscale
+                kernel: sharp.kernel.lanczos3,
+            });
+        }
+
+        pipeline = pipeline.jpeg({ quality: tier.quality, mozjpeg: true });
+
+        return pipeline.toBuffer();
+    }
+
+
+    async getCachedOrProcess(sourceAbsolutePath, filename, size, inputBuffer) {
+        if (size === 'full') {
+            // Still compress, but don't bother caching — return directly
+            const processed = await this.processImageTier(inputBuffer, 'full');
+            return processed;
+        }
+
+        const cacheKey = `${filename}__${size}.jpg`;
+        const cachePath = path.join(this.THUMBNAIL_CACHE_DIR, cacheKey);
+
+        try {
+            return await fs.readFile(cachePath);
+        } catch {
+            // Not cached yet — process and write
+            await fs.mkdir(this.THUMBNAIL_CACHE_DIR, { recursive: true });
+            const processed = await this.processImageTier(inputBuffer, size);
+            await fs.writeFile(cachePath, processed).catch(() => {}); // non-fatal if write fails
+            return processed;
+        }
+    }
+
+
+
 
 
 
@@ -675,16 +737,51 @@ class LocalFileOperations {
     /**
      * Get the nth most recent image for a domain record, optionally filtered by keyword.
      * @param {Object} params
-     * @param {string} params.domain          - Image domain key
-     * @param {string|number} params.recordId - Record ID or cow tag
-     * @param {string} [params.filter]        - Optional case-insensitive filename substring filter
-     * @param {number} [params.n=1]           - 1 = most recent
+     * @param {string} params.domain
+     * @param {string|number} params.recordId
+     * @param {string} [params.filter]
+     * @param {number} [params.n=1]
+     * @param {'thumb'|'medium'|'full'} [params.size='full']
      * @returns {Object} { success, fileBuffer, filename, size, modified, dateTaken, mimeType }
      */
-    async getImage({ domain, recordId, filter, n = 1 }) {
+    async getImage({ domain, recordId, filter, n = 1, size = 'full' }) {
         const { directory } = this._resolveImageDomain(domain, recordId);
-        return this.readFile(directory, filter, n, false);
+        const result = await this.readFile(directory, filter, n, false);
+        if (!result.success) return result;
+
+        const processed = await this.getCachedOrProcess(null, result.filename, size, result.fileBuffer);
+        return {
+            ...result,
+            fileBuffer: processed,
+            size: processed.length,
+            mimeType: 'image/jpeg',
+        };
     }
+
+    
+    /**
+     * Get a specific image by exact filename for a domain record.
+     * @param {Object} params
+     * @param {string} params.domain
+     * @param {string|number} params.recordId
+     * @param {string} params.filename
+     * @param {'thumb'|'medium'|'full'} [params.size='full']
+     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
+     */
+    async getImageByName({ domain, recordId, filename, size = 'full' }) {
+        const { directory } = this._resolveImageDomain(domain, recordId);
+        const result = await this.readFileByPath(path.join(directory, filename));
+        if (!result.success) return result;
+
+        const processed = await this.getCachedOrProcess(null, result.filename, size, result.fileBuffer);
+        return {
+            ...result,
+            fileBuffer: processed,
+            size: processed.length,
+            mimeType: 'image/jpeg',
+        };
+    }
+
 
 
     /**
@@ -730,19 +827,6 @@ class LocalFileOperations {
         return { success: true, files };
     }
 
-
-    /**
-     * Get a specific image by exact filename for a domain record.
-     * @param {Object} params
-     * @param {string} params.domain          - Image domain key
-     * @param {string|number} params.recordId - Record ID or cow tag
-     * @param {string} params.filename        - Exact filename to retrieve
-     * @returns {Object} { success, fileBuffer, filename, size, modified, mimeType }
-     */
-    async getImageByName({ domain, recordId, filename }) {
-        const { directory } = this._resolveImageDomain(domain, recordId);
-        return this.readFileByPath(path.join(directory, filename));
-    }
 
 
 

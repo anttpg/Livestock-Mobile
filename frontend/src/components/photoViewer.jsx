@@ -32,38 +32,79 @@ function xhrUpload(url, formData, onProgress) {
   });
 }
 
-function buildQuery(filter, cacheKey) {
+// Ordered quality tiers — must match SIZE_TIERS in imageProcessor.js
+const QUALITY_TIERS = ['thumb', 'medium', 'high', 'full'];
+
+// Preload a URL into the browser's image cache via Image().
+// Resolves when cached (or on abort/error) — never rejects, so callers must check signal.aborted.
+function preloadImage(url, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const img = new Image();
+    const onAbort = () => { img.src = ''; resolve(); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    img.onload = () => { signal?.removeEventListener('abort', onAbort); resolve(); };
+    img.onerror = () => { signal?.removeEventListener('abort', onAbort); resolve(); };
+    img.src = url;
+  });
+}
+
+function buildQuery(filter, cacheKey, size) {
   const params = new URLSearchParams();
   if (filter) params.set('filter', filter);
-  if (cacheKey) params.set('v', cacheKey);
+  if (cacheKey) params.set('v', String(cacheKey));
+  if (size) params.set('size', size);
   const str = params.toString();
   return str ? `?${str}` : '';
 }
 
 function PhotoViewer({
-  domain,                            // e.g. 'cow', 'medical', 'equipment'
-  recordId,                          // cow tag, record ID, etc.
-  filter,                            // optional keyword: 'HEAD', 'BODY', 'ISSUE', etc.
+  domain,
+  recordId,
+  filter,
   defaultImage = '/images/NoPhoto.png',
-  fitToSquare = false,               // if true, image never exceeds a 1:1 ratio (black bars when portrait)
+  fitToSquare = false,
   style = {}
 }) {
   const [cacheKey, setCacheKey] = useState(() => Date.now());
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageCount, setImageCount] = useState(0);
-  const [loadedImages, setLoadedImages] = useState(new Map());
+
+  // Map<n:number, tier:string> — tracks the highest quality loaded for each photo.
+  // Quality only moves up via setQuality(); never downgraded.
+  const [imageQuality, setImageQuality] = useState(new Map());
+
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [initialImage, setInitialImage] = useState('/images/loading.png');
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showAddPhotoPopup, setShowAddPhotoPopup] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  const fileInputRef = useRef(null);    // gallery / file picker
-  const cameraInputRef = useRef(null);  // native camera capture
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const containerRef = useRef(null);
+
+  // AbortController for the currently active priority upgrade chain.
+  // Cancelled and replaced whenever the viewed photo changes.
+  const upgradeControllerRef = useRef(null);
+
+  // setTimeout IDs for background staggered thumb loads.
+  const bgTimerIdsRef = useRef([]);
+
+  // Tracks `n-tier` strings we've already started loading, preventing duplicate fetches.
+  const loadedTiersRef = useRef(new Set());
+
+  // Prevents background thumb loading from firing more than once per data load cycle.
+  const bgThumbsStartedRef = useRef(false);
+
+  // Sync-readable mirrors of state/memo values for use inside async callbacks.
+  // React state is stale inside closures that span multiple renders.
+  const imageQualityRef = useRef(new Map());
+  const getImageUrlRef = useRef(null);
+
+  useEffect(() => { imageQualityRef.current = imageQuality; }, [imageQuality]);
 
   // Measure the container so we can cap the image height when fitToSquare is on
   useEffect(() => {
@@ -76,7 +117,6 @@ function PhotoViewer({
     return () => ro.disconnect();
   }, [fitToSquare]);
 
-  // Height of the image display area: capped at container width when fitToSquare is true
   const imageDisplayHeight = fitToSquare && containerSize.width > 0
     ? Math.min(containerSize.width, containerSize.height)
     : null;
@@ -86,8 +126,11 @@ function PhotoViewer({
 
   const getImageUrl = useMemo(() => {
     if (!base) return () => defaultImage;
-    return (n) => `${base}/photo/${n}${buildQuery(filter, cacheKey)}`;
+    return (n, size) => `${base}/photo/${n}${buildQuery(filter, cacheKey, size)}`;
   }, [base, filter, cacheKey]);
+
+  // Keep ref in sync so async upgrade chains always use the freshest URL builder.
+  getImageUrlRef.current = getImageUrl;
 
   const fetchCount = useMemo(() => {
     if (!base) return null;
@@ -105,7 +148,7 @@ function PhotoViewer({
       const fd = new FormData();
       fd.append('image', blob, `upload_${Date.now()}.jpg`);
       const result = await xhrUpload(`${base}${buildQuery(filter)}`, fd, onProgress);
-      if (result.success) setCacheKey(Date.now());
+      if (result.success) setCacheKey(Date.now()); // triggers reset useEffect via getImageUrl change
       return result;
     };
   }, [base, filter]);
@@ -125,7 +168,7 @@ function PhotoViewer({
         credentials: 'include'
       });
       if (res.ok) {
-        setCacheKey(Date.now());
+        setCacheKey(Date.now()); // triggers reset useEffect via getImageUrl change
         return { success: true };
       }
       const data = await res.json().catch(() => ({}));
@@ -133,53 +176,130 @@ function PhotoViewer({
     };
   }, [base, filter, cacheKey]);
 
+  // Move quality up for photo n. Never downgrades — ignored if tier is not an improvement.
+  const setQuality = (n, tier) => {
+    setImageQuality(prev => {
+      const currentIndex = QUALITY_TIERS.indexOf(prev.get(n) ?? '');
+      const newIndex = QUALITY_TIERS.indexOf(tier);
+      if (newIndex <= currentIndex) return prev;
+      return new Map(prev).set(n, tier);
+    });
+  };
+
+  // Cancel the active priority upgrade, if any.
+  const cancelActiveUpgrade = () => {
+    upgradeControllerRef.current?.abort();
+    upgradeControllerRef.current = null;
+  };
+
+  // Run the priority upgrade chain for photo n, starting from its current quality.
+  // Cancels any existing priority upgrade first.
+  const runPriorityUpgrade = (n) => {
+    const currentTier = imageQualityRef.current.get(n);
+    const startIndex = currentTier ? QUALITY_TIERS.indexOf(currentTier) + 1 : 0;
+    if (startIndex >= QUALITY_TIERS.length) return; // already at full — nothing to do
+
+    cancelActiveUpgrade();
+    const controller = new AbortController();
+    upgradeControllerRef.current = controller;
+
+    (async () => {
+      for (let i = startIndex; i < QUALITY_TIERS.length; i++) {
+        if (controller.signal.aborted) return;
+        const tier = QUALITY_TIERS[i];
+        loadedTiersRef.current.add(`${n}-${tier}`);
+        await preloadImage(getImageUrlRef.current(n, tier), controller.signal);
+        if (controller.signal.aborted) return;
+        setQuality(n, tier);
+      }
+    })();
+  };
+
+  // Once photo 1 reaches full quality, kick off background thumb loads for all remaining photos.
+  // Staggered by 400ms per photo to avoid saturating bandwidth on a slow connection.
   useEffect(() => {
-    if (!fetchCount) return;
-    setDataLoaded(false);
-    setIsLoadingInitial(true);
-    setInitialImage('/images/loading.png');
-    loadInitialData();
-  }, [fetchCount, getImageUrl]);
+    if (bgThumbsStartedRef.current || imageCount <= 1) return;
+    if (imageQuality.get(1) !== 'full') return;
+    bgThumbsStartedRef.current = true;
+
+    let delay = 0;
+    for (let n = 2; n <= imageCount; n++) {
+      if (loadedTiersRef.current.has(`${n}-thumb`)) continue;
+      const capturedN = n;
+      const id = setTimeout(() => {
+        if (loadedTiersRef.current.has(`${capturedN}-thumb`)) return;
+        loadedTiersRef.current.add(`${capturedN}-thumb`);
+        const img = new Image();
+        img.onload = () => setQuality(capturedN, 'thumb');
+        img.src = getImageUrlRef.current(capturedN, 'thumb');
+      }, delay);
+      bgTimerIdsRef.current.push(id);
+      delay += 400;
+    }
+  }, [imageQuality, imageCount]);
+
+  // When the gallery is open and the current photo changes, immediately prioritize upgrading
+  // that photo. This cancels any in-progress upgrade for the previous photo.
+  useEffect(() => {
+    if (!isExpanded || imageCount === 0) return;
+    runPriorityUpgrade(currentIndex + 1);
+  }, [currentIndex, isExpanded, imageCount]);
 
   const loadInitialData = async () => {
     try {
       const count = await fetchCount();
       setImageCount(count);
+      setDataLoaded(true);
+      setIsLoadingInitial(false); // card becomes interactive now; image upgrades in background
 
       if (count > 0) {
-        const url = getImageUrl(1);
-        setInitialImage(url);
-        setLoadedImages(new Map([[1, url]]));
-      } else {
-        setInitialImage(defaultImage);
-        setLoadedImages(new Map());
+        // Priority upgrade photo 1 from thumb → medium → high → full.
+        // Background thumbs for all other photos are triggered by the imageQuality useEffect above
+        // once photo 1 reaches 'full'.
+        cancelActiveUpgrade();
+        const controller = new AbortController();
+        upgradeControllerRef.current = controller;
+
+        for (let i = 0; i < QUALITY_TIERS.length; i++) {
+          if (controller.signal.aborted) break;
+          const tier = QUALITY_TIERS[i];
+          loadedTiersRef.current.add(`1-${tier}`);
+          await preloadImage(getImageUrlRef.current(1, tier), controller.signal);
+          if (controller.signal.aborted) break;
+          setQuality(1, tier);
+        }
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
-      setInitialImage(defaultImage);
       setImageCount(0);
-      setLoadedImages(new Map());
-    } finally {
+      setImageQuality(new Map());
       setDataLoaded(true);
       setIsLoadingInitial(false);
     }
   };
 
-  const loadNextImage = (n) => {
-    if (loadedImages.has(n) || n > imageCount) return;
-    const url = getImageUrl(n);
-    setLoadedImages(prev => new Map(prev.set(n, url)));
-  };
+  // Full reset and reload whenever the source identity changes (domain, recordId, filter, cacheKey).
+  useEffect(() => {
+    if (!fetchCount) return;
+    cancelActiveUpgrade();
+    bgTimerIdsRef.current.forEach(clearTimeout);
+    bgTimerIdsRef.current = [];
+    loadedTiersRef.current = new Set();
+    bgThumbsStartedRef.current = false;
+    setImageQuality(new Map());
+    setImageCount(0);
+    setDataLoaded(false);
+    setIsLoadingInitial(true);
+    loadInitialData();
+  }, [fetchCount, getImageUrl]);
 
-  const handleExpand = () => {
-    setIsExpanded(true);
-    if (imageCount > 1 && !loadedImages.has(2)) {
-      loadNextImage(2);
-      for (let i = 3; i <= imageCount; i++) {
-        setTimeout(() => loadNextImage(i), (i - 2) * 200);
-      }
-    }
-  };
+  // Cleanup on unmount
+  useEffect(() => () => {
+    cancelActiveUpgrade();
+    bgTimerIdsRef.current.forEach(clearTimeout);
+  }, []);
+
+  const handleExpand = () => setIsExpanded(true);
 
   const handleImageClick = () => {
     if (isLoadingInitial || uploadProgress !== null) return;
@@ -193,7 +313,6 @@ function PhotoViewer({
     if (!file.type.startsWith('image/')) { alert('Please select a valid image file'); return; }
     if (file.size > 10 * 1024 * 1024) { alert('File size too large. Please select an image smaller than 10MB'); return; }
     doUpload(file);
-    // Reset both inputs so the same file can be re-selected after a delete, etc.
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
@@ -204,10 +323,7 @@ function PhotoViewer({
       const result = await uploadFn(blob, (pct) => setUploadProgress(pct));
       if (result.success) {
         setUploadProgress(null);
-        setIsLoadingInitial(true);
-        setInitialImage('/images/loading.png');
-        setDataLoaded(false);
-        await loadInitialData();
+        // uploadFn called setCacheKey — the reset useEffect handles the full reload.
       } else {
         setUploadProgress(null);
         alert(`Failed to upload photo: ${result.error || 'Unknown error'}`);
@@ -219,8 +335,6 @@ function PhotoViewer({
     }
   };
 
-  const getCurrentImageUrl = (index) => loadedImages.get(index + 1) ?? '/images/loading.png';
-
   const confirmDelete = async () => {
     setShowDeleteConfirm(false);
     try {
@@ -228,10 +342,7 @@ function PhotoViewer({
       if (result.success) {
         setIsExpanded(false);
         setCurrentIndex(0);
-        setIsLoadingInitial(true);
-        setInitialImage('/images/loading.png');
-        setDataLoaded(false);
-        await loadInitialData();
+        // deleteFn called setCacheKey — the reset useEffect handles the full reload.
       } else {
         alert(`Failed to delete photo: ${result.error || 'Unknown error'}`);
       }
@@ -244,6 +355,27 @@ function PhotoViewer({
   const isUploading = uploadProgress !== null;
   const isInteractive = !isLoadingInitial && !isUploading;
   const cameraIcon = (!dataLoaded || imageCount === 0) ? 'photo_camera' : 'expand_content';
+
+  // Card preview: shows photo 1 at whatever quality is available, upgrading automatically.
+  const photo1Tier = imageQuality.get(1);
+  const cardImageSrc = isLoadingInitial
+    ? '/images/loading.png'
+    : imageCount === 0
+      ? defaultImage
+      : photo1Tier
+        ? getImageUrl(1, photo1Tier)
+        : '/images/loading.png';
+
+  // Main gallery display — best quality loaded so far for that photo.
+  const getDisplayUrl = (index) => {
+    const n = index + 1;
+    const tier = imageQuality.get(n);
+    return tier ? getImageUrl(n, tier) : '/images/loading.png';
+  };
+
+  // Thumbnail strip — always requests thumb tier.
+  // The browser loads these independently; they'll be cache hits if background loading already ran.
+  const getThumbUrl = (index) => getImageUrl(index + 1, 'thumb');
 
   if (!domain || !recordId) {
     return (
@@ -295,10 +427,10 @@ function PhotoViewer({
           position: 'relative',
         }}>
           <img
-            src={isLoadingInitial ? '/images/loading.png' : initialImage}
+            src={cardImageSrc}
             alt="photo"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            onError={(e) => { if (!isLoadingInitial) e.target.src = defaultImage; }}
+            onError={(e) => { e.target.src = defaultImage; }}
           />
         </div>
 
@@ -336,7 +468,6 @@ function PhotoViewer({
         {dataLoaded ? (
           <PhotoGallery
             imageCount={imageCount}
-            loadedImages={loadedImages}
             currentIndex={currentIndex}
             onIndexChange={setCurrentIndex}
             onAddPhoto={() => cameraInputRef.current?.click()}
@@ -344,7 +475,8 @@ function PhotoViewer({
             onDelete={deleteFn ? () => setShowDeleteConfirm(true) : null}
             onPrevious={() => setCurrentIndex(i => Math.max(0, i - 1))}
             onNext={() => setCurrentIndex(i => Math.min(imageCount - 1, i + 1))}
-            getCurrentImageUrl={getCurrentImageUrl}
+            getDisplayUrl={getDisplayUrl}
+            getThumbUrl={getThumbUrl}
             isUploading={isUploading}
             uploadProgress={uploadProgress}
           />
@@ -390,7 +522,7 @@ function PhotoViewer({
 
 function PhotoGallery({
   imageCount, currentIndex, onIndexChange, onAddPhoto, onUploadPhoto,
-  onDelete, onPrevious, onNext, getCurrentImageUrl, isUploading, uploadProgress
+  onDelete, onPrevious, onNext, getDisplayUrl, getThumbUrl, isUploading, uploadProgress
 }) {
   const [compact, setCompact] = useState(false);
   const wrapperRef = useRef(null);
@@ -404,7 +536,7 @@ function PhotoGallery({
       const counter = counterRef.current;
       const toolbar = toolbarRef.current;
       if (!counter || !toolbar) return;
-      const gap = 10; // minimum space to keep between them
+      const gap = 10;
       setCompact(counter.getBoundingClientRect().right + gap >= toolbar.getBoundingClientRect().left);
     });
     ro.observe(wrapper);
@@ -463,8 +595,14 @@ function PhotoGallery({
         ))}
       </div>
 
+      {/* Main display — shows best quality loaded so far, updating automatically as higher tiers arrive */}
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
-        <img src={getCurrentImageUrl(currentIndex)} alt={`photo ${currentIndex + 1}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} onError={(e) => { e.target.src = '/images/loading.png'; }} />
+        <img
+          src={getDisplayUrl(currentIndex)}
+          alt={`photo ${currentIndex + 1}`}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          onError={(e) => { e.target.src = '/images/loading.png'; }}
+        />
       </div>
 
       {imageCount > 1 && (
@@ -482,11 +620,17 @@ function PhotoGallery({
         </>
       )}
 
+      {/* Thumbnail strip — always uses thumb tier URLs; lightweight for slow connections */}
       {imageCount > 1 && (
         <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', backgroundColor: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '10px', maxWidth: '80%', overflowX: 'auto' }}>
           {Array.from({ length: imageCount }, (_, index) => (
             <div key={index} onClick={() => onIndexChange(index)} style={{ width: '40px', height: '40px', borderRadius: '5px', overflow: 'hidden', cursor: 'pointer', border: index === currentIndex ? '2px solid #4CAF50' : '2px solid transparent', flexShrink: 0 }}>
-              <img src={getCurrentImageUrl(index)} alt={`thumbnail ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.src = '/images/loading.png'; }} />
+              <img
+                src={getThumbUrl(index)}
+                alt={`thumbnail ${index + 1}`}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.target.src = '/images/loading.png'; }}
+              />
             </div>
           ))}
         </div>

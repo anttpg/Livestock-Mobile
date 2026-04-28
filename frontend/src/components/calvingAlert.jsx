@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Popup from './popup';
+import PopupConfirm from './popupConfirm';
 import AnimalTableSelector from './animalTableSelector';
 import { toLocalDisplay } from '../utils/dateUtils';
 
@@ -35,7 +36,7 @@ const PRIORITY_BG = {
 // Calving Alerts + Expected Births
 // ---------------------------------------------------------------------------
 
-function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvingRecords, planId, onRefresh, showExpectedBirths = true }) {
+function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvingRecords, planId, onRefresh, showExpectedBirths = true, confirmOnUncheck = false }) {
     const [savingId,            setSavingId]            = useState(null);
     const [showAddAlert,        setShowAddAlert]        = useState(false);
     const [alertSelected,       setAlertSelected]       = useState(new Set());
@@ -157,7 +158,8 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
         const priority = isAlert ? getPriorityValue(pc) : null;
         const rowBg    = isAlert ? (PRIORITY_BG[priority] ?? 'transparent') : 'transparent';
 
-        const [noteVal, setNoteVal] = useState(pc?.Notes || '');
+        const [noteVal,      setNoteVal]      = useState(pc?.Notes || '');
+        const [showConfirm,  setShowConfirm]  = useState(false);
         const timerRef = useRef(null);
 
         const handleNoteChange = (e) => {
@@ -184,7 +186,13 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                     type="checkbox"
                     checked={isAlert}
                     disabled={savingId === pc?.ID}
-                    onChange={() => toggleAlert(item.cowTag, isAlert)}
+                    onChange={() => {
+                        if (isAlert && confirmOnUncheck) {
+                            setShowConfirm(true);
+                        } else {
+                            toggleAlert(item.cowTag, isAlert);
+                        }
+                    }}
                     style={{ width: '15px', height: '15px', cursor: 'pointer' }}
                 />
                 <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{item.cowTag}</span>
@@ -225,6 +233,18 @@ function CalvingAlertsBubble({ calvingAlerts, expectedBirths, pregChecks, calvin
                         fontSize: '12px', width: '100%', boxSizing: 'border-box',
                         backgroundColor: pc ? 'white' : '#f5f5f5'
                     }}
+                />
+
+                <PopupConfirm
+                    isOpen={showConfirm}
+                    onClose={() => setShowConfirm(false)}
+                    title="Remove from Calving Alert"
+                    message={`Remove <strong>${item.cowTag}</strong> from the calving alert list?`}
+                    onConfirm={() => {
+                        setShowConfirm(false);
+                        toggleAlert(item.cowTag, true);
+                    }}
+                    confirmText="Remove"
                 />
             </div>
         );
