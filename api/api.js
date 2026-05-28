@@ -1057,8 +1057,11 @@ class APIWrapper {
                     const resolvedBreedingRecordId = breedingRecordId || await dbOperations.getClosestDamBreedingRecord(cowData.dam, cowData.dateOfBirth);
 
                     if (resolvedBreedingRecordId) {
+                        const breedingRecord = await dbOperations.getBreedingRecord({ recordId: resolvedBreedingRecordId });
+
                         await dbOperations.createCalvingRecord({
                             breedingRecordId: resolvedBreedingRecordId,
+                            planID:          breedingRecord.PlanID,
                             isTagged,
                             calfTag:         cowData.cowTag,
                             damTag:          cowData.dam,
