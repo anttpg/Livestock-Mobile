@@ -1015,6 +1015,7 @@ class APIWrapper {
 
             // Calving record data extracted from payload
             const calvingRecordID   = req.body.calvingRecordID || null;
+            const breedingRecordId  = req.body.breedingRecordId ? parseInt(req.body.breedingRecordId, 10) : null;
             const calfDiedAtBirth   = req.body.calfDiedAtBirth === true;
             const damDiedAtBirth    = req.body.damDiedAtBirth === true;
             const calvingNotes      = req.body.calvingNotes || null;
@@ -1040,6 +1041,10 @@ class APIWrapper {
                         }
                     });
 
+                    if (breedingRecordId) {
+                        await dbOperations.refreshBreedingStatus({ breedingRecordId });
+                    }
+
                     return res.status(200).json({
                         ...cowResult,
                         calvingRecordCreated: false,
@@ -1048,12 +1053,15 @@ class APIWrapper {
                     });
 
                 } else if (cowData.dam) {
-                    // Otherwise create a new calving record, find the breeding record for the dam first
-                    const breedingRecordId = await dbOperations.getClosestDamBreedingRecord(cowData.dam, cowData.dateOfBirth);
+                    // Use the breeding record passed directly from the caller, or fall back to date-window lookup
+                    const resolvedBreedingRecordId = breedingRecordId || await dbOperations.getClosestDamBreedingRecord(cowData.dam, cowData.dateOfBirth);
 
-                    if (breedingRecordId) {
+                    if (resolvedBreedingRecordId) {
+                        const breedingRecord = await dbOperations.getBreedingRecord({ recordId: resolvedBreedingRecordId });
+
                         await dbOperations.createCalvingRecord({
-                            breedingRecordId,
+                            breedingRecordId: resolvedBreedingRecordId,
+                            planID:          breedingRecord.PlanID,
                             isTagged,
                             calfTag:         cowData.cowTag,
                             damTag:          cowData.dam,
@@ -1064,6 +1072,8 @@ class APIWrapper {
                             notes:           calvingNotes,
                             twins:           req.body.twins || false,
                         });
+
+                        await dbOperations.refreshBreedingStatus({ breedingRecordId: resolvedBreedingRecordId });
 
                         return res.status(200).json({
                             ...cowResult,
