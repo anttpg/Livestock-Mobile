@@ -420,11 +420,12 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
     const [rows,                setRows]                = useState([]);
     const [loading,             setLoading]             = useState(true);
     const [error,               setError]               = useState(null);
-    const [showAddAnimal,       setShowAddAnimal]       = useState(false);
-    const [showAnimalPopup,     setShowAnimalPopup]     = useState(false);
-    const [showNoCalfConfirm,   setShowNoCalfConfirm]   = useState(false);
-    const [selectedMother,      setSelectedMother]      = useState(null);
-    const [selectedFather,      setSelectedFather]      = useState(null);
+    const [showAddAnimal,           setShowAddAnimal]           = useState(false);
+    const [showAnimalPopup,         setShowAnimalPopup]         = useState(false);
+    const [showNoCalfConfirm,       setShowNoCalfConfirm]       = useState(false);
+    const [selectedMother,          setSelectedMother]          = useState(null);
+    const [selectedFather,          setSelectedFather]          = useState(null);
+    const [selectedBreedingRecordId,setSelectedBreedingRecordId]= useState(null);
     const [selectedAnimalTag,   setSelectedAnimalTag]   = useState(null);
     const [noCalfRow,           setNoCalfRow]           = useState(null);
     const [noCalfSaving,        setNoCalfSaving]        = useState(false);
@@ -460,7 +461,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
 
     useEffect(() => { fetchRows(); }, [fetchRows]);
 
-    const handleAddCalf       = (row) => { setSelectedMother(row.CowTag); setSelectedFather((row.PrimaryBulls || [])[0]?.tag || ''); setShowAddAnimal(true); };
+    const handleAddCalf       = (row) => { setSelectedMother(row.CowTag); setSelectedFather((row.PrimaryBulls || [])[0]?.tag || ''); setSelectedBreedingRecordId(row.ID); setShowAddAnimal(true); };
     const handleViewAnimal    = (tag) => { setSelectedAnimalTag(tag); setSearchParams({ search: tag, tab: 'general' }); setShowAnimalPopup(true); };
     const handleNoCalfClick   = (row) => { setNoCalfRow(row);  setShowNoCalfConfirm(true); };
     const handleLinkCalfClick = (row) => { setLinkRow(row);    setShowLinkPopup(true); };
@@ -562,7 +563,7 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
         </div>
     );
 
-    const refresh = () => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); fetchRows(); };
+    const refresh = () => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); setSelectedBreedingRecordId(null); fetchRows(); };
 
     return (
         <>
@@ -601,8 +602,8 @@ function CalvingTracker({ breedingPlanId, breedingYear }) {
                 </div>
             </div>
 
-            <Popup isOpen={showAddAnimal} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }} title="Add Calf" maxWidth="800px" maxHeight="100vh">
-                <AnimalForm motherTag={selectedMother} fatherTag={selectedFather} showTwinsOption={true} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); }} onSuccess={refresh} createCalvingRecord={true} breedingYear={breedingYear} />
+            <Popup isOpen={showAddAnimal} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); setSelectedBreedingRecordId(null); }} title="Add Calf" maxWidth="800px" maxHeight="100vh">
+                <AnimalForm motherTag={selectedMother} fatherTag={selectedFather} breedingRecordId={selectedBreedingRecordId} showTwinsOption={true} onClose={() => { setShowAddAnimal(false); setSelectedMother(null); setSelectedFather(null); setSelectedBreedingRecordId(null); }} onSuccess={refresh} createCalvingRecord={true} breedingYear={breedingYear} />
             </Popup>
 
             <Popup isOpen={showAnimalPopup} onClose={() => setShowAnimalPopup(false)} title={`Animal Details — ${selectedAnimalTag}`} fullscreen={true}>

@@ -30,12 +30,13 @@ function defaultAnimalData(overrides = {}) {
     };
 }
 
-async function submitAnimalRecord(data, { method = 'POST', url = '/api/cows', calvingRecordID = null } = {}) {
+async function submitAnimalRecord(data, { method = 'POST', url = '/api/cows', calvingRecordID = null, breedingRecordId = null } = {}) {
     const payload = {
         ...data,
         dateOfBirth:    toUTC(data.dateOfBirth),
         castrated:      data.sex === 'Male' ? data.castrated : null,
         calvingRecordID,
+        breedingRecordId,
     };
     const res = await fetch(url, {
         method,
@@ -321,12 +322,13 @@ function TwinCard({ index, twin, onChange, onRemove, dropdownData, animalOptions
 }
 
 function AnimalForm({
-    initialData     = null,
-    initialTag      = null,
-    motherTag       = null,
-    fatherTag       = null,
-    calvingRecordID = null,
-    showTwinsOption = false,
+    initialData       = null,
+    initialTag        = null,
+    motherTag         = null,
+    fatherTag         = null,
+    calvingRecordID   = null,
+    breedingRecordId  = null,
+    showTwinsOption   = false,
     onClose,
     onSuccess
 }) {
@@ -416,8 +418,8 @@ function AnimalForm({
             if (isEditing) {
                 await submitAnimalRecord(formData, { method: 'PUT', url: `/api/cow/${encodeURIComponent(initialData.cowTag)}` });
             } else {
-                await submitAnimalRecord(formData, { calvingRecordID });
-                for (const twin of twins) await submitAnimalRecord(twin.data, { calvingRecordID });
+                await submitAnimalRecord(formData, { calvingRecordID, breedingRecordId });
+                for (const twin of twins) await submitAnimalRecord(twin.data, { calvingRecordID, breedingRecordId });
             }
         },
         onSuccess
