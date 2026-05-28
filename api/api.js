@@ -1041,6 +1041,10 @@ class APIWrapper {
                         }
                     });
 
+                    if (breedingRecordId) {
+                        await dbOperations.refreshBreedingStatus({ breedingRecordId });
+                    }
+
                     return res.status(200).json({
                         ...cowResult,
                         calvingRecordCreated: false,
@@ -1065,6 +1069,8 @@ class APIWrapper {
                             notes:           calvingNotes,
                             twins:           req.body.twins || false,
                         });
+
+                        await dbOperations.refreshBreedingStatus({ breedingRecordId: resolvedBreedingRecordId });
 
                         return res.status(200).json({
                             ...cowResult,
