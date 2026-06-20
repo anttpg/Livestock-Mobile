@@ -37,7 +37,7 @@
     "express-validator": "^7.1.0",
     "helmet": "^8.0.0",
     "mssql": "^12.1.0",
-    "multer": "^2.0.2",
+    "multer": "^2.2.0",
     "react": "^19.1.0",
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.0",
