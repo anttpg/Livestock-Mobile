@@ -1421,9 +1421,10 @@ app.delete('/api/files/:domain/:recordId/:filename',
     async (req, res) => apiWrapper.deleteDomainFile(req, res)
 );
 
-
-
-
+app.get('/api/backup/local-files',
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.downloadLocalFileBackup(req, res)
+);
 
 
 

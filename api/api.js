@@ -2034,7 +2034,29 @@ class APIWrapper {
 
 
 
+    async downloadLocalFileBackup(req, res) {
+        const result = await localFileOps.createFullFileBackup({
+            userPermissions: req.user?.permissions
+        });
 
+        if (!result.success) {
+            const status = result.code === 'FORBIDDEN' ? 403 : 500;
+            return res.status(status).json({ error: result.message });
+        }
+
+        res.set({
+            'Content-Type': result.mimeType,
+            'Content-Length': result.size,
+            'Content-Disposition': `attachment; filename="${result.filename}"`,
+        });
+
+        const stream = require('fs').createReadStream(result.filePath);
+        stream.on('error', (err) => {
+            console.error('Error streaming backup file:', err);
+            if (!res.headersSent) res.status(500).json({ error: err.message });
+        });
+        return stream.pipe(res);
+    }
 
 
 

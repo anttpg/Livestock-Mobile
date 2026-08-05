@@ -1851,6 +1851,74 @@ class LocalFileOperations {
             };
         }
     }
+
+
+    formatDateMMDDYYYY(date = new Date()) {
+        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+        const dd = date.getDate().toString().padStart(2, '0');
+        return `${mm}_${dd}_${date.getFullYear()}`;
+    }
+
+    /**
+     * Recursively zip everything under basePath and write the archive one directory
+     * level above basePath, so the archive is never included inside itself.
+     * @param {Object} params
+     * @param {string[]} params.userPermissions
+     * @returns {Promise<{ success: boolean, filePath?: string, filename?: string, size?: number, mimeType?: string, message: string, code?: string }>}
+     */
+    async createFullFileBackup(params = {}) {
+        const { userPermissions } = params;
+
+        if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
+            return {
+                success: false,
+                message: 'Access denied: dev permission required',
+                code: 'FORBIDDEN'
+            };
+        }
+
+        const archiver = require('archiver');
+        const fsSync = require('fs');
+
+        const resolvedBase = path.resolve(this.basePath);
+        const parentDir = path.dirname(resolvedBase);
+        const filename = `localdataBackup${this.formatDateMMDDYYYY()}.zip`;
+        const outputPath = path.join(parentDir, filename);
+
+        try {
+            await new Promise((resolve, reject) => {
+                const output = fsSync.createWriteStream(outputPath);
+                const archive = archiver('zip', { zlib: { level: 9 } });
+
+                output.on('close', resolve);
+                output.on('error', reject);
+                archive.on('error', reject);
+
+                archive.pipe(output);
+                archive.directory(resolvedBase, false);
+                archive.finalize();
+            });
+
+            const stats = await fs.stat(outputPath);
+
+            return {
+                success: true,
+                filePath: outputPath,
+                filename,
+                size: stats.size,
+                mimeType: 'application/zip',
+                message: `Backup created: ${filename}`
+            };
+        } catch (error) {
+            console.error('Error creating full file backup:', error);
+            return {
+                success: false,
+                message: `Failed to create backup: ${error.message}`,
+                code: 'BACKUP_ERROR'
+            };
+        }
+    }
+
 }
 
 // Export singleton instance
@@ -1896,5 +1964,5 @@ module.exports = {
     closeDevSqlConnection: (params) => localOps.closeDevSqlConnection(params),
     backupSqlDatabase: (params) => localOps.backupSqlDatabase(params),
     getSqlDatabase: (params) => localOps.getSqlDatabase(params),
-
+    createFullFileBackup: (params) => localOps.createFullFileBackup(params),
 };

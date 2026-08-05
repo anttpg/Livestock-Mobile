@@ -1,29 +1,5 @@
 
 
-TODO;
--Decide how to handle customers table
--Seperate out Bull Performance data (The stuff they added to medical records...)
--Fix handling of multiple calves in calving record linker
-
--Make 'unexpected calf' solution better (Make not have to transmit ALL preg checks...)
-
-
-CHANGES TO MAKE TO DB AT A LATER DATE...
-
-[PastureSprayApplications]
-  AcresSprayed decimal
-  //Area decimal TODO MAKE THESE CHANGES LATER DATE
-  //AreaUnit nvarchar FK -> LandUnits
-
-[PastureHayProduction]
-  AcresCut decimal
-  //Area decimal
-  //AreaUnit nvarchar FK -> LandUnits
-
-[CowTable] & Others
-Fix CowTag lookup, cascade update on change, by making FK for each reference 
-
-
 
 
 -- LOOKUP TABLES
@@ -247,75 +223,15 @@ BIG IDEA GOALS
 
 
 
-**HIGHEST PRIORITY**
-MedicalRecords (medical.jsx)
--Allow take/save/load photos & connect to issues
--Remove max table size on Issues & Injuries
-
-
-BreedingFitness
--Change the DB to store & display actual accuracy values
--Design a form to upload EPDs
-
-
-
-
-
 **IMPORTANT**
-General.jsx
--Add final item to herd selection new herd. if 'New Herd' selected in herd selection box, pop up HerdSplitter.jsx option 1
--Display warning that cow has a history of serious issues
--Tempermant selector
--Show STATUS of cow on page, allow editing (Lock selections to combobox of status options)
--Display date of weight record, not just weight.
--Allow Editing of other descriptors.
--Fix calf table, click to open / view. Broke w new search bar.
--Display a timeline of all cow activity
--CURRENT HERD selector is no longer working.
--Add new herd button has the same problems as originally present with 'new issue' popup. Investigate.
--'Add calf' at bottom of cow table (Opens 'Add Cow' form/page)
 
 IssueSubform.jsx
 -Make shrinkable
--Mark as serious button / Resolved doesnt work.
--New issue fails to save
--Fix UPDATE ISSUE problems
-
-
-Herds.jsx
--Graphical feed level display. Display how much feed was left as of LAST RECORDING, and the projected current feed 
--Design feed estimation algorithm
 
 Overview.jsx
 -Show a miniviewer of the current status of the herds (Tiny minimap, animal count, herdname.)
--Needs to actually QUERY the data (Make not static...)
+-Needs to actually query the data (Make not static...)
 -Add 'active cows' / pregnant, active calves trackers on the overview
-
-
-
-
-**IF TIME ALLOWS**
-HerdLog.jsx
--Expand recorded operations to Herd Events as well (Breeding / Vaxx, ect)
-
-Timeline.jsx
--Make it possible to minimize a timeline after expanding
-
-General.jsx
--Allow bulk importing of images
-
-Herds.jsx
--Turn minimap into actual google maps API
-
-
-
-**WOULD BE NICE, LOW PRIORITY**
-FolderTabs.jsx
--Pretty animated Tabs
--Collapse when screen too small, expaning on clicked tab
-
-
-
 
 
 
