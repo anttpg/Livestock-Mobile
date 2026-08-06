@@ -2135,7 +2135,7 @@ class APIWrapper {
         try {
             const jobId = req.params.jobId;
             const offset = parseInt(req.query.offset, 10) || 0;
-            const length = parseInt(req.query.length, 10) || (5 * 1024 * 1024);
+            const length = parseInt(req.query.length, 10) || (25 * 1024 * 1024);
 
             const result = await localFileOps.getFullFileBackupChunk({ jobId, offset, length });
 
