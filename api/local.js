@@ -1927,7 +1927,7 @@ class LocalFileOperations {
 
         await new Promise((resolve, reject) => {
             const output = fsSync.createWriteStream(outputPath);
-            const archive = archiver('zip', { zlib: { level: 9 } });
+            const archive = archiver('zip', { zlib: { level: 1 } }); // low level — most content here is already-compressed images/PDFs, level 9 just burns CPU for negligible size gain
 
             output.on('close', resolve);
             output.on('error', reject);
@@ -2017,6 +2017,60 @@ class LocalFileOperations {
         this.backupJobs.delete(jobId);
     }
 
+    /**
+     * Read a raw byte range from a completed backup job's zip file.
+     * Debug/fallback path: pulls the file in small independent reads instead of
+     * one long-lived piped stream, to isolate whether a single continuous
+     * transfer is the point of failure.
+     * @param {Object} params
+     * @param {string} params.jobId
+     * @param {number} params.offset
+     * @param {number} params.length
+     * @returns {Promise<{ success: boolean, buffer?: Buffer, totalSize?: number, offset?: number, bytesRead?: number, isLast?: boolean, message?: string, code?: string }>}
+     */
+    async getFullFileBackupChunk({ jobId, offset, length }) {
+        const job = this.backupJobs.get(jobId);
+
+        if (!job) {
+            return { success: false, message: 'Backup job not found', code: 'NOT_FOUND' };
+        }
+        if (job.status !== 'complete') {
+            return { success: false, message: 'Backup is not ready yet', code: 'NOT_READY' };
+        }
+
+        const fsPromises = require('fs').promises;
+        let fileHandle;
+
+        try {
+            fileHandle = await fsPromises.open(job.filePath, 'r');
+            const stats = await fileHandle.stat();
+            const totalSize = stats.size;
+
+            const safeOffset = Math.max(0, offset || 0);
+            const remaining = Math.max(0, totalSize - safeOffset);
+            const readLength = Math.max(0, Math.min(length || 0, remaining));
+
+            const buffer = Buffer.alloc(readLength);
+            const { bytesRead } = readLength > 0
+                ? await fileHandle.read(buffer, 0, readLength, safeOffset)
+                : { bytesRead: 0 };
+
+            return {
+                success: true,
+                buffer: buffer.subarray(0, bytesRead),
+                totalSize,
+                offset: safeOffset,
+                bytesRead,
+                isLast: (safeOffset + bytesRead) >= totalSize
+            };
+        } catch (error) {
+            console.error('Error reading backup chunk:', error);
+            return { success: false, message: `Failed to read chunk: ${error.message}`, code: 'READ_ERROR' };
+        } finally {
+            if (fileHandle) await fileHandle.close();
+        }
+    }
+
 }
 
 // Export singleton instance
@@ -2065,5 +2119,6 @@ module.exports = {
     startFullFileBackup: (params) => localOps.startFullFileBackup(params),
     getFullFileBackupProgress: (params) => localOps.getFullFileBackupProgress(params),
     downloadFullFileBackup: (params) => localOps.downloadFullFileBackup(params),
+    getFullFileBackupChunk: (params) => localOps.getFullFileBackupChunk(params),
     cleanupBackupJob: (jobId) => localOps.cleanupBackupJob(jobId),
 };

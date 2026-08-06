@@ -1438,11 +1438,18 @@ app.get('/api/backup/local-files/progress/:jobId',
 );
 
 // Download the completed local files backup archive
+// TEMP: createValidationMiddleware removed to test whether it's buffering the streamed response
 app.get('/api/backup/local-files/download/:jobId',
     requireAuth(),
     requireDev(),
-    createValidationMiddleware('', true),
     async (req, res) => apiWrapper.downloadLocalFileBackup(req, res)
+);
+
+// DEBUG: download one small byte-range chunk of a completed backup instead of the whole file at once
+app.get('/api/backup/local-files/chunk/:jobId',
+    requireAuth(),
+    requireDev(),
+    async (req, res) => apiWrapper.getLocalFileBackupChunk(req, res)
 );
 
 

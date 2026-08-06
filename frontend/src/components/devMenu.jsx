@@ -447,7 +447,22 @@ function DevMenu() {
         const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
         const filename = filenameMatch ? filenameMatch[1] : `localdataBackup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
 
-        const blob = await downloadResponse.blob();
+        const totalBytes = parseInt(downloadResponse.headers.get('Content-Length'), 10) || 0;
+        let receivedBytes = 0;
+        const chunks = [];
+
+        setLocalBackupProgress({ status: 'downloading', downloadedBytes: 0, totalBytes });
+
+        const reader = downloadResponse.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          receivedBytes += value.length;
+          setLocalBackupProgress({ status: 'downloading', downloadedBytes: receivedBytes, totalBytes });
+        }
+
+        const blob = new Blob(chunks);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -464,6 +479,111 @@ function DevMenu() {
       }
     } catch (error) {
       setSqlOutput(prev => prev + `[${timestamp}] Local file backup error: ${error.message}\n\n`);
+    } finally {
+      setSqlBacking(false);
+      setLocalBackupProgress(null);
+    }
+  };
+
+  // Debug: same backup, but pulled in small independent chunk requests instead of
+  // one continuous piped stream — isolates whether a single long-lived response
+  // is where the transfer is breaking down.
+  const backupLocalFilesChunked = async () => {
+    setSqlBacking(true);
+    setLocalBackupProgress({ status: 'starting', processedEntries: 0, totalEntries: 0 });
+    const timestamp = new Date().toLocaleTimeString();
+
+    try {
+      const startResponse = await fetch('/api/backup/local-files/start', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const startData = await startResponse.json();
+
+      if (!startData.success) {
+        setSqlOutput(prev => prev + `[${timestamp}] Chunked backup failed: ${startData.message}\n\n`);
+        return;
+      }
+
+      const { jobId } = startData;
+      let job;
+
+      // Poll progress until the zip is complete or errors out
+      while (true) {
+        await new Promise(resolve => setTimeout(resolve, 750));
+
+        const progressResponse = await fetch(`/api/backup/local-files/progress/${jobId}`, {
+          credentials: 'include'
+        });
+        job = await progressResponse.json();
+
+        if (!job.success) {
+          setSqlOutput(prev => prev + `[${timestamp}] Lost track of backup job: ${job.message}\n\n`);
+          return;
+        }
+
+        setLocalBackupProgress({
+          status: job.status,
+          processedEntries: job.processedEntries,
+          totalEntries: job.totalEntries
+        });
+
+        if (job.status === 'complete' || job.status === 'error') break;
+      }
+
+      if (job.status === 'error') {
+        setSqlOutput(prev => prev + `[${timestamp}] Chunked backup failed: ${job.message}\n\n`);
+        return;
+      }
+
+      // Pull the finished zip in small independent GETs rather than one long stream
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per request
+      let offset = 0;
+      let totalSize = 0;
+      const chunks = [];
+      const filename = `localdataBackup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+
+      setLocalBackupProgress({ status: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+
+      while (true) {
+        const chunkResponse = await fetch(
+          `/api/backup/local-files/chunk/${jobId}?offset=${offset}&length=${CHUNK_SIZE}`,
+          { credentials: 'include' }
+        );
+
+        if (!chunkResponse.ok) {
+          const data = await chunkResponse.json();
+          setSqlOutput(prev => prev + `[${timestamp}] Chunked download failed at offset ${offset}: ${data.error}\n\n`);
+          return;
+        }
+
+        const buf = await chunkResponse.arrayBuffer();
+        if (buf.byteLength > 0) {
+          chunks.push(new Uint8Array(buf));
+        }
+
+        totalSize = parseInt(chunkResponse.headers.get('X-Total-Size'), 10) || totalSize;
+        const isLast = chunkResponse.headers.get('X-Chunk-Is-Last') === '1';
+
+        offset += buf.byteLength;
+        setLocalBackupProgress({ status: 'downloading', downloadedBytes: offset, totalBytes: totalSize });
+
+        if (isLast || buf.byteLength === 0) break;
+      }
+
+      const blob = new Blob(chunks);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setSqlOutput(prev => prev + `[${timestamp}] Local files backed up and downloaded (chunked): ${filename} (${offset} bytes)\n\n`);
+    } catch (error) {
+      setSqlOutput(prev => prev + `[${timestamp}] Chunked backup error: ${error.message}\n\n`);
     } finally {
       setSqlBacking(false);
       setLocalBackupProgress(null);
@@ -1012,6 +1132,13 @@ function DevMenu() {
                 >
                   {sqlBacking ? 'Backing up...' : 'Backup Local Files'}
                 </button>
+                <button
+                  style={{ ...styles.button, ...styles.sqlButton }}
+                  onClick={backupLocalFilesChunked}
+                  disabled={sqlBacking}
+                >
+                  {sqlBacking ? 'Backing up...' : 'Download in Chunks (Debug)'}
+                </button>
               </div>
               {localBackupProgress && (
                 <div style={{ width: '100%', marginTop: '8px' }}>
@@ -1022,13 +1149,24 @@ function DevMenu() {
                         ? `Zipping files: ${localBackupProgress.processedEntries} / ${localBackupProgress.totalEntries}`
                         : 'Scanning files...'
                     )}
+                    {localBackupProgress.status === 'downloading' && (
+                      localBackupProgress.totalBytes > 0
+                        ? `Downloading archive: ${(localBackupProgress.downloadedBytes / (1024 * 1024)).toFixed(1)} / ${(localBackupProgress.totalBytes / (1024 * 1024)).toFixed(1)} MB`
+                        : `Downloading archive: ${(localBackupProgress.downloadedBytes / (1024 * 1024)).toFixed(1)} MB`
+                    )}
                   </span>
                   <div style={styles.progressBar}>
                     <div style={{
                       ...styles.progressFill,
-                      width: localBackupProgress.totalEntries > 0
-                        ? `${Math.min(100, Math.round((localBackupProgress.processedEntries / localBackupProgress.totalEntries) * 100))}%`
-                        : '5%'
+                      width: localBackupProgress.status === 'zipping'
+                        ? (localBackupProgress.totalEntries > 0
+                            ? `${Math.min(100, Math.round((localBackupProgress.processedEntries / localBackupProgress.totalEntries) * 100))}%`
+                            : '5%')
+                        : localBackupProgress.status === 'downloading'
+                          ? (localBackupProgress.totalBytes > 0
+                              ? `${Math.min(100, Math.round((localBackupProgress.downloadedBytes / localBackupProgress.totalBytes) * 100))}%`
+                              : '100%')
+                          : '5%'
                     }} />
                   </div>
                 </div>

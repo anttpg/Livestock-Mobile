@@ -2081,7 +2081,9 @@ class APIWrapper {
     // Binary response — cannot use a wrapper executor, handle directly
     async downloadLocalFileBackup(req, res) {
         const jobId = req.params.jobId;
+        console.log('downloadLocalFileBackup hit, jobId:', jobId);
         const result = await localFileOps.downloadFullFileBackup({ jobId });
+        console.log('downloadLocalFileBackup result:', { success: result.success, filePath: result.filePath, size: result.size });
 
         if (!result.success) {
             const status = result.code === 'NOT_READY' ? 409
@@ -2090,21 +2092,73 @@ class APIWrapper {
             return res.status(status).json({ error: result.message });
         }
 
+        // Stat fresh rather than trusting the cached job size — a stale/incorrect
+        // Content-Length causes the browser to wait forever for bytes that never arrive.
+        const fsPromises = require('fs').promises;
+        let actualSize;
+        try {
+            const stats = await fsPromises.stat(result.filePath);
+            actualSize = stats.size;
+        } catch (err) {
+            console.error('Backup file missing at download time:', err);
+            return res.status(410).json({ error: 'Backup file no longer exists on disk' });
+        }
+
         res.set({
             'Content-Type': result.mimeType,
-            'Content-Length': result.size,
+            'Content-Length': actualSize,
             'Content-Disposition': `attachment; filename="${result.filename}"`,
         });
 
         const stream = require('fs').createReadStream(result.filePath);
+        let bytesSent = 0;
+        stream.on('data', (chunk) => {
+            bytesSent += chunk.length;
+        });
         stream.on('error', (err) => {
             console.error('Error streaming backup file:', err);
             if (!res.headersSent) res.status(500).json({ error: err.message });
         });
         stream.on('close', () => {
+            console.log(`downloadLocalFileBackup stream closed, sent ${bytesSent}/${actualSize} bytes`);
             localFileOps.cleanupBackupJob(jobId);
         });
         return stream.pipe(res);
+    }
+
+    /**
+     * Debug/fallback route: return one small byte-range chunk of a completed backup's
+     * zip file as a raw buffer, rather than piping the whole file as one continuous stream.
+     * Query params: offset (number), length (number, bytes)
+     */
+    async getLocalFileBackupChunk(req, res) {
+        try {
+            const jobId = req.params.jobId;
+            const offset = parseInt(req.query.offset, 10) || 0;
+            const length = parseInt(req.query.length, 10) || (5 * 1024 * 1024);
+
+            const result = await localFileOps.getFullFileBackupChunk({ jobId, offset, length });
+
+            if (!result.success) {
+                const status = result.code === 'NOT_READY' ? 409
+                    : result.code === 'NOT_FOUND' ? 404
+                    : 500;
+                return res.status(status).json({ error: result.message });
+            }
+
+            res.set({
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': result.bytesRead,
+                'X-Total-Size': result.totalSize,
+                'X-Chunk-Offset': result.offset,
+                'X-Chunk-Is-Last': result.isLast ? '1' : '0',
+            });
+
+            return res.send(result.buffer);
+        } catch (error) {
+            console.error('Error getting backup chunk:', error);
+            return res.status(500).json({ error: 'Failed to read backup chunk' });
+        }
     }
 
 
