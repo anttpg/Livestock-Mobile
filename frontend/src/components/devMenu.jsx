@@ -28,6 +28,7 @@ function DevMenu() {
   const [sqlOutput, setSqlOutput] = useState('');
   const [sqlExecuting, setSqlExecuting] = useState(false);
   const [sqlBacking, setSqlBacking] = useState(false);
+  const [localBackupProgress, setLocalBackupProgress] = useState(null);
   const sqlOutputRef = useRef(null);
 
   // Network tab state
@@ -391,20 +392,62 @@ function DevMenu() {
 
   const backupLocalFiles = async () => {
     setSqlBacking(true);
+    setLocalBackupProgress({ status: 'starting', processedEntries: 0, totalEntries: 0 });
     const timestamp = new Date().toLocaleTimeString();
 
     try {
-      const response = await fetch('/api/backup/local-files', {
-        method: 'GET',
+      const startResponse = await fetch('/api/backup/local-files/start', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const startData = await startResponse.json();
+
+      if (!startData.success) {
+        setSqlOutput(prev => prev + `[${timestamp}] Local file backup failed: ${startData.message}\n\n`);
+        return;
+      }
+
+      const { jobId } = startData;
+      let job;
+
+      // Poll progress until the zip is complete or errors out
+      while (true) {
+        await new Promise(resolve => setTimeout(resolve, 750));
+
+        const progressResponse = await fetch(`/api/backup/local-files/progress/${jobId}`, {
+          credentials: 'include'
+        });
+        job = await progressResponse.json();
+
+        if (!job.success) {
+          setSqlOutput(prev => prev + `[${timestamp}] Lost track of backup job: ${job.message}\n\n`);
+          return;
+        }
+
+        setLocalBackupProgress({
+          status: job.status,
+          processedEntries: job.processedEntries,
+          totalEntries: job.totalEntries
+        });
+
+        if (job.status === 'complete' || job.status === 'error') break;
+      }
+
+      if (job.status === 'error') {
+        setSqlOutput(prev => prev + `[${timestamp}] Local file backup failed: ${job.message}\n\n`);
+        return;
+      }
+
+      const downloadResponse = await fetch(`/api/backup/local-files/download/${jobId}`, {
         credentials: 'include'
       });
 
-      if (response.ok) {
-        const contentDisposition = response.headers.get('Content-Disposition');
+      if (downloadResponse.ok) {
+        const contentDisposition = downloadResponse.headers.get('Content-Disposition');
         const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
         const filename = filenameMatch ? filenameMatch[1] : `localdataBackup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
 
-        const blob = await response.blob();
+        const blob = await downloadResponse.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -414,15 +457,16 @@ function DevMenu() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        setSqlOutput(prev => prev + `[${timestamp}] Local files backed up and downloaded: ${filename}\n\n`);
+        setSqlOutput(prev => prev + `[${timestamp}] Local files backed up and downloaded: ${filename} (${job.processedEntries} files)\n\n`);
       } else {
-        const data = await response.json();
-        setSqlOutput(prev => prev + `[${timestamp}] Local file backup failed: ${data.error || data.message}\n\n`);
+        const data = await downloadResponse.json();
+        setSqlOutput(prev => prev + `[${timestamp}] Local file backup download failed: ${data.error}\n\n`);
       }
     } catch (error) {
       setSqlOutput(prev => prev + `[${timestamp}] Local file backup error: ${error.message}\n\n`);
     } finally {
       setSqlBacking(false);
+      setLocalBackupProgress(null);
     }
   };
 
@@ -969,6 +1013,26 @@ function DevMenu() {
                   {sqlBacking ? 'Backing up...' : 'Backup Local Files'}
                 </button>
               </div>
+              {localBackupProgress && (
+                <div style={{ width: '100%', marginTop: '8px' }}>
+                  <span style={styles.networkPhaseText}>
+                    {localBackupProgress.status === 'starting' && 'Starting backup...'}
+                    {localBackupProgress.status === 'zipping' && (
+                      localBackupProgress.totalEntries > 0
+                        ? `Zipping files: ${localBackupProgress.processedEntries} / ${localBackupProgress.totalEntries}`
+                        : 'Scanning files...'
+                    )}
+                  </span>
+                  <div style={styles.progressBar}>
+                    <div style={{
+                      ...styles.progressFill,
+                      width: localBackupProgress.totalEntries > 0
+                        ? `${Math.min(100, Math.round((localBackupProgress.processedEntries / localBackupProgress.totalEntries) * 100))}%`
+                        : '5%'
+                    }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {!sqlConnected ? (

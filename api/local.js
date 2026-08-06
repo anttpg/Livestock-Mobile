@@ -32,6 +32,9 @@ class LocalFileOperations {
         // this.backups = path.join(this.basePath, 'backups');
         this.SALT_ROUNDS = 10;
 
+        // In-memory tracking for background backup jobs (jobId -> job state)
+        this.backupJobs = new Map();
+
 
         // Image size tier definitions
         this.SIZE_TIERS = {
@@ -1860,13 +1863,15 @@ class LocalFileOperations {
     }
 
     /**
-     * Recursively zip everything under basePath and write the archive one directory
-     * level above basePath, so the archive is never included inside itself.
+     * Start a recursive zip backup of everything under basePath as a background job.
+     * Returns immediately with a jobId; poll getFullFileBackupProgress(jobId) for status,
+     * then downloadFullFileBackup(jobId) once status is 'complete'.
+     * DEV ONLY.
      * @param {Object} params
      * @param {string[]} params.userPermissions
-     * @returns {Promise<{ success: boolean, filePath?: string, filename?: string, size?: number, mimeType?: string, message: string, code?: string }>}
+     * @returns {Promise<{ success: boolean, jobId?: string, message?: string, code?: string }>}
      */
-    async createFullFileBackup(params = {}) {
+    async startFullFileBackup(params = {}) {
         const { userPermissions } = params;
 
         if (!userPermissions || !Array.isArray(userPermissions) || !userPermissions.includes('dev')) {
@@ -1877,46 +1882,139 @@ class LocalFileOperations {
             };
         }
 
+        const { randomUUID } = require('crypto');
+        const jobId = randomUUID();
+
+        this.backupJobs.set(jobId, {
+            status: 'zipping',
+            processedEntries: 0,
+            totalEntries: 0,
+            processedBytes: 0,
+            totalBytes: 0,
+            filePath: null,
+            filename: null,
+            message: null,
+            startedAt: new Date()
+        });
+
+        // Fire and forget -- progress is polled separately, do not await here
+        this._runFullFileBackup(jobId).catch((error) => {
+            console.error('Error running full file backup job:', error);
+            const job = this.backupJobs.get(jobId);
+            if (job) {
+                job.status = 'error';
+                job.message = error.message;
+            }
+        });
+
+        return { success: true, jobId };
+    }
+
+    /**
+     * Internal: performs the actual zip and updates job progress as archiver reports it.
+     * Writes the archive one directory level above basePath so it's never included in itself.
+     * @param {string} jobId
+     */
+    async _runFullFileBackup(jobId) {
         const archiver = require('archiver');
         const fsSync = require('fs');
+        const job = this.backupJobs.get(jobId);
 
         const resolvedBase = path.resolve(this.basePath);
         const parentDir = path.dirname(resolvedBase);
         const filename = `localdataBackup${this.formatDateMMDDYYYY()}.zip`;
         const outputPath = path.join(parentDir, filename);
 
-        try {
-            await new Promise((resolve, reject) => {
-                const output = fsSync.createWriteStream(outputPath);
-                const archive = archiver('zip', { zlib: { level: 9 } });
+        await new Promise((resolve, reject) => {
+            const output = fsSync.createWriteStream(outputPath);
+            const archive = archiver('zip', { zlib: { level: 9 } });
 
-                output.on('close', resolve);
-                output.on('error', reject);
-                archive.on('error', reject);
+            output.on('close', resolve);
+            output.on('error', reject);
+            archive.on('error', reject);
 
-                archive.pipe(output);
-                archive.directory(resolvedBase, false);
-                archive.finalize();
+            // archiver reports running totals as it walks the directory tree,
+            // so both processed and total climb together until the walk finishes
+            archive.on('progress', (progress) => {
+                job.processedEntries = progress.entries.processed;
+                job.totalEntries = progress.entries.total;
+                job.processedBytes = progress.fs.processedBytes;
+                job.totalBytes = progress.fs.totalBytes;
             });
 
-            const stats = await fs.stat(outputPath);
+            archive.pipe(output);
+            archive.directory(resolvedBase, false);
+            archive.finalize();
+        });
 
-            return {
-                success: true,
-                filePath: outputPath,
-                filename,
-                size: stats.size,
-                mimeType: 'application/zip',
-                message: `Backup created: ${filename}`
-            };
-        } catch (error) {
-            console.error('Error creating full file backup:', error);
-            return {
-                success: false,
-                message: `Failed to create backup: ${error.message}`,
-                code: 'BACKUP_ERROR'
-            };
+        const stats = await fs.stat(outputPath);
+
+        job.status = 'complete';
+        job.filePath = outputPath;
+        job.filename = filename;
+        job.size = stats.size;
+    }
+
+    /**
+     * Get progress for a running or completed backup job.
+     * @param {Object} params
+     * @param {string} params.jobId
+     * @returns {Promise<{ success: boolean, status?: string, processedEntries?: number, totalEntries?: number, message?: string, code?: string }>}
+     */
+    async getFullFileBackupProgress({ jobId }) {
+        const job = this.backupJobs.get(jobId);
+        if (!job) {
+            return { success: false, message: 'Backup job not found', code: 'NOT_FOUND' };
         }
+
+        return {
+            success: true,
+            status: job.status,
+            processedEntries: job.processedEntries,
+            totalEntries: job.totalEntries,
+            processedBytes: job.processedBytes,
+            totalBytes: job.totalBytes,
+            message: job.message
+        };
+    }
+
+    /**
+     * Get the completed archive for a job, ready to stream.
+     * @param {Object} params
+     * @param {string} params.jobId
+     * @returns {Promise<{ success: boolean, filePath?: string, filename?: string, size?: number, mimeType?: string, message: string, code?: string }>}
+     */
+    async downloadFullFileBackup({ jobId }) {
+        const job = this.backupJobs.get(jobId);
+
+        if (!job) {
+            return { success: false, message: 'Backup job not found', code: 'NOT_FOUND' };
+        }
+
+        if (job.status === 'error') {
+            return { success: false, message: job.message || 'Backup failed', code: 'BACKUP_ERROR' };
+        }
+
+        if (job.status !== 'complete') {
+            return { success: false, message: 'Backup is not ready yet', code: 'NOT_READY' };
+        }
+
+        return {
+            success: true,
+            filePath: job.filePath,
+            filename: job.filename,
+            size: job.size,
+            mimeType: 'application/zip',
+            message: `Backup ready: ${job.filename}`
+        };
+    }
+
+    /**
+     * Remove job tracking state once the client has downloaded the archive.
+     * @param {string} jobId
+     */
+    cleanupBackupJob(jobId) {
+        this.backupJobs.delete(jobId);
     }
 
 }
@@ -1964,5 +2062,8 @@ module.exports = {
     closeDevSqlConnection: (params) => localOps.closeDevSqlConnection(params),
     backupSqlDatabase: (params) => localOps.backupSqlDatabase(params),
     getSqlDatabase: (params) => localOps.getSqlDatabase(params),
-    createFullFileBackup: (params) => localOps.createFullFileBackup(params),
+    startFullFileBackup: (params) => localOps.startFullFileBackup(params),
+    getFullFileBackupProgress: (params) => localOps.getFullFileBackupProgress(params),
+    downloadFullFileBackup: (params) => localOps.downloadFullFileBackup(params),
+    cleanupBackupJob: (jobId) => localOps.cleanupBackupJob(jobId),
 };

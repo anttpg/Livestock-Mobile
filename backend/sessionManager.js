@@ -1421,7 +1421,24 @@ app.delete('/api/files/:domain/:recordId/:filename',
     async (req, res) => apiWrapper.deleteDomainFile(req, res)
 );
 
-app.get('/api/backup/local-files',
+// Start a full local files backup job
+app.post('/api/backup/local-files/start',
+    requireAuth(),
+    requireDev(),
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.startLocalFileBackup(req, res)
+);
+
+// Poll progress for a local files backup job
+app.get('/api/backup/local-files/progress/:jobId',
+    requireAuth(),
+    requireDev(),
+    createValidationMiddleware('', true),
+    async (req, res) => apiWrapper.getLocalFileBackupProgress(req, res)
+);
+
+// Download the completed local files backup archive
+app.get('/api/backup/local-files/download/:jobId',
     requireAuth(),
     requireDev(),
     createValidationMiddleware('', true),

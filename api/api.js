@@ -2034,15 +2034,59 @@ class APIWrapper {
 
 
 
-    async downloadLocalFileBackup(req, res) {
-        const userPermissions = req.session.user?.permissions || [];
+    /**
+     * Start a full local files backup job. Returns immediately with a jobId.
+     */
+    async startLocalFileBackup(req, res) {
+        try {
+            const userPermissions = req.session.user?.permissions || [];
+            const result = await localFileOps.startFullFileBackup({ userPermissions });
 
-        const result = await localFileOps.createFullFileBackup({
-            userPermissions
-        });
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+
+            const statusCode = result.code === 'FORBIDDEN' ? 403 : 500;
+            return res.status(statusCode).json(result);
+        } catch (error) {
+            console.error('Error starting local file backup:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to start local file backup'
+            });
+        }
+    }
+
+    /**
+     * Poll progress for a running/completed local files backup job.
+     */
+    async getLocalFileBackupProgress(req, res) {
+        try {
+            const result = await localFileOps.getFullFileBackupProgress({ jobId: req.params.jobId });
+
+            if (result.success) {
+                return res.status(200).json(result);
+            }
+
+            return res.status(404).json(result);
+        } catch (error) {
+            console.error('Error getting local file backup progress:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to get backup progress'
+            });
+        }
+    }
+
+    // Binary response — cannot use a wrapper executor, handle directly
+    async downloadLocalFileBackup(req, res) {
+        const jobId = req.params.jobId;
+        const result = await localFileOps.downloadFullFileBackup({ jobId });
 
         if (!result.success) {
-            const status = result.code === 'FORBIDDEN' ? 403 : 500;
+            const status = result.code === 'NOT_READY' ? 409
+                : result.code === 'NOT_FOUND' ? 404
+                : 500;
             return res.status(status).json({ error: result.message });
         }
 
@@ -2056,6 +2100,9 @@ class APIWrapper {
         stream.on('error', (err) => {
             console.error('Error streaming backup file:', err);
             if (!res.headersSent) res.status(500).json({ error: err.message });
+        });
+        stream.on('close', () => {
+            localFileOps.cleanupBackupJob(jobId);
         });
         return stream.pipe(res);
     }
