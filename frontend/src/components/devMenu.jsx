@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useUser } from '../UserContext';
 
 function DevMenu() {
+  const { user } = useUser();
+  const isDev = !!user?.permissions?.includes('dev');
+
   const [activeTab, setActiveTab] = useState('backend');
   const [backendLogs, setBackendLogs] = useState('Loading...');
   const [frontendLogs, setFrontendLogs] = useState('Loading...');
@@ -380,6 +384,43 @@ function DevMenu() {
       }
     } catch (error) {
       setSqlOutput(prev => prev + `[${timestamp}] Backup error: ${error.message}\n\n`);
+    } finally {
+      setSqlBacking(false);
+    }
+  };
+
+  const backupLocalFiles = async () => {
+    setSqlBacking(true);
+    const timestamp = new Date().toLocaleTimeString();
+
+    try {
+      const response = await fetch('/api/backup/local-files', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const contentDisposition = response.headers.get('Content-Disposition');
+        const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+        const filename = filenameMatch ? filenameMatch[1] : `localdataBackup_${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        setSqlOutput(prev => prev + `[${timestamp}] Local files backed up and downloaded: ${filename}\n\n`);
+      } else {
+        const data = await response.json();
+        setSqlOutput(prev => prev + `[${timestamp}] Local file backup failed: ${data.error || data.message}\n\n`);
+      }
+    } catch (error) {
+      setSqlOutput(prev => prev + `[${timestamp}] Local file backup error: ${error.message}\n\n`);
     } finally {
       setSqlBacking(false);
     }
@@ -984,6 +1025,15 @@ function DevMenu() {
                   >
                     Disconnect
                   </button>
+                  {isDev && (
+                    <button
+                      style={{ ...styles.button, ...styles.downloadButton }}
+                      onClick={backupLocalFiles}
+                      disabled={sqlBacking}
+                    >
+                      {sqlBacking ? 'Backing up...' : 'Backup Local Files'}
+                    </button>
+                  )}
                 </div>
               </div>
               
