@@ -955,6 +955,22 @@ function DevMenu() {
       {/* ── SQL tab ── */}
       {activeTab === 'sql' && (
         <>
+          {isDev && (
+            <div style={styles.sqlHeader}>
+              <div style={styles.sqlHeaderInfo}>
+                Full local files backup (Cow Photos, Medical, Equipment, MapData, etc.)
+              </div>
+              <div style={styles.sqlActions}>
+                <button
+                  style={{ ...styles.button, ...styles.downloadButton }}
+                  onClick={backupLocalFiles}
+                  disabled={sqlBacking}
+                >
+                  {sqlBacking ? 'Backing up...' : 'Backup Local Files'}
+                </button>
+              </div>
+            </div>
+          )}
           {!sqlConnected ? (
             <div style={styles.sqlTestContainer}>
               <h3>Connect to SQL Server</h3>
@@ -1025,15 +1041,6 @@ function DevMenu() {
                   >
                     Disconnect
                   </button>
-                  {isDev && (
-                    <button
-                      style={{ ...styles.button, ...styles.downloadButton }}
-                      onClick={backupLocalFiles}
-                      disabled={sqlBacking}
-                    >
-                      {sqlBacking ? 'Backing up...' : 'Backup Local Files'}
-                    </button>
-                  )}
                 </div>
               </div>
               

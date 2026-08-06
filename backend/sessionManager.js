@@ -1422,6 +1422,8 @@ app.delete('/api/files/:domain/:recordId/:filename',
 );
 
 app.get('/api/backup/local-files',
+    requireAuth(),
+    requireDev(),
     createValidationMiddleware('', true),
     async (req, res) => apiWrapper.downloadLocalFileBackup(req, res)
 );

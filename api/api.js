@@ -2035,8 +2035,10 @@ class APIWrapper {
 
 
     async downloadLocalFileBackup(req, res) {
+        const userPermissions = req.session.user?.permissions || [];
+
         const result = await localFileOps.createFullFileBackup({
-            userPermissions: req.user?.permissions
+            userPermissions
         });
 
         if (!result.success) {
